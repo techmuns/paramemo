@@ -1,0 +1,13 @@
+{
+  "name": "paragon-screening",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Paragon Partners — Screening Memo dashboard (Cloudflare Workers static site, no build step)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

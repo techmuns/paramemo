@@ -138,6 +138,7 @@
       transition: background .14s;
     }
     .dd-item:hover { background: #F2F5FB; }
+    .dd-item.is-current { background: #EEF3FC; box-shadow: inset 2px 0 0 var(--navy); }
     .dd-head { padding: 8px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--hint); text-transform: uppercase; }
 
     /* ---- Segmented (Cards / Table) toggle -------------------------------- */
@@ -316,6 +317,183 @@
     }
     @keyframes shimmer { 100% { transform: translateX(100%); } }
 
+    /* ==================================================================== *
+     *  COMPANY VIEW (Phases 2–3): identity strip, tabs, snapshot, financials
+     * ==================================================================== */
+
+    /* ---- Back button ---- */
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px 0 9px;
+      border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--muted);
+      background: #fff; border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+      transition: color .15s, border-color .15s, transform .15s, background .15s;
+    }
+    .back-btn:hover { color: var(--navy); border-color: var(--border-strong); transform: translateX(-2px); }
+
+    /* ---- Identity strip (compact, not KPI cards) ---- */
+    .identity {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px;
+      padding: 16px 18px; background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--r-lg); box-shadow: var(--shadow-sm);
+      background-image: linear-gradient(100deg, rgba(12,48,120,.035), transparent 40%);
+    }
+    .identity .id-block { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .id-divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 0; }
+    @media (max-width: 700px) { .id-divider { display: none; } }
+    .id-name { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 18px; color: var(--ink); line-height: 1.15; }
+    .id-project { font-size: 12.5px; color: var(--muted); }
+
+    /* ---- Tab bar (navy text + gold/navy underline on active) ---- */
+    .tabbar { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+    .tabbar::-webkit-scrollbar { display: none; }
+    .tab {
+      position: relative; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+      padding: 12px 14px 13px; font-size: 13.5px; font-weight: 600; color: var(--hint);
+      border-bottom: 2.5px solid transparent; margin-bottom: -1px; transition: color .15s;
+    }
+    .tab:hover { color: var(--muted); }
+    .tab .tab-ico { color: currentColor; opacity: .9; }
+    .tab.is-active { color: var(--navy); border-bottom-color: var(--navy); }
+    .tab.is-active::after { /* gold under-accent */
+      content: ''; position: absolute; left: 14px; right: 14px; bottom: -2.5px; height: 2.5px;
+      background: linear-gradient(90deg, var(--gold), transparent); opacity: .7;
+    }
+    .tab.is-soon { color: var(--hint); }
+    .tab .soon-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); opacity: .55; }
+
+    /* ---- Section titles + generic content ---- */
+    .section { }
+    .section-title {
+      display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+      font-family: 'Sora', sans-serif; font-weight: 600; font-size: 14.5px; color: var(--ink);
+    }
+    .section-title .sec-ico {
+      display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px;
+      color: var(--navy); background: rgba(12,48,120,.07); border: 1px solid rgba(12,48,120,.1);
+    }
+    .lede { font-size: 14px; line-height: 1.6; color: #374151; }
+
+    /* Business bullet chips */
+    .bullet-chip {
+      display: inline-flex; align-items: flex-start; gap: 8px; padding: 8px 12px 8px 10px;
+      border-radius: 10px; background: #F4F6FB; border: 1px solid var(--border);
+      font-size: 12.5px; line-height: 1.35; color: #374151; font-weight: 500;
+    }
+    .bullet-chip .b-ico { color: var(--gold); margin-top: 1px; flex: 0 0 auto; }
+
+    /* Facts table (key/value) */
+    .facts { width: 100%; border-collapse: collapse; }
+    .facts th, .facts td { padding: 9px 2px; border-bottom: 1px dashed var(--border); text-align: left; vertical-align: top; font-size: 13px; }
+    .facts tr:last-child th, .facts tr:last-child td { border-bottom: none; }
+    .facts th { font-weight: 500; color: var(--muted); width: 42%; white-space: nowrap; }
+    .facts td { color: var(--ink); font-weight: 500; }
+
+    /* Promoter cards */
+    .person-card {
+      padding: 13px 14px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md);
+      box-shadow: var(--shadow-sm); transition: border-color .15s, box-shadow .15s;
+    }
+    .person-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+    .person-avatar {
+      width: 36px; height: 36px; border-radius: 10px; flex: 0 0 auto; display: grid; place-items: center;
+      font-family: 'Sora', sans-serif; font-weight: 700; font-size: 12.5px; color: #fff;
+      background: linear-gradient(150deg, #16419b, #0a2660); box-shadow: inset 0 0 0 1px rgba(180,146,76,.35);
+    }
+    .person-name { font-weight: 600; font-size: 13.5px; color: var(--ink); line-height: 1.2; }
+    .person-role { font-size: 11.5px; color: var(--navy); font-weight: 600; }
+    .person-note { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 5px; }
+
+    /* Management / generic compact table */
+    .mini-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .mini-table thead th {
+      text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      color: var(--muted); padding: 9px 12px; background: #F4F6FB; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    .mini-table tbody td { padding: 10px 12px; border-bottom: 1px solid #EEF1F6; font-size: 13px; vertical-align: top; }
+    .mini-table tbody tr:last-child td { border-bottom: none; }
+    .mini-table tbody tr:hover { background: #F7F9FD; }
+
+    /* Ownership note callout */
+    .callout {
+      display: flex; gap: 11px; padding: 14px 16px; border-radius: var(--r-md);
+      background: rgba(180,146,76,.07); border: 1px solid rgba(180,146,76,.28);
+      font-size: 13px; line-height: 1.55; color: #4b4636;
+    }
+    .callout .co-ico { color: var(--gold); flex: 0 0 auto; margin-top: 1px; }
+
+    /* ---- Financials controls ---- */
+    .fin-unit { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .fin-unit b { font-family: 'Sora', sans-serif; color: var(--ink); font-weight: 600; }
+    .switch {
+      display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 999px;
+      background: #EEF1F7; border: 1px solid var(--border);
+    }
+    .switch button {
+      padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; color: var(--muted);
+      white-space: nowrap; transition: color .15s, background .15s, box-shadow .15s;
+    }
+    .switch button.on { color: #fff; background: var(--navy); box-shadow: var(--shadow-sm); }
+    .switch button:not(.on):hover { color: var(--ink); }
+
+    /* ---- Financials hero table ---- */
+    .fin-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--r-lg); }
+    table.fin { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 620px; }
+    .fin th, .fin td { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+    .fin thead th {
+      position: sticky; top: 0; z-index: 2; background: #F4F6FB; border-bottom: 1px solid var(--border);
+      font-family: 'Sora', sans-serif; font-weight: 600; font-size: 12px; color: var(--ink); text-align: right;
+    }
+    .fin thead th.rowhead { text-align: left; }
+    .fin .rowhead {
+      position: sticky; left: 0; z-index: 1; background: var(--card); text-align: left;
+      font-weight: 500; color: var(--ink); box-shadow: 1px 0 0 var(--border);
+    }
+    .fin thead th.rowhead { z-index: 3; background: #F4F6FB; }
+    .fin td.val { text-align: right; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; color: var(--ink); }
+    .fin td.val.neg { color: #DC2626; }
+    .fin td.val.muted { color: var(--hint); }
+    .fin tbody tr:hover td { background: #F7F9FD; }
+    .fin tbody tr:hover .rowhead { background: #F7F9FD; }
+    .fin tr.group td {
+      background: #EFF2F8; font-family: 'Sora', sans-serif; font-weight: 600; font-size: 10.5px;
+      letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 7px 12px;
+      position: sticky; left: 0;
+    }
+    /* forecast columns: subtle tint + a divider before the first one */
+    .fin .fc { background: rgba(180,146,76,.06); }
+    .fin thead th.fc { background: #F1EFE6; }
+    .fin .fc-start { border-left: 2px solid rgba(180,146,76,.4); }
+    .fin tbody tr:hover td.fc { background: rgba(180,146,76,.11); }
+    /* % mini-bar under the number */
+    .cellwrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 44px; }
+    .minibar { width: 100%; height: 3px; border-radius: 2px; background: rgba(17,24,39,.07); overflow: hidden; }
+    .minibar > span { display: block; height: 100%; border-radius: 2px; }
+
+    /* ---- Supporting chart cards ---- */
+    .chart-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm); padding: 14px 16px 12px;
+    }
+    .chart-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .chart-title { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 13px; color: var(--ink); }
+    .chart-box { position: relative; height: 230px; width: 100%; }
+
+    /* ---- Coming-soon empty state ---- */
+    .coming {
+      display: flex; flex-direction: column; align-items: center; text-align: center;
+      padding: 56px 24px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    .coming .cs-ico {
+      display: grid; place-items: center; width: 56px; height: 56px; border-radius: 16px; margin-bottom: 16px;
+      color: var(--navy); background: rgba(12,48,120,.07); border: 1px solid rgba(12,48,120,.1);
+    }
+    .coming .cs-badge {
+      display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 5px 12px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--gold); background: rgba(180,146,76,.1); border: 1px solid rgba(180,146,76,.3);
+    }
+
     /* Respect reduced-motion preferences */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
@@ -328,12 +506,12 @@
   <header class="app-header sticky top-0 z-40">
     <div class="mx-auto max-w-7xl px-4 sm:px-6">
       <div class="h-16 flex items-center justify-between gap-4">
-        <!-- Brand: gold-accented PARAGON monogram + product title -->
-        <div class="flex items-center gap-3 min-w-0">
+        <!-- Brand: gold-accented PARAGON monogram + product title (click → pipeline home) -->
+        <div id="brand-home" class="flex items-center gap-3 min-w-0 cursor-pointer group" role="button" tabindex="0" aria-label="Go to Deal Pipeline">
           <div class="monogram" aria-hidden="true">P</div>
           <div class="min-w-0 leading-tight">
             <div class="eyebrow">Paragon Partners</div>
-            <div class="product-title">Screening Memo</div>
+            <div class="product-title group-hover:text-white/90 transition-colors">Screening Memo</div>
           </div>
         </div>
 
@@ -361,7 +539,7 @@
 
   <!-- ============================ MAIN ============================ -->
   <main class="mx-auto max-w-7xl px-4 sm:px-6 py-7 sm:py-8">
-    <div id="pipeline"><!-- rendered by app.js --></div>
+    <div id="screen"><!-- pipeline OR company view, rendered by app.js --></div>
   </main>
 
   <!-- roots for transient UI -->

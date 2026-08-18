@@ -14,7 +14,36 @@
       "transaction": { "headline": "Up to ₹200 cr — primary + secondary", "amountCr": 200, "type": "Primary + Secondary", "coInvestment": "TBD" },
       "fit": { "verdict": "go", "reason": "Profitable with ~25% margins, a 44% five-year revenue growth rate, and diversified customers." },
       "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25","FY26E","FY27E"], "values": [192,224,302,483,798,903,1319], "actualsThrough": "FY25" },
-      "headline": { "revenueLabel": "FY25 revenue", "revenueCr": 798, "ebitdaPct": 25, "patPositive": true }
+      "headline": { "revenueLabel": "FY25 revenue", "revenueCr": 798, "ebitdaPct": 25, "patPositive": true },
+      "snapshot": {
+        "whatTheyDo": "Kusumgar makes specialised technical fabrics — the high-performance cloth used in parachutes, military gear, conveyor belts and outdoor brands. It designs and makes everything in-house and sells about half of it abroad, mostly to the US.",
+        "businessBullets": ["Family-run technical-textiles maker since 1970","Four lines: Defence Fabrics, Defence Solutions, Auto & Industrial, Outdoor","In-house weaving, dyeing, coating & lamination","1,000+ products; ~30 new products launched a month","Clients: Airborne Systems, Toray, Crye Precision, Aditya Birla"],
+        "promoters": [
+          {"name":"Yogesh Kusumgar","role":"Founder / Chairman","note":"Founded Kusumgar in 1970 · age ~80"},
+          {"name":"Siddharth Kusumgar","role":"Managing Director","note":"Joined 2000 · ~25 yrs in the business"},
+          {"name":"Sapna Kusumgar","role":"Jt. Managing Director","note":"Joined 2000 · led process excellence"}
+        ],
+        "management": [
+          {"name":"Ankur Kothari","role":"CEO","note":"ex-COO Arvind, ex-BCG · IIT Delhi, Kellogg · joined 2019"},
+          {"name":"Kinnar Mehta","role":"CFO","note":"Details awaited"},
+          {"name":"15 senior leaders","role":"Below CEO","note":"Across marketing, product, operations & plants"}
+        ],
+        "ownership": [{"holder":"Kusumgar family","pct":97.5},{"holder":"ESOP pool","pct":2.5}],
+        "ownershipNote": "Promoter-owned; 2.5% employee ESOP pool over 10-yr vesting. Detailed cap table to be received."
+      },
+      "financials": {
+        "unit":"₹ cr","years":["FY21","FY22","FY23","FY24","FY25","FY26E","FY27E"],"actualsThrough":"FY25",
+        "rows":{
+          "revenue":[192,224,302,483,798,903,1319],
+          "growthPct":[null,17,35,60,65,13,46],
+          "grossMarginPct":[48,52,48,58,52,54,50],
+          "ebitda":[38,47,56,130,198,228,337],
+          "ebitdaPct":[20,21,19,27,25,25,26],
+          "pat":[19,25,31,84,121,127,206],
+          "patPct":[10,11,10,17,15,14,16]
+        },
+        "revenueMix":{"label":"Revenue by segment","slices":[{"name":"Defence Fabrics","pct":47},{"name":"Defence Solutions","pct":30},{"name":"Auto & Industrial","pct":16},{"name":"Outdoor","pct":7}]}
+      }
     },
     {
       "id": "attero",
@@ -29,7 +58,38 @@
       "transaction": { "headline": "Up to ₹425 cr — pre-IPO (primary)", "amountCr": 425, "type": "Primary (pre-IPO)", "coInvestment": "TBD" },
       "fit": { "verdict": "watch", "reason": "Clear category leader growing fast, but margins are thin and free cash flow stays negative until FY28." },
       "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25E","FY26E","FY27E"], "values": [214,289,446,1014,1801,3010,4614], "actualsThrough": "FY24" },
-      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 1014, "ebitdaPct": 9, "patPositive": true }
+      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 1014, "ebitdaPct": 9, "patPositive": true },
+      "snapshot": {
+        "whatTheyDo": "Attero collects old electronics and used lithium-ion batteries, breaks them down, and extracts pure metals (copper, iron, aluminium) to sell back into the market. It also earns 'recycling credits' (EPR) from big brands that are required to recycle their waste.",
+        "businessBullets": ["India's largest e-waste recycler (since 2008)","Buys waste from OEMs, aggregators (kabadiwalas) and bulk users","Recovers & refines metals at its Roorkee plant","Sells metals on long-term contracts + earns EPR credits","Brand contracts: LG, HP, Sony, Whirlpool, Godrej, Daikin"],
+        "promoters": [
+          {"name":"Nitin Gupta","role":"CEO & Co-Founder","note":"IIT Delhi, NYU Stern · 23+ yrs · ex-Lotus Interworks, Ittiam"},
+          {"name":"Rohan Gupta","role":"COO & Co-Founder","note":"NIT Jaipur · 19+ yrs · ex-Infosys, SAP"}
+        ],
+        "management": [
+          {"name":"Gaurav Gupta","role":"Head, Corporate Finance & Development","note":"ex-YES Bank · IIT Delhi, IIM-L · 18+ yrs"},
+          {"name":"Dr. Smruti Barik","role":"CTO – R&D","note":"ex-Rubamin · 19+ yrs"},
+          {"name":"Abhinav Mathur","role":"Head, Strategic Initiatives","note":"IIT Delhi, IIM-L · 24+ yrs"},
+          {"name":"Mandeep Gusain","role":"VP, Operations","note":"21+ yrs"},
+          {"name":"Dr. Saurabh","role":"Head, Finance & Accounts","note":"CA, PhD · 20+ yrs"},
+          {"name":"Rohit Kakkar","role":"Head, Strategy & Growth","note":"ex-Eternus Capital · 24+ yrs"},
+          {"name":"Deepaa","role":"Head, HR & Admin","note":"XLRI · 18+ yrs"}
+        ],
+        "ownership": [{"holder":"Promoters","pct":64},{"holder":"Management","pct":7},{"holder":"Indo US Venture Partners","pct":7},{"holder":"TPG NewQuest","pct":6},{"holder":"Forum Synergies","pct":3},{"holder":"Granite Hill","pct":2},{"holder":"Kalaari","pct":2},{"holder":"Others","pct":9}]
+      },
+      "financials": {
+        "unit":"₹ cr","years":["FY21","FY22","FY23","FY24","FY25E","FY26E","FY27E"],"actualsThrough":"FY24",
+        "rows":{
+          "revenue":[214,289,446,1014,1801,3010,4614],
+          "growthPct":[null,35,54,127,78,67,53],
+          "grossMarginPct":[46,29,23,18,32,39,44],
+          "ebitda":[61,17,37,96,312,611,1097],
+          "ebitdaPct":[28,6,8,9,17,20,24],
+          "pat":[40,21,15,46,183,337,597],
+          "patPct":[19,7,3,5,10,11,13]
+        },
+        "revenueMix":{"label":"Revenue by metal recovered","slices":[{"name":"Iron","pct":47},{"name":"Copper","pct":39},{"name":"Aluminium","pct":6},{"name":"Plastics","pct":4},{"name":"Others","pct":4}]}
+      }
     },
     {
       "id": "style-union",
@@ -44,7 +104,45 @@
       "transaction": { "headline": "Up to ₹400 cr — primary growth capital", "amountCr": 400, "type": "Primary (growth)", "coInvestment": "TBD" },
       "fit": { "verdict": "watch", "reason": "Explosive growth, but still loss-making and the promoter's governance history needs a closer look." },
       "revenueSpark": { "unit": "₹ cr", "years": ["FY22","FY23","FY24","FY25E","FY26E","FY27E","FY28E"], "values": [37,182,345,570,1038,1793,2925], "actualsThrough": "FY24" },
-      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 345, "ebitdaPct": 1, "patPositive": false }
+      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 345, "ebitdaPct": 1, "patPositive": false },
+      "snapshot": {
+        "whatTheyDo": "Style Union is a fast-fashion value retailer — over 100 stores across South India selling affordable men's, women's and kids' clothing that refreshes every week. It never discounts, which keeps margins higher than rivals, and it's run by veterans of the old Future Group.",
+        "businessBullets": ["100+ stores across 5 South-Indian states; entering West India","No-discount model → 45% gross margin (~10% above peers)","Weekly-refresh '3/6/9' collection model","Avg ₹1,670 basket · ~40% repeat customers","App with 3.8 lakh downloads; online + offline"],
+        "promoters": [
+          {"name":"Rakesh Biyani","role":"Founder & Promoter","note":"ex-Jt MD Future Retail, ex-Chairman Future Supply Chain · founded Style Union 2022"},
+          {"name":"Ekta Biyani","role":"Co-founder (Ethnicity)","note":"Launched the Ethnicity brand in 2017"}
+        ],
+        "management": [
+          {"name":"Behram Kabjee","role":"Manufacturing & Sourcing","note":"30+ yrs · ex-Future Retail"},
+          {"name":"Nimish Shah","role":"Operations","note":"28+ yrs · ex-Landmark"},
+          {"name":"Rajesh Seth","role":"Customer Strategy","note":"27+ yrs"},
+          {"name":"Abhishek Jain","role":"CFO","note":"17+ yrs · ex-KPMG, PwC"},
+          {"name":"Alok Dharadhar","role":"Category Management","note":"25+ yrs"},
+          {"name":"Sankatmochan","role":"Supply Chain","note":"22+ yrs"},
+          {"name":"Manvendra Sharma","role":"Women's Fashion","note":"19+ yrs"},
+          {"name":"Mridul Tandon","role":"Men's & Kids' Fashion","note":"19+ yrs"},
+          {"name":"Krishna Thingbaijam","role":"Design","note":"28+ yrs"}
+        ],
+        "ownershipNote": "Majority owned by the Biyani family. Backers include family offices (Taparia, Piyush Goyal); Metta invested ₹195 cr in 2022. Full cap table to be received."
+      },
+      "financials": {
+        "unit":"₹ cr","years":["FY22","FY23","FY24","FY25E","FY26E","FY27E","FY28E"],"actualsThrough":"FY24",
+        "rows":{
+          "revenue":[37,182,345,570,1038,1793,2925],
+          "growthPct":[null,388,90,65,82,73,63],
+          "grossMarginPct":[39,46,45,45,46,47,47],
+          "ebitda":[-14,-16,-15,3,64,185,383],
+          "ebitdaPct":[-38,-9,-4,1,6,10,13],
+          "pat":[-14,-22,-23,-16,16,102,202],
+          "patPct":[-37,-12,-7,-3,2,6,7],
+          "roePct":[null,-22,-10,-3,2,13,22],
+          "rocePct":[null,-20,-16,-6,4,20,33],
+          "cash":[3,13,123,403,249,139,38],
+          "netWorth":[59,143,318,702,718,820,1022],
+          "debt":[18,16,15,12,9,7,5]
+        },
+        "revenueMix":{"label":"Revenue by brand (FY25)","slices":[{"name":"Style Union","pct":90},{"name":"Ethnicity","pct":10}]}
+      }
     }
   ]
 }
