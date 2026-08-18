@@ -43,7 +43,48 @@
           "patPct":[10,11,10,17,15,14,16]
         },
         "revenueMix":{"label":"Revenue by segment","slices":[{"name":"Defence Fabrics","pct":47},{"name":"Defence Solutions","pct":30},{"name":"Auto & Industrial","pct":16},{"name":"Outdoor","pct":7}]}
-      }
+      },
+      "fitChecklist":[
+        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹798 cr in FY25","group":"Business"},
+        {"label":"Revenue growing over 20% a year","status":"yes","note":"44% five-year CAGR","group":"Business"},
+        {"label":"Profitable (historically)","status":"yes","note":"PAT ₹4 cr → ₹121 cr (FY20→FY25)","group":"Business"},
+        {"label":"Cash generative","status":"tbd","note":"Free cash flow to be confirmed","group":"Business"},
+        {"label":"Market leadership","status":"no","note":"Niche player across segments","group":"Business"},
+        {"label":"Low customer concentration","status":"yes","note":"Diversified mix; no single dominant customer","group":"Business"},
+        {"label":"Deep sector experience (10y+)","status":"yes","note":"Promoters since 2000 (~25 yrs)","group":"Promoter"},
+        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Promoter-owned (to confirm exact %)","group":"Promoter"},
+        {"label":"Raised institutional capital before","status":"tbd","note":"To be confirmed","group":"Promoter"},
+        {"label":"Backed by known investors","status":"tbd","note":"To be confirmed","group":"Promoter"}
+      ],
+      "integrity":[
+        {"area":"Google Search","status":"clear","finding":"No adverse commentary found"},
+        {"area":"Private Circle","status":"clear","finding":"Promoter-owned (Kusumgar family)"},
+        {"area":"CIBIL","status":"clear","finding":"No default reported"},
+        {"area":"Credit Rating","status":"pending","finding":"To be received"},
+        {"area":"Legal / MCA","status":"flag","finding":"FY24 filings show a ₹32 cr royalty expense — nature to be clarified"}
+      ],
+      "questions":[
+        {"theme":"Revenue visibility","items":["Two lines (Defence fabric & Products) are 64% of FY25 revenue but set to de-grow in FY26 — what's the signed/advanced order book?"]},
+        {"theme":"Customer concentration","items":["Safran ~98% wallet share and Airborne ~35–40% — how lumpy are revenues and margins by customer?","Customer-level history, past and future?"]},
+        {"theme":"Order book & sales cycle","items":["Historical order-conversion ratios and timelines by segment?","Win/loss rates and RFQ expiry?"]},
+        {"theme":"Raw material","items":["60% of raw material is imported — how has price volatility been managed historically?"]},
+        {"theme":"Manufacturing","items":["Capacity and utilisation by segment?","Capex done in the last 3 years and planned capex?"]},
+        {"theme":"Competition","items":["Key competitors by segment and our differentiation (technology / quality / pricing)?"]},
+        {"theme":"Governance","items":["FY24 MCA filings show a ₹32 cr royalty expense — what is it?"]}
+      ],
+      "thesis":[
+        {"point":"Profitable, high-margin niche leader","detail":"~25% EBITDA margins with real pricing power (parachute material margins 70–75%)."},
+        {"point":"Long runway in defence & exports","detail":"Half of sales are exports; scope to grow Airborne wallet share from ~15% toward 60%."},
+        {"point":"Deep in-house capability","detail":"Full weaving-to-lamination stack; ~30 new products launched a month."},
+        {"point":"IPO-bound","detail":"DRHP filing underway; listing targeted by early 2026."}
+      ],
+      "concerns":[
+        {"issue":"Customer concentration in key lines","detail":"Safran ~98%, Airborne ~35–40% wallet share.","mitigant":"Broaden customer base; get customer-level order history."},
+        {"issue":"Big lines set to de-grow in FY26","detail":"64% of FY25 revenue in lines expected to shrink.","mitigant":"Confirm signed / advanced-stage orders."},
+        {"issue":"₹32 cr royalty expense (FY24)","detail":"Nature unclear from filings.","mitigant":"Clarify purpose and whether it recurs."},
+        {"issue":"Family-run governance","detail":"Thin institutional governance so far.","mitigant":"Professional CEO (ex-Arvind/BCG) in place; strengthen the board."}
+      ],
+      "returns":{"investmentCr":200,"startEbitdaCr":198,"startYear":"FY25","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}}
     },
     {
       "id": "attero",
@@ -89,7 +130,47 @@
           "patPct":[19,7,3,5,10,11,13]
         },
         "revenueMix":{"label":"Revenue by metal recovered","slices":[{"name":"Iron","pct":47},{"name":"Copper","pct":39},{"name":"Aluminium","pct":6},{"name":"Plastics","pct":4},{"name":"Others","pct":4}]}
-      }
+      },
+      "fitChecklist":[
+        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹142 cr (2014) → over ₹1,000 cr (2024)","group":"Business"},
+        {"label":"Revenue growing over 20% a year","status":"yes","note":"Strong multi-year growth","group":"Business"},
+        {"label":"Profitable (historically)","status":"yes","note":"Yes, apart from a one-off ₹76 cr EPR write-off in FY25","group":"Business"},
+        {"label":"Cash generative","status":"no","note":"Free cash flow negative until FY28 (heavy capex)","group":"Business"},
+        {"label":"Market leadership","status":"yes","note":"Largest e-waste recycler; next player ~1/3 the size","group":"Business"},
+        {"label":"Low customer concentration","status":"no","note":"Metals sold in open market; EPR income may concentrate","group":"Business"},
+        {"label":"Deep sector experience (10y+)","status":"yes","note":"Operating since 2008","group":"Promoter"},
+        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Promoters hold 64%","group":"Promoter"},
+        {"label":"Raised institutional capital before","status":"yes","note":"TPG, Kalaari, Granite Hill and others on the cap table","group":"Promoter"},
+        {"label":"Backed by known investors","status":"yes","note":"TPG NewQuest and others","group":"Promoter"}
+      ],
+      "integrity":[
+        {"area":"Google Search","status":"clear","finding":"No adverse commentary"},
+        {"area":"Private Circle","status":"clear","finding":"Promoted & managed by the Gupta family; clean background"},
+        {"area":"CIBIL","status":"clear","finding":"No default"},
+        {"area":"Credit Rating","status":"clear","finding":"ICRA BBB− / Stable"},
+        {"area":"Legal / MCA","status":"flag","finding":"One lawsuit; paid ~₹3 mn compensation for supplying damaged products"}
+      ],
+      "questions":[
+        {"theme":"Sourcing","items":["Do we own our logistics and collection network?","How concentrated are aggregators (top-5, top-20)?","How will Metalmandi & Salesmart scale to 50% of sourcing?"]},
+        {"theme":"Processing & capex","items":["Detail the capex for the e-waste, lithium-ion and black-mass expansion","Plant & machinery vendor and ramp-up timelines?"]},
+        {"theme":"Margins & financials","items":["Why were EBITDA margins single-digit in FY23–FY24?","Reason for the ₹76 cr unbilled-EPR write-off in FY25?","Why did revenue de-grow sharply from FY17–FY19?"]},
+        {"theme":"EPR economics","items":["What share of our largest OEMs' recycling do we capture, and can it grow?"]},
+        {"theme":"Distribution & hedging","items":["Who are the metal buyers? Any concentration? Do we hedge input vs output prices?"]},
+        {"theme":"Peers & IPO","items":["Why does TES-AMM earn much higher EBITDA than peers?","IPO timeline and readiness?"]}
+      ],
+      "thesis":[
+        {"point":"Clear category leader in a growing market","detail":"India's e-waste roughly doubles every five years; Attero is the largest recycler, ~3× the next player."},
+        {"point":"Hard-to-replicate assets","detail":"In-house refining, PCB recycling and one of the largest sets of EPR contracts with Tier-1 brands."},
+        {"point":"Two growth engines","detail":"Large e-waste capacity expansion (144k→594k MTPA) plus a fast-growing battery / black-mass business."},
+        {"point":"Pre-IPO entry","detail":"Investing ahead of a planned listing."}
+      ],
+      "concerns":[
+        {"issue":"Thin, volatile margins","detail":"Single-digit EBITDA in FY23–FY24.","mitigant":"Scale and a richer battery mix expected to lift margins above 20%."},
+        {"issue":"Negative free cash flow until FY28","detail":"Heavy capex to build capacity.","mitigant":"Capex is front-loaded; cash flow turns positive as utilisation ramps."},
+        {"issue":"₹76 cr EPR write-off (FY25)","detail":"Unbilled EPR certificates written off.","mitigant":"Understand the cause and whether it can recur before pricing."},
+        {"issue":"Aggregator-heavy sourcing (87%)","detail":"Reliant on informal aggregators.","mitigant":"Metalmandi/Salesmart to bring ~50% of sourcing in-house by FY28."}
+      ],
+      "returns":{"investmentCr":425,"startEbitdaCr":312,"startYear":"FY25E","defaults":{"entryX":12,"exitX":12,"growthPct":25,"years":4}}
     },
     {
       "id": "style-union",
@@ -142,7 +223,48 @@
           "debt":[18,16,15,12,9,7,5]
         },
         "revenueMix":{"label":"Revenue by brand (FY25)","slices":[{"name":"Style Union","pct":90},{"name":"Ethnicity","pct":10}]}
-      }
+      },
+      "fitChecklist":[
+        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹570 cr in FY25","group":"Business"},
+        {"label":"Revenue growing over 20% a year","status":"yes","note":"148% CAGR since 2022 (Style Union brand)","group":"Business"},
+        {"label":"Profitable (historically)","status":"no","note":"FY25 PAT about −₹16 cr","group":"Business"},
+        {"label":"Cash generative","status":"no","note":"Free cash flow negative until FY27","group":"Business"},
+        {"label":"Market leadership","status":"no","note":"Early-stage regional player","group":"Business"},
+        {"label":"Low customer concentration","status":"yes","note":"Retail — no customer concentration","group":"Business"},
+        {"label":"Deep sector experience (10y+)","status":"yes","note":"Rakesh Biyani ~20 yrs (Future Group)","group":"Promoter"},
+        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Majority family-owned","group":"Promoter"},
+        {"label":"Raised institutional capital before","status":"yes","note":"Family offices; Metta invested ₹195 cr (2022)","group":"Promoter"},
+        {"label":"Backed by known investors","status":"yes","note":"Taparia FO, Piyush Goyal","group":"Promoter"}
+      ],
+      "integrity":[
+        {"area":"Google Search","status":"clear","finding":"No adverse commentary"},
+        {"area":"Private Circle","status":"flag","finding":"Promoter was Chairman of the now-defunct Future Group — governance history to diligence"},
+        {"area":"CIBIL","status":"clear","finding":"No default"},
+        {"area":"Credit Rating","status":"pending","finding":"Not rated"},
+        {"area":"Legal / MCA","status":"clear","finding":"No records found"}
+      ],
+      "questions":[
+        {"theme":"Strategy & pivot","items":["Why pivot from Ethnicity to fast fashion?","Why keep loss-making Ethnicity stores rather than wind them down?"]},
+        {"theme":"Expansion","items":["Cluster logic and the next 4–5 year store plan (MH, GJ) — which cities and store types?","What's needed to open stores at 2× the FY25 pace?"]},
+        {"theme":"Competition","items":["How do you differentiate vs Zudio, Easybuy, Intune, V-Mart?","Thoughts on the consumption slowdown?"]},
+        {"theme":"Unit economics","items":["Store break-even and payback period?","Why are some FY23-cohort stores still loss-making?","Why are gross margins ~10% above peers?"]},
+        {"theme":"Supply chain & tech","items":["Explain the 3/6/9 model and how the technology beats peers on speed/cost","Contract manufacturers — count, locations, exclusivity, payment terms?"]},
+        {"theme":"Inventory","items":["Average inventory age vs peers; how do you clear slow-movers without discounting?"]},
+        {"theme":"Cap table & process","items":["Total capital raised, family vs external; current cap table and ESOPs?","Ideal investor and current process status?"]}
+      ],
+      "thesis":[
+        {"point":"Explosive growth off a differentiated model","detail":"No-discount, weekly-refresh value fashion with ~45% gross margins (~10% above peers)."},
+        {"point":"Experienced operators","detail":"A bench of ex-Future Group retail veterans."},
+        {"point":"Improving unit economics","detail":"Path from ~1% EBITDA (FY25) toward low-teens by FY28 as stores mature."},
+        {"point":"Large, growing market","detail":"India value-apparel ~₹3.9 lakh cr, growing ~16% a year."}
+      ],
+      "concerns":[
+        {"issue":"Still loss-making","detail":"Negative profit and cash flow until FY27.","mitigant":"Store cohort economics are improving; watch the maturity curve."},
+        {"issue":"Promoter governance history","detail":"Linked to the now-defunct Future Group.","mitigant":"Independent governance diligence before proceeding."},
+        {"issue":"Fierce competition","detail":"Zudio, V-Mart, Easybuy and others.","mitigant":"Differentiation on speed/assortment; validate same-store-sales trends."},
+        {"issue":"Aggressive roll-out risk","detail":"Opening stores at ~2× prior pace.","mitigant":"Confirm operational capacity and store-closure learnings."}
+      ],
+      "returns":{"investmentCr":400,"startEbitdaCr":64,"startYear":"FY26E","defaults":{"entryX":18,"exitX":14,"growthPct":35,"years":5}}
     }
   ]
 }

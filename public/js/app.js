@@ -129,6 +129,16 @@ const ICONS = {
   clock:      '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
   percent:    '<line x1="19" x2="5" y1="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
   wallet:     '<path d="M17 14h.01"/><path d="M7 7h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
+  // Phases 4–5 additions
+  minus:      '<path d="M5 12h14"/>',
+  search:     '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  scale:      '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+  gauge:      '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  award:      '<path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/>',
+  circle:     '<circle cx="12" cy="12" r="9"/>',
+  thumbsUp:   '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
+  sliders:    '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
+  coins:      '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
 };
 function icon(name, cls = 'w-4 h-4', sw = 2) {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}"
@@ -242,7 +252,9 @@ const TABS = [
   { key: 'thesis',     label: 'Thesis',     icon: 'lightbulb'  },
   { key: 'returns',    label: 'Returns',    icon: 'trendingUp' },
 ];
-const LIVE_TABS = ['snapshot', 'financials'];       // built now; the rest are "Coming soon"
+// All seven tabs are built as of Phases 4–5, so none carry a "coming soon" dot.
+// (renderComingSoon remains as a harmless fallback for any unknown tab key.)
+const LIVE_TABS = ['snapshot', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'returns'];
 const TAB_KEYS = TABS.map(t => t.key);
 const TAB_META = Object.fromEntries(TABS.map(t => [t.key, t]));
 
@@ -584,6 +596,9 @@ function showCompany(c, tab) {
   const sameCompany = shellExists && ui.companyId === c.id;
   ui.companyId = c.id;
   ui.tab = tab;
+  // Carry-over decision: each time a company opens, Financials starts on the
+  // Table view (the table is the hero). Forecast preference is left as-is.
+  if (!sameCompany) ui.fin.view = 'table';
   if (!sameCompany) renderCompanyShell(c);   // rebuild identity + tabs only when company changes
   setActiveTab(tab);
   renderTabPanel(c, tab);
@@ -670,6 +685,11 @@ function renderTabPanel(c, tab) {
   let node;
   if (tab === 'snapshot')        node = renderSnapshot(c);
   else if (tab === 'financials') node = renderFinancials(c);
+  else if (tab === 'fit')        node = renderFit(c);
+  else if (tab === 'integrity')  node = renderIntegrity(c);
+  else if (tab === 'questions')  node = renderQuestions(c);
+  else if (tab === 'thesis')     node = renderThesis(c);
+  else if (tab === 'returns')    node = renderReturns(c);
   else                           node = renderComingSoon(tab);
   panel.appendChild(node);
   requestAnimationFrame(() => initPanelCharts(c));
@@ -938,11 +958,304 @@ function renderComingSoon(tab) {
     </div>`);
 }
 
+/* ---- 7d. Fit tab ("does this deal fit our rules?") ---- */
+const CHECK_STATUS = {
+  yes: { color: '#10B981', icon: 'check', label: 'Yes' },
+  no:  { color: '#E11D48', icon: 'x',     label: 'No'  },
+  tbd: { color: '#9CA3AF', icon: 'minus', label: 'To confirm' },
+};
+
+function renderFit(c) {
+  const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
+  const list = c.fitChecklist || [];
+  const total = list.length || 1;
+  const yes = list.filter(x => x.status === 'yes').length;
+  const no  = list.filter(x => x.status === 'no').length;
+  const tbd = list.filter(x => x.status === 'tbd').length;
+  const wrap = h('<div class="space-y-5"></div>');
+
+  // Banner: the big fit light + reason, with a slim yes/no/tbd meter (checklist stays the hero).
+  wrap.appendChild(h(`
+    <div class="surface-card p-5">
+      <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+        <div class="flex items-center gap-3 min-w-0">
+          <span class="fit-badge-lg" style="color:${fit.color};background:${fit.tint}">
+            <span class="fit-dot${c.fit && c.fit.verdict === 'go' ? ' pulse' : ''}" style="background:${fit.color}"></span>${fit.label}
+          </span>
+          <p class="text-[13.5px] text-ink-muted leading-snug min-w-0">${esc(c.fit ? c.fit.reason : '')}</p>
+        </div>
+        <div class="md:ml-auto w-full md:w-auto md:min-w-[248px]">
+          <div class="flex items-baseline justify-between mb-1.5">
+            <span class="text-[12.5px] font-semibold text-ink"><b class="font-display">${yes}</b> of ${list.length} checks met</span>
+            <span class="text-[11px] text-ink-hint">${no} no · ${tbd} to confirm</span>
+          </div>
+          <div class="meter" role="img" aria-label="${yes} yes, ${no} no, ${tbd} to confirm">
+            <span style="width:${yes / total * 100}%;background:${POS}"></span>
+            <span style="width:${no / total * 100}%;background:${NEG}"></span>
+            <span style="width:${tbd / total * 100}%;background:#CBD1DC"></span>
+          </div>
+        </div>
+      </div>
+    </div>`));
+
+  // Grouped checklist.
+  const card = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico">${icon('target', 'w-4 h-4')}</span>Screening checklist</div></div>`);
+  ['Business', 'Promoter'].forEach(group => {
+    const rows = list.filter(x => x.group === group);
+    if (!rows.length) return;
+    card.appendChild(h(`<div class="group-head">${esc(group)}</div>`));
+    rows.forEach(r => {
+      const st = CHECK_STATUS[r.status] || CHECK_STATUS.tbd;
+      card.appendChild(h(`
+        <div class="check-row">
+          <span class="check-mark" style="color:${st.color};background:${tint(st.color, .12)}">${icon(st.icon, 'w-3.5 h-3.5', 3)}</span>
+          <div class="check-body">
+            <div class="check-label">${esc(r.label)}</div>
+            <div class="check-note">${esc(r.note)}</div>
+          </div>
+        </div>`));
+    });
+  });
+  wrap.appendChild(card);
+  return wrap;
+}
+
+/* ---- 7e. Integrity tab ("any red flags?") ---- */
+const INTEG_STATUS = {
+  clear:   { color: '#10B981', icon: 'check',  label: 'Clear'   },
+  flag:    { color: '#F59E0B', icon: 'alert',  label: 'Flag'    },
+  pending: { color: '#9CA3AF', icon: 'circle', label: 'Pending' },
+};
+function integrityIcon(area) {
+  const a = String(area).toLowerCase();
+  if (a.includes('google') || a.includes('search')) return 'search';
+  if (a.includes('circle') || a.includes('private')) return 'users';
+  if (a.includes('cibil')) return 'gauge';
+  if (a.includes('rating')) return 'award';
+  if (a.includes('legal') || a.includes('mca')) return 'scale';
+  return 'shield';
+}
+
+function renderIntegrity(c) {
+  const items = c.integrity || [];
+  const clear = items.filter(x => x.status === 'clear').length;
+  const toCheck = items.length - clear;
+  const wrap = h('<div class="space-y-5"></div>');
+
+  wrap.appendChild(h(`
+    <div class="surface-card px-5 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+      <span class="inline-flex items-center gap-2"><span class="dot-sm" style="background:${POS}"></span><b class="text-ink font-semibold">${clear} clear</b></span>
+      <span class="text-ink-hint">·</span>
+      <span class="inline-flex items-center gap-2"><span class="dot-sm" style="background:#F59E0B"></span><b class="text-ink font-semibold">${toCheck} to check</b></span>
+      <span class="ml-auto text-[12px] text-ink-hint">Background &amp; diligence scan</span>
+    </div>`));
+
+  const card = h('<div class="surface-card p-2.5"></div>');
+  items.forEach(it => {
+    const st = INTEG_STATUS[it.status] || INTEG_STATUS.pending;
+    card.appendChild(h(`
+      <div class="integ-row">
+        <span class="integ-area-ico">${icon(integrityIcon(it.area), 'w-4 h-4')}</span>
+        <div class="integ-body">
+          <div class="integ-area">${esc(it.area)}</div>
+          <div class="integ-find">${esc(it.finding)}</div>
+        </div>
+        <span class="integ-badge" style="color:${st.color};background:${tint(st.color, .12)}">${icon(st.icon, 'w-3.5 h-3.5', 2.6)}${st.label}</span>
+      </div>`));
+  });
+  wrap.appendChild(card);
+  return wrap;
+}
+
+/* ---- 7f. Questions tab ("what we'll ask management") ---- */
+function themeIcon(theme) {
+  const t = String(theme).toLowerCase();
+  if (t.includes('revenue') || t.includes('financ') || t.includes('margin') || t.includes('econ')) return 'percent';
+  if (t.includes('customer') || t.includes('concentration')) return 'users';
+  if (t.includes('order') || t.includes('sales')) return 'clipboard';
+  if (t.includes('raw material') || t.includes('sourcing') || t.includes('supply') || t.includes('inventory')) return 'layers';
+  if (t.includes('manufactur') || t.includes('processing') || t.includes('capex')) return 'wallet';
+  if (t.includes('competition') || t.includes('peer')) return 'target';
+  if (t.includes('governance') || t.includes('cap table') || t.includes('process')) return 'shield';
+  if (t.includes('strategy') || t.includes('pivot') || t.includes('expansion') || t.includes('epr')) return 'trendingUp';
+  if (t.includes('distribution') || t.includes('hedging') || t.includes('ipo')) return 'building';
+  return 'help';
+}
+
+function renderQuestions(c) {
+  const themes = c.questions || [];
+  const totalQ = themes.reduce((n, t) => n + t.items.length, 0);
+  const wrap = h('<div class="space-y-4"></div>');
+
+  const bar = h(`
+    <div class="flex items-center justify-between gap-3">
+      <div class="text-[13px] text-ink-muted">${themes.length} themes · ${totalQ} questions for management</div>
+      <button class="link-btn" data-toggle-all type="button">Expand all</button>
+    </div>`);
+  wrap.appendChild(bar);
+
+  const listWrap = h('<div class="space-y-2.5"></div>');
+  themes.forEach((t, i) => {
+    const open = i === 0;                          // first theme open so the pattern is visible
+    const acc = h(`
+      <div class="accordion${open ? ' open' : ''}">
+        <button class="acc-head" type="button" aria-expanded="${open}">
+          <span class="acc-ico">${icon(themeIcon(t.theme), 'w-4 h-4')}</span>
+          <span class="acc-title">${esc(t.theme)}</span>
+          <span class="acc-count">${t.items.length}</span>
+          <span class="acc-chev">${icon('chevronDown', 'w-4 h-4')}</span>
+        </button>
+        <div class="acc-body"><div class="acc-inner"><ol class="q-list">${t.items.map(q => `<li>${esc(q)}</li>`).join('')}</ol></div></div>
+      </div>`);
+    acc.querySelector('.acc-head').addEventListener('click', () => setAccordion(acc, !acc.classList.contains('open')));
+    listWrap.appendChild(acc);
+  });
+  wrap.appendChild(listWrap);
+
+  bar.querySelector('[data-toggle-all]').addEventListener('click', e => {
+    const accs = $$('.accordion', listWrap);
+    const expand = accs.some(a => !a.classList.contains('open'));   // if any closed → expand all
+    accs.forEach(a => setAccordion(a, expand));
+    e.currentTarget.textContent = expand ? 'Collapse all' : 'Expand all';
+  });
+  return wrap;
+}
+function setAccordion(acc, open) {
+  acc.classList.toggle('open', open);
+  acc.querySelector('.acc-head').setAttribute('aria-expanded', String(open));
+}
+
+/* ---- 7g. Thesis tab ("why we'd invest vs what worries us") ---- */
+function renderThesis(c) {
+  const grid = h('<div class="grid gap-5 lg:grid-cols-2 items-start"></div>');
+
+  const left = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico" style="color:${POS};background:${tint(POS, .1)};border-color:${tint(POS, .22)}">${icon('thumbsUp', 'w-4 h-4')}</span>Why we’d invest</div><div class="space-y-3"></div></div>`);
+  const lb = left.querySelector('.space-y-3');
+  (c.thesis || []).forEach(t => lb.appendChild(h(`
+    <div class="reason-card pos">
+      <div class="reason-point">${esc(t.point)}</div>
+      <div class="reason-detail">${esc(t.detail)}</div>
+    </div>`)));
+
+  const right = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico" style="color:#B45309;background:${tint('#F59E0B', .13)};border-color:${tint('#F59E0B', .28)}">${icon('alert', 'w-4 h-4')}</span>What worries us</div><div class="space-y-3"></div></div>`);
+  const rb = right.querySelector('.space-y-3');
+  (c.concerns || []).forEach(t => rb.appendChild(h(`
+    <div class="reason-card neg">
+      <div class="reason-point">${esc(t.issue)}</div>
+      <div class="reason-detail">${esc(t.detail)}</div>
+      <div class="reason-mit"><span class="mit-label">Mitigant</span>${esc(t.mitigant)}</div>
+    </div>`)));
+
+  grid.appendChild(left);
+  grid.appendChild(right);
+  return grid;
+}
+
+/* ---- 7h. Returns tab (plain-language "what could we make?") ---- */
+const RETURN_SLIDERS = [
+  { key: 'entryX',    label: 'What we pay — entry price (× profit)',    min: 4, max: 25, step: 1, suffix: '×'   },
+  { key: 'growthPct', label: 'How fast profit grows (% per year)',      min: 0, max: 60, step: 1, suffix: '%'   },
+  { key: 'exitX',     label: 'What we sell for — exit price (× profit)', min: 4, max: 25, step: 1, suffix: '×'  },
+  { key: 'years',     label: 'Years we hold',                           min: 2, max: 8,  step: 1, suffix: ' yrs' },
+];
+
+// Pure calculation (plain JS, per the spec).
+function computeReturns(c, v) {
+  const { investmentCr, startEbitdaCr } = c.returns;
+  const entryValue = v.entryX * startEbitdaCr;
+  const stake = Math.min(1, investmentCr / entryValue);
+  const exitProfit = startEbitdaCr * Math.pow(1 + v.growthPct / 100, v.years);
+  const exitValue = v.exitX * exitProfit;
+  const proceeds = stake * exitValue;
+  const moneyBack = proceeds / investmentCr;
+  const yearlyReturn = (Math.pow(Math.max(moneyBack, 0), 1 / v.years) - 1) * 100;
+  return { proceeds, moneyBack, yearlyReturn };
+}
+function readReturns(root) {
+  const g = k => Number(root.querySelector(`[data-slider="${k}"]`).value);
+  return { entryX: g('entryX'), growthPct: g('growthPct'), exitX: g('exitX'), years: g('years') };
+}
+
+function renderReturns(c) {
+  const r = c.returns, d = r.defaults;
+  const wrap = h('<div class="space-y-5"></div>');
+
+  wrap.appendChild(h(`<div class="text-[13px] text-ink-muted">Investment: <b class="text-ink font-semibold tnum">${fmtCr(r.investmentCr)}</b> · Starting yearly profit (EBITDA): <b class="text-ink font-semibold tnum">${fmtCr(r.startEbitdaCr)}</b> (${esc(r.startYear)})</div>`));
+
+  // Two big answers.
+  wrap.appendChild(h(`
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="result-card">
+        <div class="result-kick">Money back</div>
+        <div class="result-num tnum" data-out="moneyBack">—</div>
+        <div class="result-sub">on ${fmtCr(r.investmentCr)} invested</div>
+      </div>
+      <div class="result-card">
+        <div class="result-kick">Yearly return</div>
+        <div class="result-num tnum" data-out="yearly">—</div>
+        <div class="result-sub">compounded, per year</div>
+      </div>
+    </div>`));
+
+  // Sliders + supporting chart.
+  const grid = h('<div class="grid gap-5 lg:grid-cols-2 items-start"></div>');
+  const sliders = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico">${icon('sliders', 'w-4 h-4')}</span>Your assumptions</div></div>`);
+  RETURN_SLIDERS.forEach(s => sliders.appendChild(h(`
+    <div class="slider-row">
+      <div class="slider-head">
+        <span class="slider-label">${esc(s.label)}</span>
+        <span class="slider-val tnum" data-val="${s.key}">${d[s.key]}${esc(s.suffix)}</span>
+      </div>
+      <input type="range" class="range" data-slider="${s.key}" data-suffix="${esc(s.suffix)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${d[s.key]}" aria-label="${esc(s.label)}">
+    </div>`)));
+  grid.appendChild(sliders);
+
+  const chart = h(`
+    <div class="surface-card p-5">
+      <div class="section-title"><span class="sec-ico">${icon('coins', 'w-4 h-4')}</span>Invested vs. potential return</div>
+      <div class="text-[12.5px] text-ink-muted mb-2" data-out="chartCap">—</div>
+      <div class="chart-box" style="height:200px"><canvas data-chart="returns"></canvas></div>
+    </div>`);
+  grid.appendChild(chart);
+  wrap.appendChild(grid);
+
+  wrap.appendChild(h('<p class="text-[12px] text-ink-hint">Quick estimate — move the sliders to test assumptions. Not a full valuation.</p>'));
+
+  wrap.querySelectorAll('[data-slider]').forEach(inp => inp.addEventListener('input', () => recomputeReturns(c, wrap)));
+  requestAnimationFrame(() => recomputeReturns(c, wrap));   // set numbers (chart syncs once built)
+  return wrap;
+}
+
+function recomputeReturns(c, root) {
+  const v = readReturns(root);
+  root.querySelectorAll('[data-slider]').forEach(inp => {
+    const lab = root.querySelector(`[data-val="${inp.dataset.slider}"]`);
+    if (lab) lab.textContent = inp.value + inp.dataset.suffix;
+  });
+  const out = computeReturns(c, v);
+
+  root.querySelector('[data-out="moneyBack"]').textContent = out.moneyBack.toFixed(1) + '×';
+  const yInt = Math.round(out.yearlyReturn);
+  const yEl = root.querySelector('[data-out="yearly"]');
+  yEl.textContent = yInt + '%';
+  yEl.style.color = yInt >= 20 ? POS : yInt >= 10 ? '#B45309' : '#E11D48';
+
+  const cap = root.querySelector('[data-out="chartCap"]');
+  if (cap) cap.innerHTML = `Invested <b class="text-ink tnum">${fmtCr(c.returns.investmentCr)}</b> → could return <b class="text-ink tnum">${fmtCr(Math.round(out.proceeds))}</b>`;
+
+  if (_returnsChart) {
+    _returnsChart.data.datasets[0].data = [c.returns.investmentCr, Math.round(out.proceeds)];
+    _returnsChart.data.datasets[0].backgroundColor = [BRAND.navy, out.moneyBack >= 1 ? POS : NEG];
+    _returnsChart.update();
+  }
+}
+
 /* -----------------------------------------------------------------------------
  * 8. Charts (Chart.js) — sparklines (shape-scaled) + full charts (zero-based)
  * ---------------------------------------------------------------------------*/
 let _charts = []; // every live Chart instance; destroyed on any re-render
-function destroyCharts() { _charts.forEach(ch => ch.destroy()); _charts = []; }
+let _returnsChart = null; // the Returns-tab bar chart (updated live as sliders move)
+function destroyCharts() { _charts.forEach(ch => ch.destroy()); _charts = []; _returnsChart = null; }
 
 /* Pipeline sparklines */
 function initSparklines() {
@@ -999,9 +1312,36 @@ function initPanelCharts(c) {
       case 'margins':   ch = buildMargins(cv, c);        break;
       case 'revmix':    ch = buildRevMix(cv, c);         break;
       case 'cashDebt':  ch = buildCashDebt(cv, c);       break;
+      case 'returns':   ch = buildReturnsChart(cv, c);   break;
     }
     if (ch) _charts.push(ch);
   });
+}
+
+// Returns tab: two bars (Invested vs. potential return). Zero-based; live-updated
+// by recomputeReturns() as the sliders move. Reads current slider values if the
+// panel is present, else the company's defaults.
+function buildReturnsChart(canvas, c) {
+  const panel = $('#tab-panel');
+  const v = (panel && panel.querySelector('[data-slider]')) ? readReturns(panel) : c.returns.defaults;
+  const out = computeReturns(c, v);
+  const opts = cartesianBase(false);
+  opts.plugins.legend = { display: false };
+  opts.plugins.tooltip = {
+    backgroundColor: '#111827', padding: 9, cornerRadius: 8, displayColors: false,
+    bodyColor: '#fff', bodyFont: { family: 'Sora', size: 13, weight: '600' },
+    callbacks: { title: items => items[0].label, label: ctx => ` ₹${fmtNum(ctx.parsed.y)} cr` },
+  };
+  _returnsChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: { labels: ['Invested', 'Could return'], datasets: [{
+      data: [c.returns.investmentCr, Math.round(out.proceeds)],
+      backgroundColor: [BRAND.navy, out.moneyBack >= 1 ? POS : NEG],
+      borderRadius: 6, borderSkipped: false, maxBarThickness: 84,
+    }]},
+    options: opts,
+  });
+  return _returnsChart;
 }
 
 // Shared cartesian options — legend + hover tooltip, clean axes, ZERO-BASED y.
