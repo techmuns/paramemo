@@ -1,0 +1,50 @@
+{
+  "meta": { "firm": "Paragon Partners", "product": "Screening Memo", "note": "Read before the Monday pipeline meeting" },
+  "companies": [
+    {
+      "id": "kusumgar",
+      "name": "Kusumgar Limited",
+      "shortName": "Kusumgar",
+      "monogram": "KG",
+      "project": "Project Wave",
+      "sector": "Technical Textiles",
+      "sectorTag": "Manufacturing",
+      "oneLiner": "Since 1970 — niche technical-fabric maker for parachutes, defence gear and industrial use; about half its sales are exports, with healthy ~25% margins.",
+      "origination": { "date": "2025-05-24", "banker": "Motilal Oswal" },
+      "transaction": { "headline": "Up to ₹200 cr — primary + secondary", "amountCr": 200, "type": "Primary + Secondary", "coInvestment": "TBD" },
+      "fit": { "verdict": "go", "reason": "Profitable with ~25% margins, a 44% five-year revenue growth rate, and diversified customers." },
+      "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25","FY26E","FY27E"], "values": [192,224,302,483,798,903,1319], "actualsThrough": "FY25" },
+      "headline": { "revenueLabel": "FY25 revenue", "revenueCr": 798, "ebitdaPct": 25, "patPositive": true }
+    },
+    {
+      "id": "attero",
+      "name": "Attero Recycling Private Limited",
+      "shortName": "Attero",
+      "monogram": "AT",
+      "project": "Project All Spark",
+      "sector": "Recycling — E-waste & Batteries",
+      "sectorTag": "Recycling",
+      "oneLiner": "India's largest e-waste recycler (since 2008) — recovers metals from old electronics and lithium-ion batteries, and sells recycling credits to big brands like LG, HP and Sony.",
+      "origination": { "date": "2025-03-07", "banker": "Axis Capital" },
+      "transaction": { "headline": "Up to ₹425 cr — pre-IPO (primary)", "amountCr": 425, "type": "Primary (pre-IPO)", "coInvestment": "TBD" },
+      "fit": { "verdict": "watch", "reason": "Clear category leader growing fast, but margins are thin and free cash flow stays negative until FY28." },
+      "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25E","FY26E","FY27E"], "values": [214,289,446,1014,1801,3010,4614], "actualsThrough": "FY24" },
+      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 1014, "ebitdaPct": 9, "patPositive": true }
+    },
+    {
+      "id": "style-union",
+      "name": "Nexon Omniverse Limited (Style Union)",
+      "shortName": "Style Union",
+      "monogram": "SU",
+      "project": "Project Nexon",
+      "sector": "Value Fashion Retail",
+      "sectorTag": "Consumer",
+      "oneLiner": "Fast-fashion value retailer (100+ stores across South India) with a no-discount model and higher-than-peer margins; led by ex-Future Group veterans.",
+      "origination": { "date": "2024-02-28", "banker": "Metta Capital" },
+      "transaction": { "headline": "Up to ₹400 cr — primary growth capital", "amountCr": 400, "type": "Primary (growth)", "coInvestment": "TBD" },
+      "fit": { "verdict": "watch", "reason": "Explosive growth, but still loss-making and the promoter's governance history needs a closer look." },
+      "revenueSpark": { "unit": "₹ cr", "years": ["FY22","FY23","FY24","FY25E","FY26E","FY27E","FY28E"], "values": [37,182,345,570,1038,1793,2925], "actualsThrough": "FY24" },
+      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 345, "ebitdaPct": 1, "patPositive": false }
+    }
+  ]
+}

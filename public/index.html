@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Paragon Partners · Screening Memo</title>
+  <meta name="description" content="Deal pipeline screening memos for Paragon Partners — read before Monday's meeting." />
+  <!-- Inline favicon: navy tile + gold "P" monogram (no extra request, avoids /favicon.ico 404) -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230C3078'/%3E%3Ctext x='16' y='22' font-family='Sora,Arial,sans-serif' font-size='18' font-weight='700' fill='%23fff' text-anchor='middle'%3EP%3C/text%3E%3Crect x='9' y='24' width='14' height='2' rx='1' fill='%23B4924C'/%3E%3C/svg%3E" />
+
+  <!-- Fonts: Inter (body) + Sora (headings / numbers), with a proper fallback stack -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind (CDN, no build step) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Paragon design tokens exposed as Tailwind utilities (bg-navy, text-gold, …).
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy:    { DEFAULT: '#0C3078', dark: '#0a2660' },
+            gold:    '#B4924C',
+            ink:     { DEFAULT: '#111827', muted: '#6B7280', hint: '#9CA3AF' },
+            surface: '#F7F8FB',
+            go:      '#10B981',
+            watch:   '#F59E0B',
+            pass:    '#E11D48',
+          },
+          fontFamily: {
+            sans:    ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            display: ['Sora', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Charts: Chart.js v4 (tooltips + legends work out of the box) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!--
+    Design system / component styles.
+    Layout is done with Tailwind utility classes in markup; reusable "components"
+    (cards, pills, table, tooltip, toast, modal) live here as plain CSS so the
+    look is standardised in one place and easy to extend in later phases.
+  -->
+  <style>
+    :root {
+      --navy: #0C3078;  --navy-d: #0a2660;  --gold: #B4924C;
+      --ink: #111827;   --muted: #6B7280;   --hint: #9CA3AF;
+      --surface: #F7F8FB; --card: #FFFFFF;  --border: #E7EAF1;
+      --border-strong: #DDE2EC;
+
+      /* one standardised radius + shadow scale */
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px;
+      --shadow-sm: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+      --shadow-md: 0 4px 12px -2px rgba(16,24,40,.08), 0 2px 6px -2px rgba(16,24,40,.06);
+      --shadow-lg: 0 20px 44px -14px rgba(12,48,120,.24), 0 8px 18px -10px rgba(16,24,40,.12);
+      --ring-navy: 0 0 0 3px rgba(12,48,120,.14);
+    }
+
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--surface);
+      /* subtle navy-tinted ambience so the surface isn't sterile */
+      background-image:
+        radial-gradient(1100px 460px at 92% -8%, rgba(12,48,120,.06), transparent 60%),
+        radial-gradient(900px 420px at 2% 0%, rgba(180,146,76,.06), transparent 55%);
+      background-attachment: fixed;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    /* Tabular numerals everywhere numbers must align into columns */
+    .tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+    .font-display { font-family: 'Sora', 'Inter', sans-serif; }
+
+    /* ---- Header ---------------------------------------------------------- */
+    .app-header {
+      background: linear-gradient(100deg, var(--navy) 0%, var(--navy-d) 62%, #081f52 100%);
+      box-shadow: 0 1px 0 rgba(255,255,255,.06) inset, var(--shadow-md);
+    }
+    .monogram {
+      width: 40px; height: 40px; border-radius: 11px;
+      display: grid; place-items: center;
+      font-family: 'Sora', sans-serif; font-weight: 700; font-size: 18px;
+      color: #fff;
+      background: linear-gradient(150deg, #123a8c, #0a2660);
+      border: 1px solid rgba(180,146,76,.55);
+      box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 3px rgba(180,146,76,.12);
+      position: relative; letter-spacing: .5px;
+    }
+    .monogram::after { /* thin gold underline accent */
+      content: ''; position: absolute; left: 9px; right: 9px; bottom: 6px; height: 2px;
+      background: var(--gold); border-radius: 2px; opacity: .85;
+    }
+    .eyebrow {
+      font-family: 'Sora', sans-serif; font-weight: 600; font-size: 10.5px;
+      letter-spacing: .18em; color: var(--gold); text-transform: uppercase;
+    }
+    .product-title {
+      font-family: 'Sora', sans-serif; font-weight: 600; font-size: 17px;
+      color: #fff; line-height: 1.15;
+    }
+    .hdr-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 38px; padding: 0 12px; border-radius: 10px;
+      font-size: 13.5px; font-weight: 500; color: #EAF0FF;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.16);
+      transition: background .16s, border-color .16s, transform .16s;
+      white-space: nowrap;
+    }
+    .hdr-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
+    .hdr-btn:active { transform: translateY(1px); }
+    .hdr-btn[disabled], .hdr-btn.is-disabled { opacity: .5; cursor: not-allowed; }
+    .hdr-btn.is-disabled:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); }
+
+    /* ---- Dropdown menu --------------------------------------------------- */
+    .dd-menu {
+      position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+      width: 320px; max-width: min(320px, 86vw);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; box-shadow: var(--shadow-lg);
+      padding: 6px; transform-origin: top right;
+      animation: pop .14s ease-out;
+    }
+    @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+    .dd-item {
+      display: flex; align-items: center; gap: 12px; width: 100%;
+      padding: 9px 10px; border-radius: 10px; text-align: left;
+      transition: background .14s;
+    }
+    .dd-item:hover { background: #F2F5FB; }
+    .dd-head { padding: 8px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; color: var(--hint); text-transform: uppercase; }
+
+    /* ---- Segmented (Cards / Table) toggle -------------------------------- */
+    .seg { display: inline-flex; gap: 3px; padding: 4px; background: #EEF1F7; border: 1px solid var(--border); border-radius: 999px; }
+    .seg-btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 15px; border-radius: 999px; font-size: 13.5px; font-weight: 600;
+      color: var(--muted); transition: color .16s, background .16s, box-shadow .16s;
+    }
+    .seg-btn:hover { color: var(--ink); }
+    .seg-btn.is-active { color: #fff; background: var(--navy); box-shadow: var(--shadow-sm); }
+
+    /* ---- Generic surface / chips / labels -------------------------------- */
+    .surface-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+    .kicker { font-size: 10.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--hint); }
+    .count-chip {
+      display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px;
+      border-radius: 999px; font-family: 'Sora', sans-serif; font-weight: 600; font-size: 13px;
+      color: var(--navy); background: rgba(12,48,120,.08); border: 1px solid rgba(12,48,120,.12);
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+      padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chip .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+
+    /* ---- Fit light pill -------------------------------------------------- */
+    .fit-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 4px 11px 4px 9px; border-radius: 999px;
+      font-size: 12.5px; font-weight: 700; line-height: 1.2; white-space: nowrap;
+      cursor: default;
+    }
+    .fit-pill .fit-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 0 3px rgba(255,255,255,.5); }
+    .fit-pill .fit-dot.pulse { animation: fitpulse 2.2s ease-in-out infinite; }
+    @keyframes fitpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,.0); } 50% { box-shadow: 0 0 0 4px rgba(16,185,129,.18); } }
+
+    /* ---- Deal card ------------------------------------------------------- */
+    .deal-card {
+      position: relative; display: flex; flex-direction: column;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+      padding: 18px; box-shadow: var(--shadow-sm); cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+      overflow: hidden;
+    }
+    .deal-card::before { /* top accent bar, tinted by sector; revealed on hover */
+      content: ''; position: absolute; inset: 0 0 auto 0; height: 3px;
+      background: var(--accent, var(--navy)); opacity: 0; transition: opacity .18s;
+    }
+    .deal-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--border-strong); }
+    .deal-card:hover::before { opacity: .9; }
+    .deal-card:focus-visible { outline: none; box-shadow: var(--ring-navy), var(--shadow-md); }
+
+    .monogram-badge {
+      width: 46px; height: 46px; border-radius: 13px; flex: 0 0 auto;
+      display: grid; place-items: center;
+      font-family: 'Sora', sans-serif; font-weight: 700; font-size: 16px; letter-spacing: .3px;
+      color: #fff; background: linear-gradient(150deg, #16419b, #0a2660);
+      box-shadow: inset 0 0 0 1px rgba(180,146,76,.4), 0 3px 8px rgba(12,48,120,.22);
+    }
+    .card-title { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 16px; color: var(--ink); line-height: 1.2; }
+    .card-sub   { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .card-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border) 12%, var(--border) 88%, transparent); margin: 15px 0; }
+    .deal-amount { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 17px; color: var(--ink); line-height: 1.15; margin-top: 3px; }
+    .deal-type  { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .meta-line  { font-size: 12.5px; color: var(--ink); font-weight: 500; }
+    .meta-sub   { font-size: 11.5px; color: var(--hint); margin-top: 1px; }
+
+    .spark-wrap { position: relative; height: 58px; width: 100%; }
+    .spark-cap  { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; font-size: 11.5px; color: var(--muted); }
+    .spark-cap b { color: var(--ink); font-family: 'Sora', sans-serif; font-weight: 600; }
+    .spark-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--hint); }
+    .legend-line { width: 14px; height: 0; border-top: 2px solid var(--navy); }
+    .legend-line.dash { border-top-style: dashed; }
+
+    /* ---- Add-a-deal affordance ------------------------------------------ */
+    .add-card {
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+      min-height: 220px; padding: 20px; text-align: center;
+      background: rgba(12,48,120,.02); border: 1.5px dashed var(--border-strong); border-radius: var(--r-lg);
+      color: var(--muted); transition: border-color .18s, background .18s, transform .18s, color .18s;
+    }
+    .add-card:hover { border-color: var(--navy); background: rgba(12,48,120,.05); color: var(--navy); transform: translateY(-2px); }
+    .add-card .plus { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: rgba(12,48,120,.08); color: var(--navy); transition: background .18s; }
+    .add-card:hover .plus { background: var(--navy); color: #fff; }
+    .add-btn-row {
+      display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+      padding: 16px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
+      background: rgba(12,48,120,.02); color: var(--navy); font-weight: 600; font-size: 14px;
+      transition: border-color .18s, background .18s;
+    }
+    .add-btn-row:hover { border-color: var(--navy); background: rgba(12,48,120,.05); }
+
+    /* ---- Table ----------------------------------------------------------- */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--r-lg); }
+    table.deal-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 720px; }
+    .deal-table thead th {
+      position: sticky; top: 0; z-index: 1;
+      background: #F4F6FB; border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+      padding: 12px 16px; text-align: left; white-space: nowrap; cursor: pointer; user-select: none;
+      transition: color .14s, background .14s;
+    }
+    .deal-table thead th:hover { color: var(--navy); background: #EEF2FA; }
+    .deal-table thead th.num { text-align: right; }
+    .deal-table thead th .th-inner { display: inline-flex; align-items: center; gap: 6px; }
+    .deal-table thead th.num .th-inner { flex-direction: row-reverse; }
+    .sort-ico { color: var(--hint); opacity: .6; transition: opacity .14s, color .14s, transform .14s; }
+    .deal-table thead th.is-sorted .sort-ico { color: var(--navy); opacity: 1; }
+    .deal-table tbody td { padding: 13px 16px; border-bottom: 1px solid #EEF1F6; vertical-align: middle; font-size: 13.5px; }
+    .deal-table tbody tr { cursor: pointer; transition: background .13s; }
+    .deal-table tbody tr:hover { background: #F5F8FE; }
+    .deal-table tbody tr:last-child td { border-bottom: none; }
+    .deal-table td.num { text-align: right; }
+    .row-name { display: block; font-weight: 600; color: var(--ink); }
+    .row-sub  { display: block; font-size: 11.5px; color: var(--hint); margin-top: 1px; }
+    .monogram-mini {
+      width: 34px; height: 34px; border-radius: 9px; flex: 0 0 auto; display: grid; place-items: center;
+      font-family: 'Sora', sans-serif; font-weight: 700; font-size: 12px; color: #fff;
+      background: linear-gradient(150deg, #16419b, #0a2660); box-shadow: inset 0 0 0 1px rgba(180,146,76,.35);
+    }
+
+    /* ---- Floating tooltip (never clipped by containers) ------------------ */
+    .tipbox {
+      position: fixed; z-index: 100; max-width: 260px; pointer-events: none;
+      background: #111827; color: #fff; font-size: 12px; line-height: 1.45; font-weight: 500;
+      padding: 8px 10px; border-radius: 9px; box-shadow: 0 10px 30px rgba(0,0,0,.24);
+      opacity: 0; transform: translateY(3px); transition: opacity .14s, transform .14s;
+    }
+    .tipbox.show { opacity: 1; transform: none; }
+    .tipbox::after {
+      content: ''; position: absolute; left: var(--arrow, 50%); margin-left: -5px; border: 5px solid transparent; border-top-color: #111827;
+    }
+    .tipbox[data-place="above"]::after { top: 100%; }
+    .tipbox[data-place="below"]::after { bottom: 100%; border-top-color: transparent; border-bottom-color: #111827; }
+
+    /* ---- Toast ----------------------------------------------------------- */
+    #toast-root { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90; display: flex; flex-direction: column; gap: 10px; align-items: center; pointer-events: none; }
+    .toast {
+      display: inline-flex; align-items: center; gap: 10px; pointer-events: auto;
+      background: #0F1B33; color: #fff; padding: 11px 16px; border-radius: 12px;
+      font-size: 13.5px; font-weight: 500; box-shadow: var(--shadow-lg);
+      border: 1px solid rgba(255,255,255,.08);
+      opacity: 0; transform: translateY(12px) scale(.98); transition: opacity .22s, transform .22s;
+      max-width: 92vw;
+    }
+    .toast.show { opacity: 1; transform: none; }
+
+    /* ---- Modal ----------------------------------------------------------- */
+    .modal-overlay {
+      position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px;
+      background: rgba(9,18,42,.55); backdrop-filter: blur(3px);
+      opacity: 0; transition: opacity .18s;
+    }
+    .modal-overlay.show { opacity: 1; }
+    .modal {
+      width: 100%; max-width: 520px; background: var(--card); border-radius: var(--r-xl);
+      box-shadow: var(--shadow-lg); border: 1px solid var(--border); overflow: hidden;
+      transform: translateY(10px) scale(.98); transition: transform .2s;
+    }
+    .modal-overlay.show .modal { transform: none; }
+    .dropzone {
+      display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+      padding: 30px 20px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
+      background: #FAFBFE; color: var(--muted); cursor: not-allowed;
+    }
+    .file-chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #F2F5FB; border: 1px solid var(--border); font-size: 12.5px; font-weight: 500; color: var(--ink); }
+
+    /* ---- Skeleton / shimmer --------------------------------------------- */
+    .sk { position: relative; overflow: hidden; background: #EEF1F6; border-radius: 8px; }
+    .sk::after {
+      content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.7), transparent);
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer { 100% { transform: translateX(100%); } }
+
+    /* Respect reduced-motion preferences */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <!-- ============================ HEADER ============================ -->
+  <header class="app-header sticky top-0 z-40">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6">
+      <div class="h-16 flex items-center justify-between gap-4">
+        <!-- Brand: gold-accented PARAGON monogram + product title -->
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="monogram" aria-hidden="true">P</div>
+          <div class="min-w-0 leading-tight">
+            <div class="eyebrow">Paragon Partners</div>
+            <div class="product-title">Screening Memo</div>
+          </div>
+        </div>
+
+        <!-- Controls: company picker + export -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          <div id="company-dd" class="relative">
+            <button id="company-dd-btn" class="hdr-btn" type="button" aria-haspopup="true" aria-expanded="false">
+              <span id="company-dd-ico" class="text-gold/90 flex"></span>
+              <span class="hidden sm:inline">Open a company</span>
+              <span class="sm:hidden">Company</span>
+              <span id="company-dd-chev" class="flex transition-transform"></span>
+            </button>
+            <div id="company-dd-menu" class="dd-menu hidden" role="menu" aria-label="Companies"></div>
+          </div>
+
+          <button id="export-btn" class="hdr-btn is-disabled" type="button"
+                  data-tip="PDF export is coming in a later phase" aria-disabled="true">
+            <span id="export-ico" class="flex"></span>
+            <span class="hidden sm:inline">Export PDF</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================ MAIN ============================ -->
+  <main class="mx-auto max-w-7xl px-4 sm:px-6 py-7 sm:py-8">
+    <div id="pipeline"><!-- rendered by app.js --></div>
+  </main>
+
+  <!-- roots for transient UI -->
+  <div id="toast-root" aria-live="polite"></div>
+  <div id="modal-root"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
