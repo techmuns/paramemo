@@ -209,30 +209,74 @@ const ui = {
   fin: { forecast: true, view: 'table' }, // financials tab: show forecast? · Table|Charts
 };
 
-// Resolve the data file relative to THIS script's own URL (captured while
-// document.currentScript is still valid). app.js has already loaded, so its URL
-// is a known-good anchor — this makes the fetch robust whether the app is served
-// from the domain root, a sub-path, or a preview host, not just "/".
+// Anchor data + API URLs to THIS script's own URL (captured while
+// document.currentScript is valid). app.js has already loaded, so its URL is a
+// known-good anchor — robust whether served from root, a sub-path, or a preview.
+const SCRIPT_URL = document.currentScript && document.currentScript.src;
 const DATA_URL = (() => {
-  const src = document.currentScript && document.currentScript.src;
-  try { return src ? new URL('../data/companies.json', src).href : 'data/companies.json'; }
+  try { return SCRIPT_URL ? new URL('../data/companies.json', SCRIPT_URL).href : 'data/companies.json'; }
   catch (_) { return 'data/companies.json'; }
 })();
+const API_BASE = (() => {
+  try { return SCRIPT_URL ? new URL('../api/', SCRIPT_URL).href : 'api/'; }
+  catch (_) { return 'api/'; }
+})();
+const apiUrl = p => { try { return new URL(p, API_BASE).href; } catch (_) { return 'api/' + p; } };
+
+// CDN libraries for the upload flow, lazy-loaded on first use (see ensureUploadLibs).
+const PDFJS_SRC    = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+const XLSX_SRC     = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
 async function loadCompanies() {
-  // Try the script-anchored URL first, then a plain document-relative path.
-  const tried = [];
-  let status = 0;
+  // Seed data (script-anchored URL first, then a plain document-relative path).
+  let seed = null, status = 0;
   for (const url of [DATA_URL, 'data/companies.json']) {
-    if (tried.includes(url)) continue;
-    tried.push(url);
     try {
       const res = await fetch(url, { cache: 'no-cache' });
-      if (res.ok) return res.json();
+      if (res.ok) { seed = await res.json(); break; }
       status = res.status;
-    } catch (_) { /* network error — try the next candidate */ }
+    } catch (_) { /* try next candidate */ }
   }
-  throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
+  if (!seed) throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
+
+  // Uploaded deals from the Worker's KV (may be [] or unavailable on a static-only host).
+  let uploaded = [];
+  try {
+    const res = await fetch(apiUrl('companies'), { cache: 'no-cache' });
+    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; }
+  } catch (_) { /* no API (static preview) — seeds only */ }
+
+  const seeds = Array.isArray(seed.companies) ? seed.companies : [];
+  const seedIds = new Set(seeds.map(c => c.id));
+  return { meta: seed.meta || null, companies: [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))] };
+}
+
+// Add or replace a company in local state + the dropdown (used after an upload).
+function addCompany(company) {
+  if (!company || !company.id) return;
+  state.companies = state.companies.filter(c => c.id !== company.id);
+  state.companies.push(company);
+  populateCompanyDropdown();
+}
+
+/* ---- Lazy-load pdf.js + SheetJS the first time a partner uploads ---- */
+let _libsPromise = null;
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if ([...document.scripts].some(s => s.src === src)) return resolve();
+    const el = document.createElement('script');
+    el.src = src; el.onload = () => resolve(); el.onerror = () => reject(new Error('Failed to load ' + src));
+    document.head.appendChild(el);
+  });
+}
+function ensureUploadLibs() {
+  if (!_libsPromise) {
+    _libsPromise = Promise.all([loadScript(PDFJS_SRC), loadScript(XLSX_SRC)])
+      .then(() => { if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; })
+      .catch(err => { _libsPromise = null; throw err; });   // let a retry re-attempt
+  }
+  return _libsPromise;
 }
 
 const companyById = id => state.companies.find(c => c.id === id);
@@ -331,8 +375,139 @@ function initHeader() {
   brand.addEventListener('click', goHome);
   brand.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 
-  // Export button is a placeholder through these phases (tooltip explains).
-  $('#export-btn').addEventListener('click', () => toast('PDF export arrives in a later phase'));
+  // Export the currently-open company's memo as a print-optimised 2-page PDF.
+  const exportBtn = $('#export-btn');
+  exportBtn.classList.remove('is-disabled');
+  exportBtn.removeAttribute('data-tip');
+  exportBtn.removeAttribute('aria-disabled');
+  exportBtn.addEventListener('click', exportPdf);
+}
+
+// Build the print memo for the open company and open the browser's print dialog.
+function exportPdf() {
+  const c = companyById(ui.companyId);
+  if (!c) { toast('Open a company first, then export its memo'); return; }
+  const root = $('#print-root');
+  root.innerHTML = renderPrintMemo(c);
+  window.print();
+}
+
+/* -----------------------------------------------------------------------------
+ * PDF export — a print-optimised 2-page screening memo (no PDF library).
+ * Reads the same company object; the whole layout lives in #print-root and is
+ * only visible under @media print (see index.html print CSS).
+ * ---------------------------------------------------------------------------*/
+function renderPrintMemo(c) {
+  const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
+  const s = c.snapshot || {};
+  const t = c.transaction || {}, o = c.origination || {};
+  const fy = (c.headline && c.headline.revenueLabel || '').split(' ')[0];
+
+  const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
+  const dealFacts = [
+    ['Sector', c.sector], ['Ask', t.headline], ['Type', t.type],
+    ['Co-investment', t.coInvestment || '—'], ['Banker', o.banker], ['Origination', fmtDate(o.date)],
+  ].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v == null ? '—' : v)}</td></tr>`).join('');
+
+  return `
+    <div class="pm">
+      <div class="pm-cover">
+        <div class="pm-eyebrow">Paragon Partners · Screening Memo</div>
+        <div class="pm-title-row">
+          <div class="pm-mono">${esc(c.monogram || initials(c.shortName || c.name))}</div>
+          <div>
+            <h1>${esc(c.name)}</h1>
+            <div class="pm-titlesub">${esc(c.project)} · ${esc(c.sector)}</div>
+          </div>
+          <div class="pm-fit pm-fit-${esc(c.fit ? c.fit.verdict : 'watch')}">● ${fit.label}</div>
+        </div>
+        <div class="pm-facts">
+          <span><b>Deal</b>${esc(dealHeadline(c))}</span>
+          <span><b>Banker</b>${esc(o.banker)} · ${esc(fmtDate(o.date))}</span>
+          <span><b>Latest revenue</b>${esc(fmtCr(c.headline.revenueCr))}${fy ? ' (' + esc(fy) + ')' : ''}</span>
+        </div>
+        <p class="pm-reason"><b>Fit — ${fit.label}:</b> ${esc(c.fit ? c.fit.reason : '')}</p>
+      </div>
+
+      <div class="pm-section">
+        <h2>What they do</h2>
+        <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
+        ${bullets ? `<ul class="pm-bullets">${bullets}</ul>` : ''}
+      </div>
+
+      <div class="pm-section">
+        <h2>The deal</h2>
+        <table class="pm-facts-tbl" style="width:100%;border-collapse:collapse">${dealFacts}</table>
+      </div>
+
+      <div class="pm-section">
+        <h2>Financials (₹ crore)</h2>
+        ${printFinTable(c)}
+      </div>
+
+      <div class="pm-section">
+        <h2>Fit checklist</h2>
+        ${printChecklist(c)}
+      </div>
+
+      <div class="pm-section">
+        <h2>Integrity checks</h2>
+        ${printIntegrity(c)}
+      </div>
+
+      <div class="pm-cols">
+        <div class="pm-section" style="margin-top:0">
+          <h2>Why we’d invest</h2>
+          ${(c.thesis || []).map(x => `<div class="pm-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('')}
+        </div>
+        <div class="pm-section" style="margin-top:0">
+          <h2>What worries us</h2>
+          ${(c.concerns || []).map(x => `<div class="pm-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('')}
+        </div>
+      </div>
+
+      <div class="pm-foot">Paragon Partners · Screening Memo · Confidential — prepared for the Monday pipeline meeting</div>
+    </div>`;
+}
+
+// Compact financials table for print: all years, forecast columns tinted, negatives red.
+function printFinTable(c) {
+  const fin = c.financials;
+  if (!fin || !Array.isArray(fin.years)) return '';
+  const years = fin.years, cut = years.indexOf(fin.actualsThrough) + 1;
+  const defs = FIN_GROUPS.flatMap(g => g.rows).filter(r => Array.isArray(fin.rows[r.key]));
+  const head = '<tr><th></th>' + years.map((y, i) => `<th class="${i >= cut ? 'fc' : ''}">${esc(y)}</th>`).join('') + '</tr>';
+  const body = defs.map(r => {
+    const arr = fin.rows[r.key];
+    const cells = years.map((y, i) => {
+      const v = arr[i], fc = i >= cut ? 'fc' : '';
+      if (v == null) return `<td class="${fc}">—</td>`;
+      const neg = v < 0 ? 'neg' : '';
+      return `<td class="${fc} ${neg}">${r.kind === 'pct' ? v + '%' : fmtNum(v)}</td>`;
+    }).join('');
+    return `<tr><td>${esc(r.label)}</td>${cells}</tr>`;
+  }).join('');
+  return `<table class="pm-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+function printChecklist(c) {
+  const list = c.fitChecklist || [];
+  return ['Business', 'Promoter'].map(g => {
+    const rows = list.filter(x => x.group === g);
+    if (!rows.length) return '';
+    return `<div style="font-family:'Sora',sans-serif;font-weight:700;color:#6B7280;font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;margin:6px 0 2px">${esc(g)}</div>` +
+      rows.map(x => {
+        const st = CHECK_STATUS[x.status] || CHECK_STATUS.tbd;
+        const mk = x.status === 'yes' ? '✓' : x.status === 'no' ? '✗' : '–';
+        return `<div class="pm-check"><span class="mk" style="color:${st.color}">${mk}</span><span>${esc(x.label)}<span class="nt">${esc(x.note)}</span></span></div>`;
+      }).join('');
+  }).join('');
+}
+function printIntegrity(c) {
+  return (c.integrity || []).map(it => {
+    const st = INTEG_STATUS[it.status] || INTEG_STATUS.pending;
+    const mk = it.status === 'clear' ? '✓' : it.status === 'flag' ? '⚠' : '○';
+    return `<div class="pm-check"><span class="mk" style="color:${st.color}">${mk}</span><span><b>${esc(it.area)}</b><span class="nt">${esc(it.finding)}</span></span></div>`;
+  }).join('');
 }
 
 /* -----------------------------------------------------------------------------
@@ -1445,49 +1620,202 @@ function buildDoughnut(canvas, labels, data, legend) {
 /* -----------------------------------------------------------------------------
  * 9. Overlays: add-a-deal modal, skeleton, empty + error states
  * ---------------------------------------------------------------------------*/
+/* ---- File extraction (in-browser) ---- */
+// IM / notes → plain text via pdf.js (capped so payloads stay small).
+async function extractPdfText(file, cap = 80000) {
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+  const n = Math.min(pdf.numPages, 120);
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    pages.push(content.items.map(it => it.str).join(' '));
+    if (pages.join('\n').length > cap) break;
+  }
+  return pages.join('\n').replace(/[ \t]+\n/g, '\n').trim().slice(0, cap);
+}
+// Excel → CSV of the best financial sheet(s) via SheetJS (capped ~40k chars).
+async function parseExcel(file, cap = 40000) {
+  const buf = await file.arrayBuffer();
+  const wb = window.XLSX.read(buf, { type: 'array' });
+  const sheetNames = wb.SheetNames.slice();
+  let chosen = sheetNames.filter(n => /summary|consol|p&l|pnl|income|financial|charts/i.test(n));
+  if (!chosen.length) {                                  // else the largest data sheet
+    let best = null, bestSize = -1;
+    sheetNames.forEach(n => {
+      const ref = wb.Sheets[n] && wb.Sheets[n]['!ref'];
+      const r = ref ? window.XLSX.utils.decode_range(ref) : null;
+      const size = r ? (r.e.r + 1) * (r.e.c + 1) : 0;
+      if (size > bestSize) { bestSize = size; best = n; }
+    });
+    if (best) chosen = [best];
+  }
+  let csv = '';
+  for (const n of chosen) {
+    csv += `# Sheet: ${n}\n` + window.XLSX.utils.sheet_to_csv(wb.Sheets[n]) + '\n\n';
+    if (csv.length > cap) break;
+  }
+  return { excelText: csv.slice(0, cap), sheetNames };
+}
+async function fileToBase64(file) {
+  if (file.size > 8 * 1024 * 1024) return '';            // too big to ship for OCR
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+/* ---- The real "Add a deal" modal: upload → AI → memo ---- */
 function openAddDealModal() {
   const root = $('#modal-root');
+  const sel = { im: null, excel: null, notes: null };   // chosen files
+
   const overlay = h(`
     <div class="modal-overlay" role="dialog" aria-modal="true" aria-label="Add a deal">
       <div class="modal">
         <div class="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-[#EEF1F6]">
           <div>
             <h2 class="font-display text-[18px] font-semibold text-ink">Add a deal</h2>
-            <p class="text-[13px] text-ink-muted mt-0.5">Build a screening memo from a banker's materials.</p>
+            <p class="text-[13px] text-ink-muted mt-0.5">Upload the banker's materials — the memo is built for you.</p>
           </div>
           <button class="modal-close text-ink-hint hover:text-ink transition-colors -mr-1" aria-label="Close">${icon('x', 'w-5 h-5')}</button>
         </div>
-
-        <div class="px-6 py-5">
-          <div class="dropzone" aria-disabled="true">
-            <span class="grid place-items-center w-12 h-12 rounded-full" style="background:${tint(BRAND.navy, .08)};color:${BRAND.navy}">${icon('upload', 'w-6 h-6')}</span>
-            <div class="font-display font-semibold text-[14.5px] text-ink">Upload the IM (PDF) + Excel model here</div>
-            <div class="text-[12.5px]">Automatic reading &amp; memo-building is coming in a later phase.</div>
-            <div class="flex flex-wrap items-center justify-center gap-2 mt-1">
-              <span class="file-chip">${icon('fileText', 'w-4 h-4')} Information Memorandum · PDF</span>
-              <span class="file-chip">${icon('sheet', 'w-4 h-4')} Financial model · Excel</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-2.5 px-6 pb-5">
-          <button class="modal-close hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Close</button>
-          <button class="hdr-btn is-disabled" style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}" aria-disabled="true" data-tip="Coming in a later phase">
-            ${icon('trendingUp', 'w-4 h-4')} Build memo
-          </button>
-        </div>
+        <div class="modal-scroll px-6 py-5" style="max-height:70vh;overflow-y:auto"></div>
       </div>
     </div>`);
+
+  const bodyEl = overlay.querySelector('.modal-scroll');
+
+  // Hidden inputs.
+  const inputs = h(`<div style="display:none">
+    <input type="file" data-file="im" accept="application/pdf,.pdf">
+    <input type="file" data-file="excel" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    <input type="file" data-file="notes" accept="application/pdf,.pdf,.txt,.md,text/plain">
+  </div>`);
+  overlay.appendChild(inputs);
+  const fileInput = k => inputs.querySelector(`[data-file="${k}"]`);
+
+  function dropzone(key, title, sub, required) {
+    const f = sel[key];
+    const label = f ? f.name : sub;
+    return `
+      <button class="uz ${f ? 'has-file' : ''}" type="button" data-uz="${key}">
+        <span class="uz-ico">${icon(f ? 'check' : (key === 'excel' ? 'sheet' : 'fileText'), 'w-4 h-4', f ? 3 : 2)}</span>
+        <span class="uz-body">
+          <span class="uz-title">${esc(title)}${required ? ' <span class="req">*</span>' : ' <span class="text-ink-hint font-normal">(optional)</span>'}</span>
+          <span class="uz-sub">${f ? esc(label) : esc(sub)}</span>
+        </span>
+      </button>`;
+  }
+
+  function renderForm(errMsg) {
+    bodyEl.innerHTML = `
+      ${errMsg ? `<div class="form-err mb-4">${icon('alert', 'w-4 h-4 shrink-0 mt-0.5')}<span>${esc(errMsg)}</span></div>` : ''}
+      <div class="space-y-2.5">
+        ${dropzone('im', 'Information Memorandum · PDF', 'Click to choose the IM (PDF)', true)}
+        ${dropzone('excel', 'Financial model · Excel', 'Click to choose the model (.xlsx)', true)}
+        ${dropzone('notes', 'Banker notes', 'Click to add notes (PDF or text)', false)}
+      </div>
+      <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="field"><label>Company name</label><input data-basic="name" placeholder="e.g. Acme Ltd" autocomplete="off"></div>
+        <div class="field"><label>Sector</label><input data-basic="sector" placeholder="e.g. Consumer" autocomplete="off"></div>
+        <div class="field"><label>Banker</label><input data-basic="banker" placeholder="e.g. Axis Capital" autocomplete="off"></div>
+        <div class="field"><label>Deal ask</label><input data-basic="ask" placeholder="e.g. Up to ₹300 cr" autocomplete="off"></div>
+      </div>
+      <p class="text-[11.5px] text-ink-hint mt-4">Files are read in your browser; only the extracted text is sent to your firm's own AI. The AI fills in every tab — you can review before Monday.</p>
+      <div class="flex items-center justify-end gap-2.5 mt-5">
+        <button class="modal-close hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Close</button>
+        <button class="hdr-btn" data-generate style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">
+          ${icon('trendingUp', 'w-4 h-4')} Generate memo
+        </button>
+      </div>`;
+    bodyEl.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', close));
+    bodyEl.querySelectorAll('[data-uz]').forEach(b => b.addEventListener('click', () => fileInput(b.dataset.uz).click()));
+    bodyEl.querySelector('[data-generate]').addEventListener('click', generate);
+  }
+
+  function renderWorking(activeIdx) {
+    const steps = ['Reading the IM', 'Reading the model', 'Writing the memo'];
+    bodyEl.innerHTML = `
+      <div class="flex flex-col items-center text-center py-6">
+        <div class="spinner mb-4"></div>
+        <div class="font-display font-semibold text-[15px] text-ink">Reading your files…</div>
+        <div class="text-[12.5px] text-ink-muted mt-1">This usually takes about a minute.</div>
+        <div class="mt-5 w-full max-w-[240px] text-left">
+          ${steps.map((s, i) => `
+            <div class="prog-step ${i < activeIdx ? 'done' : i === activeIdx ? 'active' : ''}">
+              <span class="ps-dot">${i < activeIdx ? icon('check', 'w-3 h-3', 3) : `<span class="text-[10px] font-bold">${i + 1}</span>`}</span>${esc(s)}
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  async function generate() {
+    if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
+    if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
+    try {
+      renderWorking(0);
+      await ensureUploadLibs();
+
+      const imText = await extractPdfText(sel.im);
+      let imPdfBase64 = '';
+      if (!imText.trim()) imPdfBase64 = await fileToBase64(sel.im);   // scanned PDF → OCR fallback
+
+      renderWorking(1);
+      const { excelText, sheetNames } = await parseExcel(sel.excel);
+
+      let notesText = '';
+      if (sel.notes) {
+        notesText = /pdf$/i.test(sel.notes.name) || sel.notes.type.includes('pdf')
+          ? await extractPdfText(sel.notes, 20000) : (await sel.notes.text()).slice(0, 20000);
+      }
+
+      renderWorking(2);
+      const basics = { ...captured.basics };   // typed overrides captured before "working" replaced the form
+
+      const res = await fetch(apiUrl('generate'), {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics, imPdfBase64 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `The request failed (${res.status}).`);
+      if (!data.company) throw new Error('The AI did not return a memo. Please try again.');
+
+      addCompany(data.company);
+      toast(`${data.company.shortName || data.company.name} added to the pipeline`);
+      close();
+      openCompany(data.company.id);
+    } catch (err) {
+      console.error(err);
+      renderForm((err && err.message) || 'Something went wrong — please try again.');
+    }
+  }
+
+  // Capture basics before we blow away the form during "working" (so generate can read them).
+  const captured = { basics: {} };
+  overlay.addEventListener('input', e => {
+    const b = e.target.closest('[data-basic]');
+    if (b) { const v = b.value.trim(); if (v) captured.basics[b.dataset.basic] = v; else delete captured.basics[b.dataset.basic]; }
+  });
+
+  // Wire the hidden inputs → store file + re-render the form (keeps basics via captured).
+  ['im', 'excel', 'notes'].forEach(k => fileInput(k).addEventListener('change', e => {
+    sel[k] = e.target.files[0] || null;
+    renderForm();
+    // restore typed basics into the re-rendered inputs
+    Object.entries(captured.basics).forEach(([key, val]) => { const i = bodyEl.querySelector(`[data-basic="${key}"]`); if (i) i.value = val; });
+  }));
 
   const close = () => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey); };
   const onKey = e => { if (e.key === 'Escape') close(); };
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
-  overlay.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', close));
+  overlay.querySelector('.modal-close').addEventListener('click', close);
   document.addEventListener('keydown', onKey);
 
+  renderForm();
   root.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('show'));
-  overlay.querySelector('.modal-close').focus();
 }
 
 // Shimmer placeholders shown while companies.json loads.

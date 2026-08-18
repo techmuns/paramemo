@@ -2,5 +2,21 @@
   "name": "paragon-screening",
   "compatibility_date": "2026-05-23",
   "main": "worker/index.js",
-  "assets": { "directory": "./public", "binding": "ASSETS" }
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  // KV stores uploaded deals so they persist for everyone.
+  // Replace <PASTE_YOUR_KV_NAMESPACE_ID> with the id printed by:
+  //   npx wrangler kv namespace create DEALS
+  "kv_namespaces": [
+    { "binding": "DEALS", "id": "<PASTE_YOUR_KV_NAMESPACE_ID>" }
+  ],
+
+  // Non-secret config. AWS_REGION is your Bedrock region; BEDROCK_MODEL_ID is a
+  // Claude model or (recommended) a cross-region inference-profile id enabled in
+  // your Bedrock account — replace it with one from your Bedrock console.
+  // Secrets (BEDROCK_API_KEY, optional MISTRAL_API_KEY) are NOT set here — see README.
+  "vars": {
+    "AWS_REGION": "us-east-1",
+    "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  }
 }

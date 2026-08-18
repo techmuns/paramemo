@@ -575,6 +575,92 @@
     .range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--navy); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(12,48,120,.4); cursor: pointer; }
     .range::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--navy); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(12,48,120,.4); cursor: pointer; }
 
+    /* ==================================================================== *
+     *  PHASES 6–7 — Upload modal, progress, and the print memo
+     * ==================================================================== */
+
+    /* Upload form */
+    .uz {
+      display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px;
+      border: 1.5px dashed var(--border-strong); border-radius: var(--r-md); background: #FAFBFE;
+      text-align: left; transition: border-color .15s, background .15s;
+    }
+    .uz:hover { border-color: var(--navy); background: rgba(12,48,120,.03); }
+    .uz.has-file { border-style: solid; border-color: var(--border-strong); background: #fff; }
+    .uz .uz-ico { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto; color: var(--navy); background: rgba(12,48,120,.08); }
+    .uz.has-file .uz-ico { color: #fff; background: linear-gradient(150deg,#16419b,#0a2660); }
+    .uz-body { min-width: 0; flex: 1 1 auto; }
+    .uz-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+    .uz-title .req { color: #E11D48; }
+    .uz-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .field label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--hint); margin-bottom: 4px; }
+    .field input {
+      width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px;
+      font-size: 13px; color: var(--ink); background: #fff; transition: border-color .15s, box-shadow .15s;
+    }
+    .field input:focus { outline: none; border-color: var(--navy); box-shadow: var(--ring-navy); }
+    .form-err { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 10px; background: rgba(225,29,72,.07); border: 1px solid rgba(225,29,72,.22); color: #b91c1c; font-size: 12.5px; line-height: 1.45; }
+
+    /* Progress state */
+    .spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid rgba(12,48,120,.14); border-top-color: var(--navy); animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .prog-step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--hint); padding: 6px 0; transition: color .2s; }
+    .prog-step .ps-dot { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: #EDF0F5; color: var(--hint); flex: 0 0 auto; }
+    .prog-step.active { color: var(--ink); font-weight: 600; }
+    .prog-step.active .ps-dot { background: var(--navy); color: #fff; }
+    .prog-step.done { color: var(--muted); }
+    .prog-step.done .ps-dot { background: var(--go); color: #fff; }
+
+    /* ---- The print memo (Export PDF) ---- */
+    .print-only { display: none; }
+    @media print {
+      header, main, #toast-root, #modal-root { display: none !important; }
+      #print-root { display: block !important; }
+      html, body { background: #fff !important; }
+      @page { margin: 13mm 14mm; }
+    }
+    /* On-screen preview support (headless test / debugging) mirrors the print look. */
+    #print-root.preview { display: block; background: #fff; }
+    .pm { font-family: 'Inter', sans-serif; color: #111827; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10.5px; line-height: 1.45; max-width: 190mm; margin: 0 auto; }
+    .pm * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .pm-cover { border-bottom: 2px solid var(--navy); padding-bottom: 10px; margin-bottom: 12px; }
+    .pm-eyebrow { font-family: 'Sora', sans-serif; font-size: 9px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--gold); }
+    .pm-title-row { display: flex; align-items: center; gap: 11px; margin-top: 6px; }
+    .pm-mono { width: 40px; height: 40px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: #0C3078; font-family: 'Sora', sans-serif; font-weight: 700; font-size: 14px; flex: 0 0 auto; }
+    .pm h1 { font-family: 'Sora', sans-serif; font-size: 17px; font-weight: 700; margin: 0; line-height: 1.1; }
+    .pm-titlesub { font-size: 11px; color: #6B7280; margin-top: 1px; }
+    .pm-fit { margin-left: auto; padding: 4px 12px; border-radius: 999px; font-family: 'Sora', sans-serif; font-weight: 700; font-size: 12px; white-space: nowrap; }
+    .pm-fit-go { color: #047857; background: #D1FAE5; }
+    .pm-fit-watch { color: #B45309; background: #FEF3C7; }
+    .pm-fit-pass { color: #BE123C; background: #FFE4E6; }
+    .pm-facts { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 9px; font-size: 10px; }
+    .pm-facts b { color: #6B7280; font-weight: 600; margin-right: 5px; text-transform: uppercase; letter-spacing: .03em; font-size: 8.5px; }
+    .pm-reason { margin: 8px 0 0; font-size: 10.5px; }
+    .pm-reason b { color: #0C3078; }
+    .pm-section { margin-top: 12px; break-inside: avoid; }
+    .pm-section h2 { font-family: 'Sora', sans-serif; font-size: 11px; font-weight: 700; color: #0C3078; text-transform: uppercase; letter-spacing: .05em; margin: 0 0 6px; padding-bottom: 3px; border-bottom: 1px solid #E7EAF1; }
+    .pm p { margin: 0 0 5px; }
+    .pm-bullets { margin: 4px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 16px; }
+    .pm-bullets li { font-size: 9.5px; padding-left: 12px; position: relative; }
+    .pm-bullets li::before { content: '▪'; color: var(--gold); position: absolute; left: 0; }
+    table.pm-tbl { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+    table.pm-tbl th, table.pm-tbl td { border-bottom: 1px solid #EEF1F6; padding: 3px 5px; text-align: right; font-variant-numeric: tabular-nums; }
+    table.pm-tbl th:first-child, table.pm-tbl td:first-child { text-align: left; }
+    table.pm-tbl thead th { background: #F4F6FB; color: #374151; font-family: 'Sora', sans-serif; font-weight: 600; }
+    table.pm-tbl td.neg { color: #DC2626; }
+    table.pm-tbl .fc { background: rgba(180,146,76,.08); }
+    .pm-facts-tbl td { padding: 3px 0; font-size: 10px; border-bottom: 1px dashed #E7EAF1; }
+    .pm-facts-tbl td:first-child { color: #6B7280; width: 38%; }
+    .pm-check { display: flex; align-items: baseline; gap: 7px; font-size: 9.8px; padding: 2.5px 0; }
+    .pm-check .mk { font-weight: 700; width: 12px; flex: 0 0 auto; }
+    .pm-check .nt { color: #6B7280; margin-left: 4px; }
+    .pm-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; break-inside: avoid; }
+    .pm-point { margin-bottom: 6px; }
+    .pm-point b { font-size: 10px; }
+    .pm-point span { display: block; color: #4b5563; font-size: 9.5px; }
+    .pm-point .mit { color: #6B7280; font-style: italic; }
+    .pm-foot { margin-top: 14px; padding-top: 6px; border-top: 1px solid #E7EAF1; font-size: 8.5px; color: #9CA3AF; text-align: center; }
+
     /* Respect reduced-motion preferences */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
@@ -627,6 +713,14 @@
   <div id="toast-root" aria-live="polite"></div>
   <div id="modal-root"></div>
 
+  <!-- Print-only 2-page memo (built on demand by Export PDF; hidden on screen) -->
+  <div id="print-root" class="print-only"></div>
+
+  <!--
+    pdf.js (read the IM) and SheetJS (read the Excel model) are loaded on demand
+    from CDN the first time a partner uploads a deal — see ensureUploadLibs() in
+    app.js — so they never slow the normal pipeline load.
+  -->
   <script src="js/app.js"></script>
 </body>
 </html>
