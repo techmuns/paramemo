@@ -199,11 +199,30 @@ const ui = {
   fin: { forecast: true, view: 'table' }, // financials tab: show forecast? · Table|Charts
 };
 
+// Resolve the data file relative to THIS script's own URL (captured while
+// document.currentScript is still valid). app.js has already loaded, so its URL
+// is a known-good anchor — this makes the fetch robust whether the app is served
+// from the domain root, a sub-path, or a preview host, not just "/".
+const DATA_URL = (() => {
+  const src = document.currentScript && document.currentScript.src;
+  try { return src ? new URL('../data/companies.json', src).href : 'data/companies.json'; }
+  catch (_) { return 'data/companies.json'; }
+})();
+
 async function loadCompanies() {
-  // Relative path so it works when served locally and by the Worker's ASSETS binding.
-  const res = await fetch('data/companies.json', { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`Could not load companies.json (HTTP ${res.status})`);
-  return res.json();
+  // Try the script-anchored URL first, then a plain document-relative path.
+  const tried = [];
+  let status = 0;
+  for (const url of [DATA_URL, 'data/companies.json']) {
+    if (tried.includes(url)) continue;
+    tried.push(url);
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (res.ok) return res.json();
+      status = res.status;
+    } catch (_) { /* network error — try the next candidate */ }
+  }
+  throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
 }
 
 const companyById = id => state.companies.find(c => c.id === id);
