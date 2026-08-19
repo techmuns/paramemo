@@ -42,23 +42,32 @@ async function readIndex(env) {
   try { return JSON.parse((await env.DEALS.get('index')) || '[]'); }
   catch { return []; }
 }
+async function readHiddenSeeds(env) {
+  try { return JSON.parse((await env.DEALS.get('hiddenSeeds')) || '[]'); }
+  catch { return []; }
+}
 async function handleCompanies(env) {
-  if (!env.DEALS) return json({ companies: [] });          // KV not bound yet → no uploads
+  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [] });   // KV not bound yet → no uploads
   const index = await readIndex(env);
   const companies = [];
   for (const id of index) {
     const raw = await env.DEALS.get(`company:${id}`);
     if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
   }
-  return json({ companies });
+  return json({ companies, hiddenSeeds: await readHiddenSeeds(env) });
 }
 
-// DELETE /api/companies/<id> — remove an uploaded deal (never a seed).
+// DELETE /api/companies/<id> — remove an uploaded deal, OR hide a built-in sample.
 async function handleDelete(request, env) {
   if (!env.DEALS) return json({ ok: true });
   const id = decodeURIComponent((new URL(request.url).pathname.split('/api/companies/')[1] || '').replace(/\/+$/, ''));
   if (!id) throw new ApiError(400, 'Missing company id.');
-  if (SEED_IDS.includes(id)) throw new ApiError(400, 'The 3 sample deals cannot be removed.');
+  if (SEED_IDS.includes(id)) {
+    // Samples live in the static file (can't be deleted) — record a hide instead so it stays gone.
+    const hidden = await readHiddenSeeds(env);
+    if (!hidden.includes(id)) { hidden.push(id); await env.DEALS.put('hiddenSeeds', JSON.stringify(hidden)); }
+    return json({ ok: true, id, hidden: true });
+  }
   await env.DEALS.delete(`company:${id}`);
   const index = await readIndex(env);
   await env.DEALS.put('index', JSON.stringify(index.filter(x => x !== id)));

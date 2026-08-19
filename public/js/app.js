@@ -319,13 +319,14 @@ async function loadCompanies() {
   if (!seed) throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
 
   // Uploaded deals from the Worker's KV (may be [] or unavailable on a static-only host).
-  let uploaded = [];
+  let uploaded = [], hiddenSeeds = [];
   try {
     const res = await fetch(apiUrl('companies'), { cache: 'no-cache' });
-    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; }
+    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; if (Array.isArray(d.hiddenSeeds)) hiddenSeeds = d.hiddenSeeds; }
   } catch (_) { /* no API (static preview) — seeds only */ }
 
-  const seeds = Array.isArray(seed.companies) ? seed.companies : [];
+  const hidden = new Set(hiddenSeeds);
+  const seeds = (Array.isArray(seed.companies) ? seed.companies : []).filter(c => !hidden.has(c.id));   // sample can be hidden
   const seedIds = new Set(seeds.map(c => c.id));
   return { meta: seed.meta || null, companies: [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))] };
 }
@@ -338,12 +339,16 @@ function addCompany(company) {
   populateCompanyDropdown();
 }
 
-// Remove an uploaded deal (from KV + local state), then return to the pipeline.
+// Remove a deal from the pipeline. Uploads are deleted from storage; the built-in
+// samples are hidden (they live in a static file) — both persist server-side.
 async function removeCompany(c) {
+  const sample = isSample(c);
   const okToRemove = await confirmDialog({
-    title: `Remove ${c.shortName || c.name}?`,
-    message: 'This deletes the deal and its memo from the pipeline. This can’t be undone.',
-    confirmLabel: 'Remove deal',
+    title: `${sample ? 'Remove sample' : 'Remove'} ${c.shortName || c.name}?`,
+    message: sample
+      ? 'This hides the built-in sample from your pipeline. It stays hidden across sessions.'
+      : 'This deletes the deal and its memo from the pipeline. This can’t be undone.',
+    confirmLabel: sample ? 'Remove sample' : 'Remove deal',
     cancelLabel: 'Keep it',
     danger: true,
   });
@@ -1296,12 +1301,10 @@ function renderCompanyShell(c) {
   const back = h(`<button class="back-btn" type="button">${icon('arrowLeft', 'w-4 h-4', 2.4)}<span>Pipeline</span></button>`);
   back.addEventListener('click', goHome);
   topRow.appendChild(back);
-  // Uploaded deals can be removed; the 3 seeds cannot.
-  if (c.generatedBy) {
-    const rm = h(`<button class="rm-btn" type="button">${icon('trash', 'w-4 h-4')}<span>Remove deal</span></button>`);
-    rm.addEventListener('click', () => removeCompany(c));
-    topRow.appendChild(rm);
-  }
+  // Every deal can be removed — uploads are deleted; samples are hidden.
+  const rm = h(`<button class="rm-btn" type="button">${icon('trash', 'w-4 h-4')}<span>${isSample(c) ? 'Remove sample' : 'Remove deal'}</span></button>`);
+  rm.addEventListener('click', () => removeCompany(c));
+  topRow.appendChild(rm);
   shell.appendChild(topRow);
 
   shell.appendChild(renderIdentityStrip(c));
