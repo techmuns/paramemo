@@ -135,9 +135,10 @@ async function handleGenerate(request, env) {
     'STRICT JSON only, matching the given schema exactly (same keys and nesting). ' +
     'Return ONLY the JSON object — no markdown, no commentary.\n\n' +
     'WRITING: plain, non-technical English a busy partner can skim. All money in ₹ crore, rounded.\n\n' +
-    'ACCURACY: every number and fact must come from the documents. Never invent, extrapolate, or guess. ' +
+    'ACCURACY: every number and fact must come from the provided text of the documents. Never invent, extrapolate, or guess. ' +
     'If a value is not in the documents, use an empty/TBD value — checklist status "tbd", "TBD" strings, ' +
-    'an ownershipNote instead of an ownership array, or null cells — never fill a gap with a plausible number.\n\n' +
+    'an ownershipNote instead of an ownership array, or null cells — never fill a gap with a plausible number.\n' +
+    'DO NOT USE OUTSIDE KNOWLEDGE. The IM deck is often mostly images (logo walls, org charts, photos) whose text does NOT reach you — you only receive whatever text was extracted. Never supply from memory or inference: names of people (promoters, management), names of customers/clients/partners, investor names, a founding year, an ESOP, a royalty, a customer-concentration percentage, or any other specific fact. Include such an item ONLY if that exact word/name/number appears in the provided text. If the text names no management or promoters, return an empty people list (or a single "To be confirmed" note) rather than inventing anyone. Name only the customers actually written in the text — do not add plausible sector names. Do not turn an unrelated number (e.g. a sustainability "98%") into a concentration or ownership figure. When unsure whether something was in the documents, leave it out or mark it TBD.\n\n' +
     'FINANCIAL YEARS (critical — must not drift):\n' +
     '• Copy the fiscal-year column headers from the Excel model VERBATIM (e.g. "FY21","FY22","FY24E"). ' +
     'Do not shift, renumber, relabel or infer years.\n' +
@@ -180,8 +181,8 @@ async function handleGenerate(request, env) {
     '"pending" with finding "To be run" UNLESS the documents give a real result (e.g. a disclosed credit rating, or a lawsuit). Never fabricate a clean result.\n' +
     '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
-    'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title from the documents — do not merge, ' +
-    'rename, or swap roles between people. Ownership percentages must sum to ~100%.\n\n' +
+    'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title AS WRITTEN in the provided text — do not merge, ' +
+    'rename, or swap roles between people, and do NOT supply names from general knowledge. If the text names no people (e.g. the team/org slide is only an image), return an empty promoters/management list or a single "To be confirmed" entry — never invent a plausible name or title. Ownership percentages must sum to ~100% and only when the text states them; otherwise use an ownershipNote.\n\n' +
     'RETURNS (ALWAYS include — this is the ONE illustrative block: a base-case returns sketch that is explicitly assumptions, not extracted facts, so here you MUST fill numbers rather than leave nulls):\n' +
     '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number> } }. Every field is REQUIRED; all are numbers except startYear. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected.\n' +
