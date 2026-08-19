@@ -50,12 +50,15 @@ from the project folder.
 
 ### 1 · Create the KV namespace and paste its id
 
+The KV binding ships **commented out** so the site deploys and runs the 3 sample
+deals with zero setup. Enabling it turns on *uploading real deals*.
+
 ```bash
 npx wrangler kv namespace create DEALS
 ```
 
-It prints an `id`. Open **`wrangler.jsonc`** and paste it in place of
-`<PASTE_YOUR_KV_NAMESPACE_ID>`:
+It prints an `id`. Open **`wrangler.jsonc`**, remove the `//` marks in front of
+the `kv_namespaces` block, and paste the id:
 
 ```jsonc
 "kv_namespaces": [
