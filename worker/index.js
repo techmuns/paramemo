@@ -23,8 +23,9 @@ export default {
     const path = url.pathname;
     try {
       // endsWith keeps the routes working even if the app is served under a sub-path.
-      if (request.method === 'POST' && path.endsWith('/api/generate')) return await handleGenerate(request, env);
-      if (request.method === 'GET'  && path.endsWith('/api/companies')) return await handleCompanies(env);
+      if (request.method === 'POST'   && path.endsWith('/api/generate'))  return await handleGenerate(request, env);
+      if (request.method === 'GET'    && path.endsWith('/api/companies')) return await handleCompanies(env);
+      if (request.method === 'DELETE' && path.includes('/api/companies/')) return await handleDelete(request, env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -52,6 +53,18 @@ async function handleCompanies(env) {
   return json({ companies });
 }
 
+// DELETE /api/companies/<id> — remove an uploaded deal (never a seed).
+async function handleDelete(request, env) {
+  if (!env.DEALS) return json({ ok: true });
+  const id = decodeURIComponent((new URL(request.url).pathname.split('/api/companies/')[1] || '').replace(/\/+$/, ''));
+  if (!id) throw new ApiError(400, 'Missing company id.');
+  if (SEED_IDS.includes(id)) throw new ApiError(400, 'The 3 sample deals cannot be removed.');
+  await env.DEALS.delete(`company:${id}`);
+  const index = await readIndex(env);
+  await env.DEALS.put('index', JSON.stringify(index.filter(x => x !== id)));
+  return json({ ok: true, id });
+}
+
 /* ------------------------------------------------------------------ *
  * POST /api/generate — the upload → AI → memo flow
  * ------------------------------------------------------------------ */
@@ -76,15 +89,35 @@ async function handleGenerate(request, env) {
   const template = await loadTemplate(request, env);
 
   const system =
-    'You are an investment analyst. You read a company\'s Information Memorandum and ' +
-    'financial model and produce a screening memo as STRICT JSON only. Output must ' +
-    'match the given schema exactly (same keys and nesting). Use plain, non-technical ' +
-    'English a busy partner can skim. All money in ₹ crore, rounded. Be faithful to the ' +
-    'documents; do not invent numbers. Where a value is genuinely unavailable use sensible ' +
-    'empty/TBU values (checklist status "tbd", an ownershipNote instead of an ownership ' +
-    'array, "TBD" strings). years / revenueSpark / financials must come from the Excel model. ' +
-    'Compute fit.verdict (go/watch/pass) and the fitChecklist from the firm\'s screening rules. ' +
-    'Return ONLY the JSON object — no markdown, no commentary.';
+    'You are a disciplined, skeptical private-equity screening analyst. You read a company\'s ' +
+    'Information Memorandum (IM) and its Excel financial model and produce a screening memo as ' +
+    'STRICT JSON only, matching the given schema exactly (same keys and nesting). ' +
+    'Return ONLY the JSON object — no markdown, no commentary.\n\n' +
+    'WRITING: plain, non-technical English a busy partner can skim. All money in ₹ crore, rounded.\n\n' +
+    'ACCURACY: every number and fact must come from the documents. Never invent, extrapolate, or guess. ' +
+    'If a value is not in the documents, use an empty/TBD value — checklist status "tbd", "TBD" strings, ' +
+    'an ownershipNote instead of an ownership array, or null cells — never fill a gap with a plausible number.\n\n' +
+    'FINANCIAL YEARS (critical — must not drift):\n' +
+    '• Copy the fiscal-year column headers from the Excel model VERBATIM (e.g. "FY21","FY22","FY24E"). ' +
+    'Do not shift, renumber, relabel or infer years.\n' +
+    '• A year is a FORECAST if its header is marked estimate/projected/budget (E, P, Est, Proj, Bud) or the ' +
+    'model clearly presents it as such; otherwise it is an ACTUAL.\n' +
+    '• financials.actualsThrough = the LAST ACTUAL (non-forecast) year, exactly matching the model\'s ' +
+    'actual-vs-forecast split. Do not mark an actual year as an estimate or vice-versa.\n' +
+    '• revenueSpark.years must equal financials.years, and revenueSpark.actualsThrough must equal financials.actualsThrough.\n' +
+    '• headline.revenueLabel and headline.revenueCr MUST be the LATEST ACTUAL year (= actualsThrough), never a forecast ' +
+    'year; headline.ebitdaPct and headline.patPositive must reflect that same year.\n' +
+    '• Every financials.rows array must be the same length as financials.years; use null for blank cells.\n\n' +
+    'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
+    'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
+    '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
+    'Set fit.verdict: "go" only for a clearly strong, low-doubt fit; "watch" when there are material unresolved risks ' +
+    '(thin margins, negative cash flow, concentration, governance) even if growth is high; "pass" when it fails core ' +
+    'criteria. When in doubt, prefer "watch" over "go".\n\n' +
+    'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title from the documents — do not merge, ' +
+    'rename, or swap roles between people. Ownership percentages must sum to ~100%.\n\n' +
+    'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
+    'financials you output (same years, same actual-vs-forecast split).';
 
   const user = buildUserPrompt({ imText, excelText, sheetNames, notesText, basics, template });
 
@@ -218,7 +251,9 @@ function buildUserPrompt({ imText, excelText, sheetNames, notesText, basics, tem
   if (sheetNames && sheetNames.length) parts.push('=== EXCEL SHEET NAMES ===\n' + sheetNames.join(', ') + '\n');
   parts.push('=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n');
   if (notesText && notesText.trim()) parts.push('=== BANKER NOTES ===\n' + notesText + '\n');
-  parts.push('Return ONLY the JSON object.');
+  parts.push('Before answering: copy the Excel year headers verbatim, set actualsThrough to the last ' +
+    'ACTUAL (non-"E") year, make headline the latest ACTUAL year, and judge the fit skeptically (the IM is ' +
+    'sell-side). Return ONLY the JSON object.');
   return parts.join('\n');
 }
 

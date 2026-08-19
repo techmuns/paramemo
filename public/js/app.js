@@ -160,6 +160,7 @@ const ICONS = {
   sliders:    '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
   coins:      '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
   sparkles:   '<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+  trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
 };
 function icon(name, cls = 'w-4 h-4', sw = 2) {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}"
@@ -279,6 +280,21 @@ function addCompany(company) {
   state.companies = state.companies.filter(c => c.id !== company.id);
   state.companies.push(company);
   populateCompanyDropdown();
+}
+
+// Remove an uploaded deal (from KV + local state), then return to the pipeline.
+async function removeCompany(c) {
+  if (!confirm(`Remove “${c.shortName || c.name}” from the pipeline? This can’t be undone.`)) return;
+  try {
+    const res = await fetch(apiUrl('companies/' + encodeURIComponent(c.id)), { method: 'DELETE' });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Failed (${res.status})`); }
+    state.companies = state.companies.filter(x => x.id !== c.id);
+    populateCompanyDropdown();
+    toast(`${c.shortName || c.name} removed`);
+    goHome();
+  } catch (err) {
+    toast(err.message || 'Could not remove the deal');
+  }
 }
 
 /* ---- Lazy-load pdf.js + SheetJS the first time a partner uploads ---- */
@@ -810,9 +826,17 @@ function renderCompanyShell(c) {
   root.innerHTML = '';
   const shell = h('<div id="company-shell" class="space-y-5"></div>');
 
+  const topRow = h('<div class="flex items-center justify-between gap-3"></div>');
   const back = h(`<button class="back-btn" type="button">${icon('arrowLeft', 'w-4 h-4', 2.4)}<span>Pipeline</span></button>`);
   back.addEventListener('click', goHome);
-  shell.appendChild(back);
+  topRow.appendChild(back);
+  // Uploaded deals can be removed; the 3 seeds cannot.
+  if (c.generatedBy) {
+    const rm = h(`<button class="rm-btn" type="button">${icon('trash', 'w-4 h-4')}<span>Remove deal</span></button>`);
+    rm.addEventListener('click', () => removeCompany(c));
+    topRow.appendChild(rm);
+  }
+  shell.appendChild(topRow);
 
   shell.appendChild(renderIdentityStrip(c));
   shell.appendChild(renderTabBar(c));
