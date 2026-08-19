@@ -109,7 +109,7 @@ async function handleGenerate(request, env) {
     'year; headline.ebitdaPct and headline.patPositive must reflect that same year.\n' +
     '• Every financials.rows array must be the same length as financials.years; use null for blank cells.\n\n' +
     'FINANCIALS DEPTH (fill everything the model supports — this drives the whole Financials tab):\n' +
-    '• Convert every money value to ₹ crore (if the model is in ₹ million ÷ 10, ₹ lakh ÷ 100, ₹ thousand ÷ 10000). Keep the model\'s full year span (often 6–10 years).\n' +
+    '• Convert every money value to ₹ crore (if the model is in ₹ million ÷ 10, ₹ lakh ÷ 100, ₹ thousand ÷ 10000), keeping ONE decimal place (e.g. 214 mn → 21.4) so no precision is lost. Keep the model\'s full year span (often 6–10 years).\n' +
     '• financials.rows — populate each metric the model contains, as an array aligned to financials.years (null where blank): ' +
     'revenue, growthPct (YoY revenue growth %), grossMarginPct, ebitda, ebitdaPct, pat, patPct, capex, operatingCashflow (post working-capital), fcf (operating cash flow less capex), roePct, rocePct, nwcDays (net working-capital days), cash, netWorth, debt. ' +
     'All percentages are plain numbers (27 means 27%), not fractions. Negative values are allowed (losses, cash outflows).\n' +
@@ -129,7 +129,7 @@ async function handleGenerate(request, env) {
     'market leadership, low customer concentration. In group "Promoter": deep sector experience (>10 years), strong skin in the game (promoter stake > ~25%), ' +
     'raised institutional capital before, backed by known investors. Mark "tbd" when the documents don\'t settle it. Adapt to the sector but keep these core checks.\n' +
     '• integrity — the governance / diligence scan; each { area, status:"clear"|"flag"|"pending", finding }. ALWAYS include these five: ' +
-    '"Google Search", "Private Circle", "CIBIL", "Credit Rating", "Legal / MCA". These are EXTERNAL checks usually NOT in the IM — mark them ' +
+    '"Google Search", "Private Circle", "CIBIL", "Rating", "Legal Search". These are EXTERNAL checks usually NOT in the IM — mark them ' +
     '"pending" with finding "To be run" UNLESS the documents give a real result (e.g. a disclosed credit rating, or a lawsuit). Never fabricate a clean result.\n' +
     '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +

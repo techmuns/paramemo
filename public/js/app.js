@@ -512,6 +512,7 @@ function initHeaderIcons() {
   $('#company-dd-ico').innerHTML = icon('building', 'w-4 h-4');
   $('#company-dd-chev').innerHTML = icon('chevronDown', 'w-4 h-4');
   $('#export-ico').innerHTML = icon('download', 'w-4 h-4');
+  const ec = $('#export-chev'); if (ec) ec.innerHTML = icon('chevronDown', 'w-4 h-4');
   const bi = $('#bell-ico'); if (bi) bi.innerHTML = icon('bell', 'w-[18px] h-[18px]', 1.9);
 }
 
@@ -623,28 +624,45 @@ function initHeader() {
   brand.addEventListener('click', goHome);
   brand.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 
-  // Export the currently-open company's memo as a print-optimised 2-page PDF.
+  // Export dropdown: Full report (comprehensive) or Memo (Paragon's exact format).
   const exportBtn = $('#export-btn');
   exportBtn.classList.remove('is-disabled');
   exportBtn.removeAttribute('data-tip');
   exportBtn.removeAttribute('aria-disabled');
-  exportBtn.addEventListener('click', exportPdf);
+  const exMenu = $('#export-menu');
+  exMenu.innerHTML = `
+    <button class="dd-item ex-item" role="menuitem" type="button" data-export="report">
+      <span class="ex-ic">${icon('fileText', 'w-4 h-4')}</span>
+      <span class="min-w-0"><span class="ex-t">Full report</span><span class="ex-s">Comprehensive, detailed — every tab in one document</span></span>
+    </button>
+    <button class="dd-item ex-item" role="menuitem" type="button" data-export="memo">
+      <span class="ex-ic">${icon('clipboard', 'w-4 h-4')}</span>
+      <span class="min-w-0"><span class="ex-t">Memo</span><span class="ex-s">Paragon's one-page screening-memo format</span></span>
+    </button>`;
+  const openEx = () => { exMenu.classList.remove('hidden'); exportBtn.setAttribute('aria-expanded', 'true'); $('#export-chev').style.transform = 'rotate(180deg)'; };
+  const closeEx = () => { exMenu.classList.add('hidden'); exportBtn.setAttribute('aria-expanded', 'false'); $('#export-chev').style.transform = ''; };
+  exportBtn.addEventListener('click', e => { e.stopPropagation(); exMenu.classList.contains('hidden') ? openEx() : closeEx(); });
+  exMenu.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => { closeEx(); exportPdf(b.dataset.export); }));
+  document.addEventListener('click', e => { if (!e.target.closest('#export-dd')) closeEx(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEx(); });
 }
 
 // Build the print memo for the open company and open the browser's print dialog.
 // window.print() prints THIS document (the memo in #print-root, shown only under
 // @media print). It works standalone and in a normal embed; a sandboxed iframe
 // without allow-modals can swallow it, so we guard and hint the keyboard shortcut.
-function exportPdf() {
+function exportPdf(kind) {
   const c = companyById(ui.companyId);
-  if (!c) { toast('Open a company first, then export its memo'); return; }
+  if (!c) { toast('Open a company first, then export it'); return; }
   const root = $('#print-root');
-  root.innerHTML = renderPrintMemo(c);
+  const doc = kind === 'report' ? 'report' : 'memo';
+  root.setAttribute('data-doc', doc);
+  root.innerHTML = doc === 'report' ? renderFullReport(c) : renderMemoExact(c);
   try {
     window.print();
   } catch (err) {
     const key = /Mac|iP(hone|ad)/.test(navigator.platform || '') ? '⌘P' : 'Ctrl+P';
-    toast(`Press ${key} to save the memo as a PDF`);
+    toast(`Press ${key} to save it as a PDF`);
   }
 }
 
@@ -653,66 +671,254 @@ function exportPdf() {
  * Reads the same company object; the whole layout lives in #print-root and is
  * only visible under @media print (see index.html print CSS).
  * ---------------------------------------------------------------------------*/
-function renderPrintMemo(c) {
+/* ======================= MEMO — exact replica of Paragon's template ========
+ * Their memo is in INR mn with bordered label/content rows, navy-header tables
+ * and table-style checklists. Faithful to Screening_Memo_Attero. ============ */
+const toMn = v => (v == null ? null : Math.round(v * 10));    // our data is ₹ cr → INR mn
+const MEMO_FIN_ROWS = [
+  { key: 'revenue',           label: 'Revenue',                     kind: 'mn' },
+  { key: 'growthPct',         label: 'YoY growth',                  kind: 'pct',  sub: true },
+  { key: 'grossMarginPct',    label: 'Gross Margin',                kind: 'pct',  sub: true },
+  { key: 'ebitda',            label: 'EBITDA',                      kind: 'mn' },
+  { key: 'ebitdaPct',         label: 'EBITDA %',                    kind: 'pct',  sub: true },
+  { key: 'pat',               label: 'PAT',                         kind: 'mn' },
+  { key: 'patPct',            label: 'PAT %',                       kind: 'pct',  sub: true },
+  { key: 'capex',             label: 'Capex',                       kind: 'mn' },
+  { key: 'operatingCashflow', label: 'Operating Cashflow (post WC)', kind: 'mn' },
+  { key: 'fcf',               label: 'FCF (OCF less Capex)',        kind: 'mn' },
+  { key: 'roePct',            label: 'RoE',                         kind: 'pct' },
+  { key: 'rocePct',           label: 'RoCE (pre tax)',              kind: 'pct' },
+  { key: 'nwcDays',           label: 'NWC Days (on sales)',         kind: 'days' },
+  { key: 'cash',              label: 'Cash',                        kind: 'mn' },
+  { key: 'netWorth',          label: 'Net-worth',                   kind: 'mn' },
+  { key: 'debt',              label: 'Debt',                        kind: 'mn' },
+];
+function mxCell(v, kind) {
+  if (v == null) return '<td>-</td>';
+  if (kind === 'pct')  return `<td class="${v < 0 ? 'neg' : ''}">${v}%</td>`;
+  if (kind === 'days') return `<td>${fmtNum(v)}</td>`;
+  const mn = toMn(v);
+  return `<td class="${mn < 0 ? 'neg' : ''}">${fmtNum(mn)}</td>`;
+}
+function memoFinTable(c) {
+  const fin = c.financials;
+  if (!fin || !Array.isArray(fin.years)) return '';
+  const years = fin.years, cagr = fin.cagr || {}, cagrCols = Array.isArray(fin.cagrCols) ? fin.cagrCols : [];
+  const head = '<tr><th class="lft">Financials <i>(INR mn)</i></th>' + years.map(y => `<th>${esc(y)}</th>`).join('') +
+    cagrCols.map(cc => `<th class="cg"><i>CAGR ${esc(cc)}</i></th>`).join('') + '</tr>';
+  const body = MEMO_FIN_ROWS.filter(r => Array.isArray(fin.rows[r.key])).map(r => {
+    const arr = fin.rows[r.key];
+    const cells = years.map((_, i) => mxCell(arr[i], r.kind)).join('');
+    const cg = cagrCols.map((_, ci) => (r.kind === 'mn' && cagr[r.key]) ? `<td class="cg">${cagr[r.key][ci] == null ? 'NM' : Math.round(cagr[r.key][ci] * 100) + '%'}</td>` : '<td class="cg"></td>').join('');
+    return `<tr class="${r.sub ? 'it' : ''}"><td class="lft">${esc(r.label)}</td>${cells}${cg}</tr>`;
+  }).join('');
+  return `<table class="mx-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+function memoSegTable(c, mode) {   // mode: 'mn' | 'pct'
+  const seg = c.financials && c.financials.segments;
+  if (!seg || !Array.isArray(seg.rows) || !seg.rows.length) return '';
+  const years = c.financials.years;
+  const totals = years.map((_, i) => seg.rows.reduce((s, r) => s + (Number(r.values && r.values[i]) || 0), 0));
+  const title = mode === 'pct' ? 'Segment revenue <i>(%)</i>' : 'Segment revenue <i>(INR mn)</i>';
+  const head = `<tr><th class="lft">${title}</th>` + years.map(y => `<th>${esc(y)}</th>`).join('') + '</tr>';
+  const body = seg.rows.map(r => {
+    const cells = years.map((_, i) => {
+      const v = r.values && r.values[i];
+      if (v == null) return '<td>-</td>';
+      return mode === 'pct' ? `<td>${totals[i] ? Math.round(v / totals[i] * 100) : 0}%</td>` : `<td>${fmtNum(toMn(v))}</td>`;
+    }).join('');
+    return `<tr><td class="lft">${esc(r.name)}</td>${cells}</tr>`;
+  }).join('');
+  const tot = `<tr class="tot"><td class="lft">Total revenue</td>${years.map((_, i) => `<td>${mode === 'pct' ? '100%' : fmtNum(toMn(totals[i]))}</td>`).join('')}</tr>`;
+  return `<table class="mx-tbl" style="margin-top:10px"><thead>${head}</thead><tbody>${body}${tot}</tbody></table>`;
+}
+function memoCapacity(c) {
+  const cap = c.financials && c.financials.capacity;
+  if (!cap || !Array.isArray(cap.rows) || !cap.rows.length) return '';
+  const years = c.financials.years;
+  const head = `<tr><th class="lft">Capacity <i>(${esc(cap.unit || 'MT')})</i></th>` + years.map(y => `<th>${esc(y)}</th>`).join('') + '</tr>';
+  const body = cap.rows.map(r => {
+    let tr = `<tr><td class="lft">${esc(r.name)}</td>${years.map((_, i) => { const v = r.values && r.values[i]; return v == null ? '<td>-</td>' : `<td>${fmtNum(v)}</td>`; }).join('')}</tr>`;
+    if (Array.isArray(r.utilPct)) tr += `<tr class="it"><td class="lft">Utilisation %</td>${years.map((_, i) => { const u = r.utilPct[i]; return u == null ? '<td>-</td>' : `<td>${u}%</td>`; }).join('')}</tr>`;
+    return tr;
+  }).join('');
+  return `<table class="mx-tbl" style="margin-top:10px"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+function memoQuestions(c) {
+  if (!Array.isArray(c.questions) || !c.questions.length) return '';
+  return c.questions.map(q => `<div class="mx-q"><div class="mx-q-h">${esc(q.theme)}</div><ul>${(q.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+}
+function memoGov(c) {
+  const rows = (c.integrity || []).map(it => {
+    const mk = it.status === 'clear' ? '✓' : it.status === 'flag' ? '⚠' : '○';
+    return `<tr><td class="lft">${esc(it.area)}</td><td class="ctr">${mk}</td><td class="lft">- ${esc(it.finding)}</td></tr>`;
+  }).join('');
+  return `<table class="mx-tbl mx-chk"><thead><tr><th>Area</th><th>Outcome</th><th>Key Findings</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function memoStrategy(c) {
+  const list = c.fitChecklist || [];
+  const yn = s => s === 'yes' ? 'Yes' : s === 'no' ? 'No' : '';
+  let body = '';
+  ['Business', 'Promoter'].forEach(g => {
+    const rows = list.filter(x => x.group === g);
+    if (!rows.length) return;
+    body += `<tr class="cat"><td class="lft" colspan="3">${esc(g)}</td></tr>`;
+    body += rows.map(x => `<tr><td class="lft">${esc(x.label)}</td><td class="ctr">${yn(x.status)}</td><td class="lft">- ${esc(x.note || '')}</td></tr>`).join('');
+  });
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
-  const s = c.snapshot || {};
-  const t = c.transaction || {}, o = c.origination || {};
-  const fy = (c.headline && c.headline.revenueLabel || '').split(' ')[0];
-
-  const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
-  const overview = `${s.whatTheyDo ? `<p>${esc(s.whatTheyDo)}</p>` : (c.oneLiner ? `<p>${esc(c.oneLiner)}</p>` : '')}${bullets ? `<ul class="pm-ul">${bullets}</ul>` : ''}`;
-  const people = arr => (arr || []).map(p => `<li><b>${esc(p.name)}</b> — ${esc(p.role)}${p.note ? '. ' + esc(p.note) : ''}</li>`).join('');
-  const promoters = people(s.promoters), mgmt = people(s.management);
-  const questions = (c.questions || []).map(q =>
-    `<div class="pm-q"><div class="pm-q-th">${esc(q.theme)}</div><ul class="pm-ul">${(q.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+  body += `<tr class="cat"><td class="lft">Overall Fitment to the Strategy</td><td class="ctr">${esc(fit.label)}</td><td class="lft">- ${esc(c.fit ? c.fit.reason : '')}</td></tr>`;
+  return `<table class="mx-tbl mx-chk"><thead><tr><th>Area</th><th>Yes/No</th><th>Comments</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+function memoThesis(c) {
+  const rows = (c.thesis && c.thesis.length ? c.thesis : [{}, {}, {}]).map(x =>
+    `<tr><td class="lft">${x.point ? esc(x.point) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td></tr>`).join('');
+  return `<table class="mx-tbl mx-chk"><thead><tr><th>Thesis</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function memoIssues(c) {
+  const rows = (c.concerns && c.concerns.length ? c.concerns : [{}, {}, {}]).map(x =>
+    `<tr><td class="lft">${x.issue ? esc(x.issue) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td><td class="lft">${x.mitigant ? '- ' + esc(x.mitigant) : ''}</td></tr>`).join('');
+  return `<table class="mx-tbl mx-chk"><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function renderMemoExact(c) {
+  const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
+  const memoDate = c.generatedAt ? fmtDate(c.generatedAt) : (fmtDate(o.date) || '');
   const coInv = (t.coInvestment && t.coInvestment !== 'TBD') ? t.coInvestment : 'Yes / No';
-  const orig = `Date: ${esc(fmtDate(o.date) || 'TBU')}${o.banker ? ' &nbsp;·&nbsp; Source: ' + esc(o.banker) : ''}${o.advisors ? ' &nbsp;·&nbsp; Advisors: ' + esc(o.advisors) : ''}`;
-  const row = (label, body) => `<div class="pm-row"><div class="pm-row-l">${esc(label)}</div><div class="pm-row-b">${body}</div></div>`;
+  const li = arr => (arr || []).map(x => `<li>${x}</li>`).join('');
+  const overviewBul = [];
+  if (s.whatTheyDo) overviewBul.push(esc(s.whatTheyDo));
+  (s.businessBullets || []).forEach(b => overviewBul.push(esc(b)));
+  const promoters = (s.promoters || []).map(p => `<b>${esc(p.name)}</b> (${esc(p.role)})${p.note ? ' — ' + esc(p.note) : ''}`);
+  const mgmt = (s.management || []).map(p => `<b>${esc(p.name)}</b> (${esc(p.role)})${p.note ? ' — ' + esc(p.note) : ''}`);
+  const row = (label, body) => `<div class="mx-row"><div class="mx-row-l">${esc(label)}</div><div class="mx-row-b">${body}</div></div>`;
 
   return `
-    <div class="pm">
-      <div class="pm-head">
-        <img src="assets/paragon-logo.png" class="pm-logo" alt="Paragon Partners"/>
-        <div class="pm-h-title">${esc(c.name)} <span>(${esc(fmtDate(o.date) || '')})</span></div>
+    <div class="mx">
+      <div class="mx-head">
+        <img src="assets/paragon-logo.png" class="mx-logo" alt="Paragon Partners"/>
+        <div class="mx-title">${esc(c.name)}${memoDate ? ` <span>(${esc(memoDate)})</span>` : ''}</div>
+        <div style="width:150px"></div>
       </div>
 
       ${row('Company', esc(c.name))}
-      ${row('Sector', esc(c.sector || '—'))}
-      ${row('Transaction Overview', `${esc(t.headline || '—')}<div class="pm-sub">Co-Investment: ${esc(coInv)}</div>`)}
-      ${row('Origination', orig)}
-      ${overview ? row('Company Overview', overview) : ''}
-      ${promoters ? row('Promoter Overview', `<ul class="pm-ul">${promoters}</ul>`) : ''}
-      ${mgmt ? row('Management Overview', `<ul class="pm-ul">${mgmt}</ul>`) : ''}
+      ${row('Sector', esc(c.sector || '-'))}
+      ${row('Transaction Overview', `${esc(t.headline || '-')}<div>Co-Investment: <span class="mx-hl">${esc(coInv)}</span></div>`)}
+      ${row('Origination', `<ul class="tight"><li>Date: ${esc(fmtDate(o.date) || 'TBU')}</li>${o.banker ? `<li>Source: ${esc(o.banker)}</li>` : ''}${o.advisors ? `<li>Advisors: ${esc(o.advisors)}</li>` : ''}</ul>`)}
+      ${overviewBul.length ? row('Company Overview', `<ul>${li(overviewBul)}</ul>`) : ''}
+      ${promoters.length ? row('Promoter Overview', `<ul>${li(promoters)}</ul>`) : ''}
+      ${mgmt.length ? row('Mgmt Overview', `<ul>${li(mgmt)}</ul>`) : ''}
 
-      <div class="pm-block">
-        <div class="pm-block-h">Financials <span>(₹ crore; tinted = forecast)</span></div>
+      ${memoFinTable(c)}
+      ${memoSegTable(c, 'mn')}
+      ${memoSegTable(c, 'pct')}
+      ${memoCapacity(c)}
+
+      ${Array.isArray(c.questions) && c.questions.length ? `<div class="mx-h2">Key Questions</div>${memoQuestions(c)}` : ''}
+
+      <div class="mx-h2">Governance Checklist</div>
+      ${memoGov(c)}
+
+      <div class="mx-h2">Strategy Checklist</div>
+      ${memoStrategy(c)}
+
+      <div class="mx-h2 center">Section II – After First Management Meeting</div>
+      <div class="mx-h3">Investment Thesis</div>
+      ${memoThesis(c)}
+      <div class="mx-h3">Issues for Consideration</div>
+      ${memoIssues(c)}
+
+      <div class="mx-foot">Private &amp; Confidential${generatedLine(c) ? ' · ' + esc(generatedLine(c)) : ''}</div>
+    </div>`;
+}
+
+/* ======================= FULL REPORT — comprehensive branded document ======= */
+function frReturns(c) {
+  if (!c.returns || !c.returns.defaults) return '';
+  const d = c.returns.defaults;
+  const out = computeReturns(c, d);
+  const rows = [
+    ['Investment', fmtCr(c.returns.investmentCr)],
+    ['Entry EBITDA multiple', d.entryX + '×'],
+    ['Exit EBITDA multiple', d.exitX + '×'],
+    ['EBITDA growth (assumed)', d.growthPct + '% p.a.'],
+    ['Hold period', d.years + ' years'],
+    ['Projected proceeds', fmtCr(Math.round(out.proceeds))],
+    ['Money multiple (MoIC)', (out.moneyBack).toFixed(1) + '×'],
+    ['Annualised return (approx.)', Math.round(out.yearlyReturn) + '%'],
+  ].map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join('');
+  return `<table class="fr-facts">${rows}</table>`;
+}
+function renderFullReport(c) {
+  const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
+  const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
+  const fy = (c.headline && c.headline.revenueLabel || '');
+  const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
+  const people = arr => (arr || []).map(p => `<div class="fr-person"><b>${esc(p.name)}</b><span>${esc(p.role)}</span>${p.note ? `<span class="nt">${esc(p.note)}</span>` : ''}</div>`).join('');
+  const own = (s.ownership || []).map(x => `<tr><td>${esc(x.holder)}</td><td class="num">${x.pct}%</td></tr>`).join('');
+  const sec = (n, title, body) => `<section class="fr-sec"><h2><span class="fr-n">${n}</span>${esc(title)}</h2>${body}</section>`;
+
+  return `
+    <div class="fr">
+      <div class="fr-cover">
+        <div class="fr-cover-top">
+          <img src="assets/paragon-logo.png" class="fr-logo" alt="Paragon Partners"/>
+          <div class="fr-eyebrow">Screening Report · Private &amp; Confidential</div>
+        </div>
+        <h1>${esc(c.name)}</h1>
+        <div class="fr-sub">${esc(c.project || '')}${c.project ? ' · ' : ''}${esc(c.sector || '')}</div>
+        <div class="fr-verdict fr-${esc(c.fit ? c.fit.verdict : 'watch')}"><span class="dot"></span>${fit.label}</div>
+        <p class="fr-lede">${esc(c.fit ? c.fit.reason : (c.oneLiner || ''))}</p>
+        <div class="fr-stats">
+          <div><span class="k">Deal</span><span class="v">${esc(dealHeadline(c))}</span></div>
+          <div><span class="k">Origination</span><span class="v">${esc(o.banker || '—')} · ${esc(fmtDate(o.date) || '')}</span></div>
+          <div><span class="k">${esc(fy || 'Latest revenue')}</span><span class="v">${fmtCr(c.headline ? c.headline.revenueCr : 0)}</span></div>
+          <div><span class="k">EBITDA margin</span><span class="v">${c.headline ? c.headline.ebitdaPct : '—'}%</span></div>
+        </div>
+      </div>
+
+      ${sec(1, 'Business overview', `
+        <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
+        ${bullets ? `<ul class="fr-ul">${bullets}</ul>` : ''}
+        <div class="fr-people-grid">
+          <div><h3>Promoters</h3>${people(s.promoters)}</div>
+          <div><h3>Management</h3>${people(s.management)}</div>
+        </div>
+        ${own ? `<h3 style="margin-top:12px">Ownership</h3><table class="fr-facts">${own}</table>` : (s.ownershipNote ? `<p class="fr-note">${esc(s.ownershipNote)}</p>` : '')}
+      `)}
+
+      ${sec(2, 'The deal', `<table class="fr-facts">
+        <tr><td>Ask</td><td class="num">${esc(t.headline || '—')}</td></tr>
+        <tr><td>Type</td><td class="num">${esc(t.type || '—')}</td></tr>
+        <tr><td>Co-investment</td><td class="num">${esc(t.coInvestment || 'TBU')}</td></tr>
+        <tr><td>Origination source</td><td class="num">${esc(o.banker || '—')}</td></tr>
+        ${o.advisors ? `<tr><td>Advisors (IM)</td><td class="num">${esc(o.advisors)}</td></tr>` : ''}
+        <tr><td>Origination date</td><td class="num">${esc(fmtDate(o.date) || '—')}</td></tr>
+      </table>`)}
+
+      ${sec(3, 'Financials', `
+        <div class="fr-cap">All figures in ₹ crore; tinted columns are forecast.</div>
         ${printFinTable(c)}
         ${printSegments(c)}
-      </div>
+      `)}
 
-      ${questions ? `<div class="pm-block"><div class="pm-block-h">Key Questions</div>${questions}</div>` : ''}
-
-      <div class="pm-block">
-        <div class="pm-block-h">Governance Checklist</div>
-        ${printIntegrity(c)}
-      </div>
-
-      <div class="pm-block">
-        <div class="pm-block-h">Strategy Checklist &nbsp; <span class="pm-fit-tag pm-fit-${esc(c.fit ? c.fit.verdict : 'watch')}">Fit: ${fit.label}</span></div>
-        <p class="pm-fitreason">${esc(c.fit ? c.fit.reason : '')}</p>
+      ${sec(4, 'Fit assessment', `
+        <div class="fr-fitline"><span class="fr-verdict sm fr-${esc(c.fit ? c.fit.verdict : 'watch')}"><span class="dot"></span>${fit.label}</span><span>${esc(c.fit ? c.fit.reason : '')}</span></div>
         ${printChecklist(c)}
-      </div>
+      `)}
 
-      ${(c.thesis && c.thesis.length) || (c.concerns && c.concerns.length) ? `
-      <div class="pm-block">
-        <div class="pm-block-h">Section II — Investment Thesis &amp; Issues</div>
-        <div class="pm-cols">
-          <div><div class="pm-col-h">Thesis</div>${(c.thesis || []).map(x => `<div class="pm-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<span class="pm-sub">To be filled after the management meeting.</span>'}</div>
-          <div><div class="pm-col-h">Issues &amp; mitigants</div>${(c.concerns || []).map(x => `<div class="pm-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<span class="pm-sub">To be filled after the management meeting.</span>'}</div>
+      ${sec(5, 'Integrity &amp; governance', printIntegrity(c))}
+
+      ${Array.isArray(c.questions) && c.questions.length ? sec(6, 'Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
+
+      ${sec(7, 'Investment thesis &amp; risks', `
+        <div class="fr-cols">
+          <div><h3>Why we'd invest</h3>${(c.thesis || []).map(x => `<div class="fr-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
+          <div><h3>What worries us</h3>${(c.concerns || []).map(x => `<div class="fr-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
         </div>
-      </div>` : ''}
+      `)}
 
-      <div class="pm-foot">Paragon Partners · Screening Memo · Confidential${generatedLine(c) ? ' · ' + generatedLine(c) : ''}</div>
+      ${c.returns && c.returns.defaults ? sec(8, 'Illustrative returns', `<div class="fr-cap">Base-case sketch from the current assumptions — not a recommendation.</div>${frReturns(c)}`) : ''}
+
+      <div class="fr-foot">Paragon Partners · Screening Report · Private &amp; Confidential${generatedLine(c) ? ' · ' + esc(generatedLine(c)) : ''}</div>
     </div>`;
 }
 
