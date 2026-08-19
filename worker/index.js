@@ -146,7 +146,12 @@ async function callClaude({ system, user, maxTokens = 8000 }, env) {
   }
   if (!res.ok) {
     const detail = (await res.text().catch(() => '')).slice(0, 300);
-    throw new ApiError(502, `Bedrock returned ${res.status}. ${detail}`);
+    // Common misconfig: wrong model id, wrong region, or the model isn't enabled
+    // in this Bedrock account. Give a plain-language hint alongside the raw error.
+    const hint = [400, 403, 404].includes(res.status)
+      ? ' — check that BEDROCK_MODEL_ID and AWS_REGION match a Claude model enabled in your Bedrock account.'
+      : '';
+    throw new ApiError(502, `Bedrock returned ${res.status}${hint} ${detail}`);
   }
   const data = await res.json();
   const text = Array.isArray(data.content)

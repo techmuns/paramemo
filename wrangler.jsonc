@@ -5,13 +5,9 @@
   "assets": { "directory": "./public", "binding": "ASSETS" },
 
   // KV stores uploaded deals so they persist for everyone.
-  // The site deploys and runs the 3 sample deals WITHOUT this. To turn on
-  // uploading real deals: create a KV namespace, paste its id below, and
-  // REMOVE the two // marks so the block is active. (See README, "Setup".)
-  //   npx wrangler kv namespace create DEALS
-  // "kv_namespaces": [
-  //   { "binding": "DEALS", "id": "PASTE_YOUR_KV_NAMESPACE_ID_HERE" }
-  // ],
+  "kv_namespaces": [
+    { "binding": "DEALS", "id": "f0459fd5e5dd4e78a52efa10efc4dfb9" }
+  ],
 
   // Non-secret config. AWS_REGION is your Bedrock region; BEDROCK_MODEL_ID is a
   // Claude model or (recommended) a cross-region inference-profile id enabled in
