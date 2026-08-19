@@ -312,7 +312,30 @@ async function loadCompanies() {
   const hidden = new Set(hiddenSeeds);
   const seeds = (Array.isArray(seed.companies) ? seed.companies : []).filter(c => !hidden.has(c.id));   // sample can be hidden
   const seedIds = new Set(seeds.map(c => c.id));
-  return { meta: seed.meta || null, peerLiveEnabled, companies: [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))] };
+  const companies = [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))].map(normalizeYears);
+  return { meta: seed.meta || null, peerLiveEnabled, companies };
+}
+
+// Indian PE deals run on fiscal years; some Excel models label the columns as bare calendar
+// years ("2025") while our memos and CAGR labels use "FY25". Normalise every year label to the
+// FY__ form for display so all views agree. Idempotent: "FY24E", "FY21–25" and non-year labels
+// pass through unchanged. Purely cosmetic — cell values keep their positions.
+function fyLabel(y) {
+  if (typeof y !== 'string') return y;
+  const m = y.trim().match(/^(?:FY)?\s*((?:19|20)\d{2}|\d{2})\s*([A-Za-z]{0,4})$/);
+  if (!m) return y;                                        // leave anything unusual untouched (e.g. "FY21–25", "1Q25")
+  const yr = m[1].length === 4 ? m[1].slice(2) : m[1];
+  return 'FY' + yr + (m[2] || '');
+}
+function normalizeYears(c) {
+  const f = c && c.financials;
+  if (f && Array.isArray(f.years)) f.years = f.years.map(fyLabel);
+  if (f && f.actualsThrough) f.actualsThrough = fyLabel(f.actualsThrough);
+  const rs = c && c.revenueSpark;
+  if (rs && Array.isArray(rs.years)) rs.years = rs.years.map(fyLabel);
+  if (rs && rs.actualsThrough) rs.actualsThrough = fyLabel(rs.actualsThrough);
+  if (c && c.returns && c.returns.startYear) c.returns.startYear = fyLabel(c.returns.startYear);
+  return c;
 }
 
 // Add or replace a company in local state + the dropdown (used after an upload).
