@@ -89,8 +89,8 @@ npx wrangler secret put BEDROCK_API_KEY
 ```
 
 > **BEDROCK_API_KEY** is an [Amazon Bedrock API key](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
-> (Bedrock → API keys). The Worker calls Bedrock's Messages API with
-> `Authorization: Bearer <that key>` — no AWS SDK, no SigV4 signing.
+> (Bedrock → API keys). The Worker calls Bedrock's **Converse** API with
+> `Authorization: Bearer <that key>` — a single key, no AWS SDK, no SigV4 signing.
 
 **Optional OCR fallback** — only used when a PDF is a *scanned image* (no
 selectable text). If you set this, the Worker OCRs such PDFs via Mistral; if you

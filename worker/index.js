@@ -112,53 +112,53 @@ async function handleGenerate(request, env) {
 }
 
 /* ------------------------------------------------------------------ *
- * The AI call — Claude via Amazon Bedrock (Messages API, Bearer key)
+ * The AI call — Claude via Amazon Bedrock CONVERSE endpoint (Bearer key)
+ * Mirrors a proven working setup: single Bedrock API key as a Bearer token,
+ * the /converse endpoint, and the Converse request/response shape.
  * ------------------------------------------------------------------ */
 async function callClaude({ system, user, maxTokens = 8000 }, env) {
   // ⬇️ The real key plugs in here: BEDROCK_API_KEY is a Cloudflare secret (never in the repo).
   if (!env.BEDROCK_API_KEY) throw new ApiError(503, 'AI is not configured yet (secret BEDROCK_API_KEY is missing).');
   const region = env.AWS_REGION || 'us-east-1';
-  const modelId = env.BEDROCK_MODEL_ID;
-  if (!modelId) throw new ApiError(503, 'AI is not configured yet (var BEDROCK_MODEL_ID is missing).');
+  const modelId = env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
 
-  const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/invoke`;
-  const body = {
-    anthropic_version: 'bedrock-2023-05-31',   // Bedrock's Messages-API version tag
-    max_tokens: maxTokens,
-    system,
-    messages: [{ role: 'user', content: user }],
+  const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
+  const headers = {
+    'Authorization': `Bearer ${env.BEDROCK_API_KEY}`,   // Bedrock API key (Bearer, not SigV4)
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   };
+  const body = JSON.stringify({
+    system: [{ text: system }],
+    messages: [{ role: 'user', content: [{ text: user }] }],
+    inferenceConfig: { temperature: 0, maxTokens },
+  });
 
-  let res;
-  try {
-    res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${env.BEDROCK_API_KEY}`,   // Bedrock API key (Bearer)
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90_000),
-    });
-  } catch (e) {
-    throw new ApiError(504, 'The AI request timed out. Please try again.');
+  // Retry on 429 / >=500 (and transient network errors) with exponential backoff.
+  let lastErr = 'The AI request failed.';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s, 4s
+    let res;
+    try {
+      res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(90_000) });
+    } catch (e) {
+      lastErr = `network error: ${e.message}`;
+      continue; // transient — retry
+    }
+    if (res.status === 429 || res.status >= 500) {
+      lastErr = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
+      continue; // retryable
+    }
+    if (res.status !== 200) {
+      throw new ApiError(502, `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const parts = data && data.output && data.output.message && data.output.message.content;
+    const text = Array.isArray(parts) ? parts.map(p => (p && p.text) || '').join('') : '';
+    if (!text) throw new ApiError(502, 'The AI returned an empty response.');
+    return text;
   }
-  if (!res.ok) {
-    const detail = (await res.text().catch(() => '')).slice(0, 300);
-    // Common misconfig: wrong model id, wrong region, or the model isn't enabled
-    // in this Bedrock account. Give a plain-language hint alongside the raw error.
-    const hint = [400, 403, 404].includes(res.status)
-      ? ' — check that BEDROCK_MODEL_ID and AWS_REGION match a Claude model enabled in your Bedrock account.'
-      : '';
-    throw new ApiError(502, `Bedrock returned ${res.status}${hint} ${detail}`);
-  }
-  const data = await res.json();
-  const text = Array.isArray(data.content)
-    ? data.content.filter(b => b && b.type === 'text').map(b => b.text).join('')
-    : '';
-  if (!text) throw new ApiError(502, 'The AI returned an empty response.');
-  return text;
+  throw new ApiError(502, lastErr);   // exhausted retries
 }
 
 // Optional OCR fallback via Mistral (best-effort; only when a scanned PDF is sent).
