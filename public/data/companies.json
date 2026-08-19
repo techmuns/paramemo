@@ -591,6 +591,39 @@
           "growthPct": 18,
           "years": 5
         }
+      },
+      "peers": {
+        "metric": "EBITDA margin",
+        "unit": "%",
+        "note": "Niche technical-textile makers; Kusumgar's ~25% margins are strong. Few pure comparables — listed names are broader technical-textile players.",
+        "self": {
+          "name": "Kusumgar",
+          "value": 25,
+          "listed": false
+        },
+        "rows": [
+          {
+            "name": "Garware Technical Fibres",
+            "listed": true,
+            "ticker": "GARFIBRES",
+            "value": null,
+            "note": "Ropes, nets, technical textiles"
+          },
+          {
+            "name": "SRF",
+            "listed": true,
+            "ticker": "SRF",
+            "value": null,
+            "note": "Diversified; technical-textiles segment"
+          },
+          {
+            "name": "Century Enka",
+            "listed": true,
+            "ticker": "CENTENKA",
+            "value": null,
+            "note": "Nylon / industrial yarns"
+          }
+        ]
       }
     },
     {
@@ -1386,6 +1419,46 @@
           "growthPct": 25,
           "years": 4
         }
+      },
+      "peers": {
+        "metric": "EBITDA margin",
+        "unit": "%",
+        "note": "Most e-waste recyclers earn single-digit/low-teens EBITDA margins; TES-AMM is the profitable outlier. Attero is the clear scale leader (~3x the next player).",
+        "self": {
+          "name": "Attero",
+          "value": 9,
+          "listed": false
+        },
+        "rows": [
+          {
+            "name": "TES-AMM",
+            "listed": false,
+            "ticker": null,
+            "value": null,
+            "note": "Higher EBITDA; strong supply-chain integration"
+          },
+          {
+            "name": "Gravita India",
+            "listed": true,
+            "ticker": "GRAVITA",
+            "value": null,
+            "note": "Listed lead/aluminium/plastic recycler"
+          },
+          {
+            "name": "Eco Recycling (Ecoreco)",
+            "listed": true,
+            "ticker": "ECORECO",
+            "value": null,
+            "note": "Small listed e-waste recycler"
+          },
+          {
+            "name": "Endeavour",
+            "listed": false,
+            "ticker": null,
+            "value": null,
+            "note": "Sub-scale e-waste peer"
+          }
+        ]
       }
     },
     {
@@ -1835,6 +1908,53 @@
           "growthPct": 35,
           "years": 5
         }
+      },
+      "peers": {
+        "metric": "P/E",
+        "unit": "x",
+        "note": "Listed value-fashion peers trade at rich P/E on strong store growth; Style Union is earlier-stage and still loss-making.",
+        "self": {
+          "name": "Style Union",
+          "value": null,
+          "listed": false
+        },
+        "rows": [
+          {
+            "name": "Trent (Zudio)",
+            "listed": true,
+            "ticker": "TRENT",
+            "value": null,
+            "note": "Zudio-led value fashion; market leader"
+          },
+          {
+            "name": "V-Mart Retail",
+            "listed": true,
+            "ticker": "VMART",
+            "value": null,
+            "note": "Value retail, tier 2/3 towns"
+          },
+          {
+            "name": "V2 Retail",
+            "listed": true,
+            "ticker": "V2RETAIL",
+            "value": null,
+            "note": "Value fashion"
+          },
+          {
+            "name": "Shoppers Stop (Intune)",
+            "listed": true,
+            "ticker": "SHOPERSTOP",
+            "value": null,
+            "note": "Intune value format"
+          },
+          {
+            "name": "Easybuy (Landmark)",
+            "listed": false,
+            "ticker": null,
+            "value": null,
+            "note": "Private value-fashion peer"
+          }
+        ]
       }
     }
   ]

@@ -23,9 +23,10 @@ export default {
     const path = url.pathname;
     try {
       // endsWith keeps the routes working even if the app is served under a sub-path.
-      if (request.method === 'POST'   && path.endsWith('/api/generate'))  return await handleGenerate(request, env);
-      if (request.method === 'GET'    && path.endsWith('/api/companies')) return await handleCompanies(env);
-      if (request.method === 'DELETE' && path.includes('/api/companies/')) return await handleDelete(request, env);
+      if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env);
+      if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
+      if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
+      if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -47,14 +48,45 @@ async function readHiddenSeeds(env) {
   catch { return []; }
 }
 async function handleCompanies(env) {
-  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [] });   // KV not bound yet → no uploads
+  const peerLiveEnabled = !!(env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim());
+  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled });   // KV not bound yet → no uploads
   const index = await readIndex(env);
   const companies = [];
   for (const id of index) {
     const raw = await env.DEALS.get(`company:${id}`);
     if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
   }
-  return json({ companies, hiddenSeeds: await readHiddenSeeds(env) });
+  return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled });
+}
+
+// GET /api/peer-multiple?ticker=XXX — live P/E + market cap via scrape.do → screener.in.
+// Purely additive: returns {} on any failure or when no key is configured.
+async function handlePeerMultiple(request, env) {
+  const key = env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim();
+  if (!key) return json({});
+  const ticker = (new URL(request.url).searchParams.get('ticker') || '').trim().toUpperCase();
+  if (!/^[A-Z0-9&.-]{1,20}$/.test(ticker)) return json({});
+  try {
+    const target = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
+    const url = `https://api.scrape.do/?token=${encodeURIComponent(key)}&url=${encodeURIComponent(target)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) return json({});
+    const html = await res.text();
+    // screener.in renders "Stock P/E" and "Market Cap" as label/number pairs
+    const grab = label => {
+      const re = new RegExp(label + '[\\s\\S]{0,160}?<span[^>]*class="number"[^>]*>\\s*([\\d,]+(?:\\.\\d+)?)', 'i');
+      const m = html.match(re);
+      return m ? parseFloat(m[1].replace(/,/g, '')) : null;
+    };
+    const pe = grab('Stock P/E');
+    const marketCapCr = grab('Market Cap');
+    const out = {};
+    if (pe != null && !isNaN(pe)) out.pe = pe;
+    if (marketCapCr != null && !isNaN(marketCapCr)) out.marketCapCr = marketCapCr;
+    return json(out);
+  } catch (_) {
+    return json({});
+  }
 }
 
 // DELETE /api/companies/<id> — remove an uploaded deal, OR hide a built-in sample.
@@ -126,6 +158,10 @@ async function handleGenerate(request, env) {
     '• financials.segments — { unit:"₹ cr", note:"one line on how the mix shifts", rows:[ { name, values:[… aligned to years, null before a segment exists ], cagr:[…] } ] } — the revenue split by business segment/product over time, exactly as the model breaks it out.\n' +
     '• financials.capacity — include ONLY if the model has capacity/volume data: { unit, rows:[ { name, values:[…], utilPct:[…] } ] }.\n' +
     '• financials.revenueMix — { label, slices:[ {name, pct} ] } for the latest ACTUAL year (shares sum to ~100).\n\n' +
+    'PEERS (only if the IM has a competition / benchmarking / peer section — otherwise OMIT "peers" entirely):\n' +
+    '• peers = { metric, unit, note, self, rows }. Choose the ONE metric the IM benchmarks on: "EV/EBITDA" or "P/E" (unit "x") or "EBITDA margin" (unit "%").\n' +
+    '• rows = [ { name, listed:true|false, ticker:"<NSE code>"|null, value:<number|null>, note:"short" } ] — list the named competitors, flag listed vs private, give the NSE ticker for listed Indian names if you know it, and fill value ONLY where the documents provide a figure (else null — NEVER invent a multiple).\n' +
+    '• self = { name:"<the target>", value:<number|null>, listed:false } — the company\'s own value on that metric. note = one plain line on how it stacks up.\n\n' +
     'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
     'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
     '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
