@@ -122,6 +122,37 @@
     }
     .hdr-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
     .hdr-btn:active { transform: translateY(1px); }
+    /* header icon button (notifications bell) */
+    .hdr-icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; color: #EAF0FF; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); transition: background .16s, border-color .16s; }
+    .hdr-icon-btn:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.28); }
+    .bell-badge { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #F43F5E; color: #fff; font-size: 10.5px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--navy); }
+    .hdr-icon-btn.ring::after { content: ''; position: absolute; inset: -1px; border-radius: 10px; box-shadow: 0 0 0 0 rgba(244,63,94,.5); animation: bellring 1.5s ease-out 2; }
+    @keyframes bellring { 0% { box-shadow: 0 0 0 0 rgba(244,63,94,.5); } 100% { box-shadow: 0 0 0 10px rgba(244,63,94,0); } }
+    .bell-menu { width: 328px; max-width: calc(100vw - 32px); max-height: 60vh; overflow-y: auto; padding: 6px; }
+    .bell-empty { padding: 22px 14px; text-align: center; color: var(--muted); font-size: 12.5px; }
+    .notif { display: flex; gap: 10px; align-items: flex-start; padding: 9px 10px; border-radius: 9px; cursor: default; }
+    .notif.click { cursor: pointer; }
+    .notif.click:hover { background: var(--surface); }
+    .notif-ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto; }
+    .notif-body { min-width: 0; flex: 1 1 auto; }
+    .notif-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+    .notif-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+    .notif-cta { font-size: 11.5px; font-weight: 600; color: var(--navy); margin-top: 3px; display: inline-flex; align-items: center; gap: 4px; }
+    .notif-x { flex: 0 0 auto; color: var(--hint); border-radius: 6px; padding: 2px; }
+    .notif-x:hover { color: var(--ink); background: rgba(0,0,0,.05); }
+    /* pipeline "processing" card */
+    .job-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 16px; background: #fff; border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+    .job-card .job-spin { width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto; display: grid; place-items: center; color: #fff; background: linear-gradient(140deg,#2E6FD6,#0C3078); }
+    .job-card .job-spin svg { animation: spin .8s linear infinite; }
+    .job-name { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 15px; color: var(--ink); }
+    .job-status { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+    .job-el { font-variant-numeric: tabular-nums; }
+    .job-bar { flex: 1 1 auto; max-width: 260px; height: 6px; border-radius: 999px; background: #EDF0F5; overflow: hidden; }
+    .job-bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg,#0C3078,#2E6FD6 60%,#14B8A6); transition: width .5s ease; }
+    .job-card.err .job-spin { background: linear-gradient(140deg,#F43F5E,#be123c); }
+    .job-btn { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--ink); }
+    .job-btn:hover { border-color: var(--border-strong); }
+    .job-btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
     .hdr-btn[disabled], .hdr-btn.is-disabled { opacity: .5; cursor: not-allowed; }
     .hdr-btn.is-disabled:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); }
 
@@ -685,6 +716,9 @@
     }
     @keyframes popIn { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .gdone-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 20px; }
+    .gen-bg { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 16px; padding: 9px; border-radius: 10px;
+      font-size: 12.5px; font-weight: 600; color: var(--muted); background: #F4F6FB; border: 1px solid var(--border); transition: color .15s, border-color .15s, background .15s; }
+    .gen-bg:hover { color: var(--navy); border-color: var(--border-strong); background: #EEF2FB; }
 
     /* ---- The print memo (Export PDF) ---- */
     .print-only { display: none; }
@@ -758,8 +792,16 @@
           <div class="product-title group-hover:text-white/90 transition-colors">Screening Memo</div>
         </div>
 
-        <!-- Controls: company picker + export -->
+        <!-- Controls: notifications + company picker + export -->
         <div class="flex items-center gap-2 sm:gap-3">
+          <div id="bell" class="relative">
+            <button id="bell-btn" class="hdr-icon-btn" type="button" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+              <span id="bell-ico" class="flex"></span>
+              <span id="bell-badge" class="bell-badge hidden">0</span>
+            </button>
+            <div id="bell-menu" class="dd-menu bell-menu hidden" role="menu" aria-label="Notifications"></div>
+          </div>
+
           <div id="company-dd" class="relative">
             <button id="company-dd-btn" class="hdr-btn" type="button" aria-haspopup="true" aria-expanded="false">
               <span id="company-dd-ico" class="text-gold/90 flex"></span>

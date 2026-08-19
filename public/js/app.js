@@ -161,6 +161,8 @@ const ICONS = {
   coins:      '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
   sparkles:   '<path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
   trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+  bell:       '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  loader:     '<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>',
 };
 function icon(name, cls = 'w-4 h-4', sw = 2) {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}"
@@ -271,6 +273,7 @@ const state = {
   companies: [],
   view: 'cards',                     // pipeline: 'cards' | 'table'
   sort: { key: 'fit', dir: 'asc' },  // default: Fit (Go→Watch→Pass), tie-break by deal size
+  jobs: [],                          // in-flight / finished upload jobs (background processing)
 };
 
 // Company-view UI state (persists across company switches).
@@ -353,6 +356,86 @@ async function removeCompany(c) {
   }
 }
 
+/* ---- Background job engine — a memo builds even if the modal is closed -------
+ * startGeneration() kicks off extraction + AI in the background and returns a
+ * job. The pipeline shows a "Processing…" card and the header bell announces it
+ * when it's ready — so a partner can keep working instead of waiting. ---------*/
+let _jobSeq = 0;
+const _jobSubs = new Set();                 // modal working-screen subscribers
+function onJobs(fn) { _jobSubs.add(fn); return () => _jobSubs.delete(fn); }
+function emitJobs() {
+  _jobSubs.forEach(fn => { try { fn(); } catch (e) { /* view may be gone */ } });
+  updateBell();
+  if (!ui.companyId && $('#pipeline-content')) renderView();   // refresh processing cards on the pipeline
+}
+function jobElapsed(job) {
+  const ms = (job.finishedAt || Date.now()) - job.startedAt;
+  const s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basics }
+  const job = {
+    id: 'job' + (++_jobSeq), name: (payload.basics.name || '').trim() || 'New deal',
+    sector: (payload.basics.sector || '').trim(), status: 'running', stageIdx: 0,
+    startedAt: Date.now(), finishedAt: null, company: null, error: null, seen: false,
+  };
+  state.jobs.push(job);
+  emitJobs();
+  runJob(job, payload);               // fire and forget — survives modal close
+  return job;
+}
+
+async function runJob(job, payload) {
+  const stage = i => { if (job.status === 'running') { job.stageIdx = i; emitJobs(); } };
+  let writeTO = null;
+  try {
+    stage(0);
+    await ensureUploadLibs();
+    const imText = await extractPdfText(payload.files.im);
+    let imPdfBase64 = '';
+    if (!imText.trim()) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
+
+    stage(1);
+    const { excelText, sheetNames } = await parseExcel(payload.files.excel);
+
+    let notesText = '';
+    if (payload.files.notes) {
+      const n = payload.files.notes;
+      notesText = /pdf$/i.test(n.name) || (n.type || '').includes('pdf')
+        ? await extractPdfText(n, 20000) : (await n.text()).slice(0, 20000);
+    }
+
+    stage(2);
+    writeTO = setTimeout(() => stage(3), 7000);   // light up "writing" partway through the AI wait
+    const res = await fetch(apiUrl('generate'), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64 }),
+    });
+    clearTimeout(writeTO);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `The request failed (${res.status}).`);
+    if (!data.company) throw new Error('The AI did not return a memo. Please try again.');
+
+    job.stageIdx = 3;
+    job.company = data.company;
+    job.status = 'done';
+    job.finishedAt = Date.now();
+    addCompany(data.company);
+    emitJobs();
+  } catch (err) {
+    clearTimeout(writeTO);
+    console.error(err);
+    job.status = 'error';
+    job.error = (err && err.message) || 'Something went wrong — please try again.';
+    job.finishedAt = Date.now();
+    emitJobs();
+  }
+}
+
+// Discard a finished/failed job card from the pipeline (does not touch the memo).
+function dismissJob(id) { state.jobs = state.jobs.filter(j => j.id !== id); emitJobs(); }
+
 /* ---- Lazy-load pdf.js + SheetJS the first time a partner uploads ---- */
 let _libsPromise = null;
 function loadScript(src) {
@@ -425,7 +508,63 @@ function initHeaderIcons() {
   $('#company-dd-ico').innerHTML = icon('building', 'w-4 h-4');
   $('#company-dd-chev').innerHTML = icon('chevronDown', 'w-4 h-4');
   $('#export-ico').innerHTML = icon('download', 'w-4 h-4');
+  const bi = $('#bell-ico'); if (bi) bi.innerHTML = icon('bell', 'w-[18px] h-[18px]', 1.9);
 }
+
+/* ---- Notifications bell — announces memos finished in the background ---- */
+let _bellLastDone = 0;
+function bellNotifs() {
+  // newest first; running jobs also listed so the partner sees progress here too
+  return [...state.jobs].reverse();
+}
+function updateBell() {
+  const badge = $('#bell-badge'), btn = $('#bell-btn');
+  if (!badge || !btn) return;
+  const unseenDone = state.jobs.filter(j => (j.status === 'done' || j.status === 'error') && !j.seen).length;
+  const running = state.jobs.filter(j => j.status === 'running').length;
+  const n = unseenDone;
+  badge.textContent = n;
+  badge.classList.toggle('hidden', n === 0);
+  // ring the bell once when a new memo finishes
+  const doneCount = state.jobs.filter(j => j.status === 'done').length;
+  if (doneCount > _bellLastDone) { btn.classList.remove('ring'); void btn.offsetWidth; btn.classList.add('ring'); }
+  _bellLastDone = doneCount;
+  if (!badge.classList.contains('hidden') || running) btn.setAttribute('data-active', '1'); else btn.removeAttribute('data-active');
+  // keep an open panel fresh
+  if (!$('#bell-menu').classList.contains('hidden')) renderBellPanel();
+}
+function renderBellPanel() {
+  const menu = $('#bell-menu');
+  const list = bellNotifs();
+  if (!list.length) { menu.innerHTML = '<div class="bell-empty">No memos in progress.<br>Upload a deal and it builds here.</div>'; return; }
+  menu.innerHTML = list.map(j => {
+    if (j.status === 'running') {
+      return `<div class="notif"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#2E6FD6,#0C3078)">${icon('loader', 'w-4 h-4')}</span>
+        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Building your memo… <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div></div></div>`;
+    }
+    if (j.status === 'error') {
+      return `<div class="notif"><span class="notif-ic" style="color:#fff;background:#F43F5E">${icon('alert', 'w-4 h-4')}</span>
+        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Couldn't build the memo. ${esc(j.error || '')}</div></div>
+        <button class="notif-x" data-dismiss="${j.id}" aria-label="Dismiss">${icon('x', 'w-4 h-4')}</button></div>`;
+    }
+    return `<div class="notif click" data-view-job="${j.company ? j.company.id : ''}"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#14B8A6,#10B981)">${icon('check', 'w-4 h-4', 3)}</span>
+      <div class="notif-body"><div class="notif-title">${esc(j.name)} — memo ready</div><div class="notif-sub">Built in ${jobElapsed(j)}</div><div class="notif-cta">${icon('trendingUp', 'w-3.5 h-3.5')} View memo</div></div>
+      <button class="notif-x" data-dismiss="${j.id}" aria-label="Dismiss">${icon('x', 'w-4 h-4')}</button></div>`;
+  }).join('');
+  menu.querySelectorAll('[data-view-job]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-dismiss]')) return;
+    const id = el.dataset.viewJob; closeBell(); if (id) openCompany(id);
+  }));
+  menu.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); dismissJob(b.dataset.dismiss); }));
+}
+function openBell() {
+  $('#bell-menu').classList.remove('hidden');
+  $('#bell-btn').setAttribute('aria-expanded', 'true');
+  state.jobs.forEach(j => { if (j.status !== 'running') j.seen = true; });   // opening acknowledges finished ones
+  renderBellPanel();
+  updateBell();
+}
+function closeBell() { $('#bell-menu').classList.add('hidden'); $('#bell-btn').setAttribute('aria-expanded', 'false'); }
 
 function populateCompanyDropdown() {
   const menu = $('#company-dd-menu');
@@ -462,6 +601,18 @@ function initHeader() {
   });
   document.addEventListener('click', e => { if (!e.target.closest('#company-dd')) closeDropdown(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDropdown(); });
+
+  // Notifications bell.
+  const bell = $('#bell-btn');
+  bell.addEventListener('click', e => { e.stopPropagation(); $('#bell-menu').classList.contains('hidden') ? openBell() : closeBell(); });
+  document.addEventListener('click', e => { if (!e.target.closest('#bell')) closeBell(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBell(); });
+  updateBell();
+  // one shared 1s ticker keeps every "elapsed" label live (bell panel + pipeline cards)
+  setInterval(() => {
+    if (!state.jobs.some(j => j.status === 'running')) return;
+    $$('[data-el]').forEach(el => { const j = state.jobs.find(x => x.id === el.dataset.el); if (j) el.textContent = jobElapsed(j); });
+  }, 1000);
 
   // Brand acts as a "home" link back to the pipeline.
   const brand = $('#brand-home');
@@ -691,9 +842,38 @@ function renderView() {
   hideTip();
   const content = $('#pipeline-content');
   content.innerHTML = '';
-  if (!state.companies.length) { content.appendChild(renderEmptyState()); return; }
-  content.appendChild(state.view === 'cards' ? renderCards() : renderTable());
-  if (state.view === 'cards') requestAnimationFrame(initSparklines);
+  const activeJobs = state.jobs.filter(j => j.status === 'running' || j.status === 'error');
+  if (activeJobs.length) content.appendChild(renderJobCards(activeJobs));
+  if (!state.companies.length && !activeJobs.length) { content.appendChild(renderEmptyState()); return; }
+  if (state.companies.length) {
+    content.appendChild(state.view === 'cards' ? renderCards() : renderTable());
+    if (state.view === 'cards') requestAnimationFrame(initSparklines);
+  }
+}
+
+// "Processing…" cards for in-flight/failed uploads, shown above the pipeline.
+function renderJobCards(jobs) {
+  const wrap = h('<div class="space-y-3 mb-5"></div>');
+  jobs.forEach(j => wrap.appendChild(renderJobCard(j)));
+  return wrap;
+}
+function renderJobCard(j) {
+  if (j.status === 'error') {
+    const el = h(`<div class="job-card err">
+      <span class="job-spin">${icon('alert', 'w-4 h-4')}</span>
+      <div class="min-w-0" style="flex:1 1 auto"><div class="job-name">${esc(j.name)}</div><div class="job-status">Couldn't build the memo — ${esc(j.error || '')}</div></div>
+      <button class="job-btn" data-dismiss="${j.id}">Dismiss</button>
+    </div>`);
+    el.querySelector('[data-dismiss]').addEventListener('click', () => dismissJob(j.id));
+    return el;
+  }
+  const pct = [12, 34, 56, 82][j.stageIdx] || 12;
+  const label = ['Reading the Information Memorandum', 'Reading the financial model', 'Analysing the numbers & fit', 'Writing your screening memo'][j.stageIdx] || 'Working';
+  return h(`<div class="job-card">
+    <span class="job-spin">${icon('loader', 'w-4 h-4')}</span>
+    <div class="min-w-0"><div class="job-name">${esc(j.name)}</div><div class="job-status">${esc(label)}… · <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div></div>
+    <div class="job-bar"><span style="width:${pct}%"></span></div>
+  </div>`);
 }
 
 /* ---- Cards view ---- */
@@ -1662,6 +1842,8 @@ function destroyCharts() { _charts.forEach(ch => ch.destroy()); _charts = []; _r
 /* Pipeline sparklines */
 function initSparklines() {
   $$('#pipeline-content canvas[data-spark]').forEach(canvas => {
+    const existing = (window.Chart && Chart.getChart) ? Chart.getChart(canvas) : null;
+    if (existing) existing.destroy();                    // idempotent: pipeline can re-render mid-job
     const c = companyById(canvas.dataset.spark);
     if (c && c.revenueSpark) _charts.push(buildSparkline(canvas, c.revenueSpark));
   });
@@ -1707,6 +1889,8 @@ function buildSparkline(canvas, spark) {
 /* Company-view charts — dispatched by the canvas's data-chart attribute. */
 function initPanelCharts(c) {
   $$('#tab-panel canvas[data-chart]').forEach(cv => {
+    const existing = (window.Chart && Chart.getChart) ? Chart.getChart(cv) : null;
+    if (existing) existing.destroy();
     let ch = null;
     switch (cv.dataset.chart) {
       case 'ownership': ch = buildOwnershipChart(cv, c); break;
@@ -1926,6 +2110,7 @@ async function fileToBase64(file) {
 function openAddDealModal() {
   const root = $('#modal-root');
   const sel = { im: null, excel: null, notes: null };   // chosen files
+  let jobUnsub = null, gpCtl = null;                     // background-job mirror (see generate/close)
 
   const overlay = h(`
     <div class="modal-overlay" role="dialog" aria-modal="true" aria-label="Add a deal">
@@ -2002,12 +2187,12 @@ function openAddDealModal() {
   const BAR_CREEP = [28, 50, 72, 96];   // where it slowly creeps while that step runs
 
   // Build the working screen once and return a small controller to drive it.
-  function renderWorking() {
+  function renderWorking(job) {
     bodyEl.innerHTML = `
       <div class="gen-wrap">
         <div class="gen-hero"><div class="gen-hero-ic">${icon('sparkles', 'w-6 h-6', 2.2)}</div></div>
         <div class="gen-head font-display" data-head>Getting started…</div>
-        <div class="gen-sub">This usually takes about a minute. It saves to your pipeline automatically.</div>
+        <div class="gen-sub">This usually takes about a minute — you can keep working, it builds in the background.</div>
         <div class="pbar"><div class="pbar-fill" data-bar></div></div>
         <div class="pbar-meta"><span class="pbar-elapsed" data-elapsed>0:00 elapsed</span><span class="pbar-pct" data-pct>0%</span></div>
         <div class="gen-steps">
@@ -2018,20 +2203,27 @@ function openAddDealModal() {
               <span class="gstep-stat"></span>
             </div>`).join('')}
         </div>
+        <button class="gen-bg" data-bg type="button">${icon('arrowLeft', 'w-3.5 h-3.5', 2.4)} Keep working — I'll tell you when it's ready</button>
       </div>`;
+
+    bodyEl.querySelector('[data-bg]').addEventListener('click', () => {
+      close();
+      toast(`Building ${job.name} — the 🔔 will light up when it's ready`);
+    });
 
     const barEl = bodyEl.querySelector('[data-bar]');
     const pctEl = bodyEl.querySelector('[data-pct]');
     const headEl = bodyEl.querySelector('[data-head]');
     const elapsedEl = bodyEl.querySelector('[data-elapsed]');
     const stepEls = [...bodyEl.querySelectorAll('[data-gstep]')];
-    let curPct = 0, pctRAF = 0, creepTO = null, finished = false, startT = 0, timerIV = null;
+    let curPct = 0, pctRAF = 0, creepTO = null, finished = false, timerIV = null;
 
     const fmtElapsed = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
     function startTimer() {
-      if (startT) return;
-      startT = performance.now();
-      timerIV = setInterval(() => { if (elapsedEl) elapsedEl.textContent = fmtElapsed(performance.now() - startT) + ' elapsed'; }, 1000);
+      if (timerIV) return;
+      const tick = () => { if (elapsedEl) elapsedEl.textContent = fmtElapsed(Date.now() - job.startedAt) + ' elapsed'; };
+      tick();
+      timerIV = setInterval(tick, 1000);
     }
 
     function tweenPct(target, ms) {
@@ -2077,7 +2269,7 @@ function openAddDealModal() {
         headEl.textContent = 'Memo ready';
         setBar(100, 450);
       },
-      elapsedText: () => (startT ? fmtElapsed(performance.now() - startT) : '0:00'),
+      stop() { finished = true; clearTimeout(creepTO); clearInterval(timerIV); cancelAnimationFrame(pctRAF); },
     };
   }
 
@@ -2100,53 +2292,29 @@ function openAddDealModal() {
     });
   }
 
-  async function generate() {
+  // Start a background job and mirror its progress in the modal while it's open.
+  // Closing the modal does NOT cancel the job — the pipeline card + bell take over.
+  function generate() {
     if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
     if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
-    let writeTO = null;
-    try {
-      const gp = renderWorking();
-      gp.stage(0);
-      await ensureUploadLibs();
-
-      const imText = await extractPdfText(sel.im);
-      let imPdfBase64 = '';
-      if (!imText.trim()) imPdfBase64 = await fileToBase64(sel.im);   // scanned PDF → OCR fallback
-
-      gp.stage(1);
-      const { excelText, sheetNames } = await parseExcel(sel.excel);
-
-      let notesText = '';
-      if (sel.notes) {
-        notesText = /pdf$/i.test(sel.notes.name) || sel.notes.type.includes('pdf')
-          ? await extractPdfText(sel.notes, 20000) : (await sel.notes.text()).slice(0, 20000);
+    const job = startGeneration({ files: { im: sel.im, excel: sel.excel, notes: sel.notes }, basics: { ...captured.basics } });
+    gpCtl = renderWorking(job);
+    let lastStage = -1, shown = false;
+    const update = () => {
+      if (job.status === 'running') {
+        if (job.stageIdx !== lastStage) { lastStage = job.stageIdx; gpCtl.stage(job.stageIdx); }
+      } else if (job.status === 'done' && !shown) {
+        shown = true; gpCtl.finish();
+        if (jobUnsub) { jobUnsub(); jobUnsub = null; }
+        setTimeout(() => renderDone(job.company, jobElapsed(job)), 650);   // let the bar reach 100%
+      } else if (job.status === 'error' && !shown) {
+        shown = true; gpCtl.stop();
+        if (jobUnsub) { jobUnsub(); jobUnsub = null; }
+        renderForm(job.error);
       }
-
-      gp.stage(2);
-      const basics = { ...captured.basics };   // typed overrides captured before "working" replaced the form
-      // The AI call covers "analyse" + "write"; light up the writing step partway through the wait.
-      writeTO = setTimeout(() => gp.stage(3), 7000);
-
-      const res = await fetch(apiUrl('generate'), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics, imPdfBase64 }),
-      });
-      clearTimeout(writeTO);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `The request failed (${res.status}).`);
-      if (!data.company) throw new Error('The AI did not return a memo. Please try again.');
-
-      gp.stage(3);
-      const builtIn = gp.elapsedText();
-      gp.finish();
-      addCompany(data.company);
-      await new Promise(r => setTimeout(r, 650));   // let the bar fill to 100% before the success screen
-      renderDone(data.company, builtIn);
-    } catch (err) {
-      clearTimeout(writeTO);
-      console.error(err);
-      renderForm((err && err.message) || 'Something went wrong — please try again.');
-    }
+    };
+    jobUnsub = onJobs(update);
+    update();
   }
 
   // Capture basics before we blow away the form during "working" (so generate can read them).
@@ -2164,7 +2332,11 @@ function openAddDealModal() {
     Object.entries(captured.basics).forEach(([key, val]) => { const i = bodyEl.querySelector(`[data-basic="${key}"]`); if (i) i.value = val; });
   }));
 
-  const close = () => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey); };
+  const close = () => {
+    if (jobUnsub) { jobUnsub(); jobUnsub = null; }   // stop mirroring, but the job keeps running
+    if (gpCtl) { gpCtl.stop(); gpCtl = null; }
+    overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey);
+  };
   const onKey = e => { if (e.key === 'Escape') close(); };
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
   overlay.querySelector('.modal-close').addEventListener('click', close);
