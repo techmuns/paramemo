@@ -808,24 +808,27 @@
     .ex-s { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; line-height: 1.35; }
 
     /* ============ MEMO — exact replica of Paragon's Word template ============ */
-    .mx { font-family: Calibri, 'Segoe UI', Arial, sans-serif; color: #111; font-size: 10px; line-height: 1.38; max-width: 190mm; margin: 0 auto; }
+    /* Readable at print scale, and paginated like their memo (each block starts a page). */
+    .mx { font-family: Calibri, 'Segoe UI', Arial, sans-serif; color: #111; font-size: 12px; line-height: 1.5; max-width: 190mm; margin: 0 auto; }
     .mx *, .fr * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .mx-head { display: flex; align-items: center; gap: 12px; padding-bottom: 8px; margin-bottom: 12px; border-bottom: 2px solid #1F2A5A; }
-    .mx-logo { height: 40px; width: auto; }
-    .mx-title { flex: 1 1 auto; text-align: center; font-family: Cambria, Georgia, 'Times New Roman', serif; font-size: 15px; font-weight: 700; }
+    .mx-head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 14px; border-bottom: 2px solid #1F2A5A; }
+    .mx-logo { height: 48px; width: auto; }
+    .mx-title { flex: 1 1 auto; text-align: center; font-family: Cambria, Georgia, 'Times New Roman', serif; font-size: 19px; font-weight: 700; }
     .mx-title span { font-weight: 400; }
-    .mx-row { display: grid; grid-template-columns: 128px 1fr; border: 1px solid #9AA3B5; margin-bottom: 6px; break-inside: avoid; }
-    .mx-row-l { padding: 5px 8px; font-weight: 700; border-right: 1px solid #9AA3B5; }
-    .mx-row-b { padding: 5px 9px; }
-    .mx-row-b ul { margin: 0; padding-left: 15px; } .mx-row-b li { margin-bottom: 1px; }
+    .mx-grp { break-before: page; }                       /* financials / questions / section II each start a fresh page */
+    .mx-row { display: grid; grid-template-columns: 150px 1fr; border: 1px solid #9AA3B5; margin-bottom: 7px; break-inside: avoid; }
+    .mx-row-l { padding: 7px 10px; font-weight: 700; border-right: 1px solid #9AA3B5; }
+    .mx-row-b { padding: 7px 11px; }
+    .mx-row-b ul { margin: 0; padding-left: 16px; } .mx-row-b li { margin-bottom: 2px; }
     .mx-hl { background: #FFF176; padding: 0 3px; font-weight: 600; }
-    .mx-h2 { font-weight: 700; font-size: 11px; margin: 15px 0 6px; text-decoration: underline; break-after: avoid; }
-    .mx-h2.center { text-align: center; font-size: 12.5px; text-decoration: none; margin-top: 20px; }
-    .mx-h3 { font-weight: 700; font-size: 10.5px; margin: 11px 0 5px; break-after: avoid; }
-    .mx-q { margin-bottom: 5px; break-inside: avoid; } .mx-q-h { font-weight: 700; }
-    .mx-q ul, .fr-q ul { margin: 1px 0 0; padding-left: 16px; } .mx-q li { margin-bottom: 1px; }
-    table.mx-tbl { width: 100%; border-collapse: collapse; font-size: 7.5px; margin-top: 4px; }
-    table.mx-tbl th, table.mx-tbl td { border: 1px solid #9AA3B5; padding: 2px 4px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mx-h2 { font-weight: 700; font-size: 14px; margin: 0 0 8px; text-decoration: underline; break-after: avoid; }
+    .mx-grp .mx-h2:not(:first-child) { margin-top: 18px; }
+    .mx-h2.center { text-align: center; font-size: 15px; text-decoration: none; margin: 0 0 12px; }
+    .mx-h3 { font-weight: 700; font-size: 12.5px; margin: 13px 0 6px; break-after: avoid; }
+    .mx-q { margin-bottom: 8px; break-inside: avoid; } .mx-q-h { font-weight: 700; }
+    .mx-q ul, .fr-q ul { margin: 2px 0 0; padding-left: 18px; } .mx-q li { margin-bottom: 2px; }
+    table.mx-tbl { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 6px; break-inside: avoid; }
+    table.mx-tbl th, table.mx-tbl td { border: 1px solid #9AA3B5; padding: 3px 5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     table.mx-tbl th { background: #1F2A5A; color: #fff; font-weight: 700; }
     table.mx-tbl th.lft, table.mx-tbl td.lft { text-align: left; }
     table.mx-tbl th.cg, table.mx-tbl td.cg { font-style: italic; }
@@ -834,11 +837,12 @@
     table.mx-tbl tr.it td { font-style: italic; color: #333; }
     table.mx-tbl tr.tot td { font-weight: 700; }
     table.mx-tbl tr.cat td { font-weight: 700; background: #EEF0F5; text-align: left; }
-    table.mx-chk { font-size: 8.5px; } table.mx-chk td, table.mx-chk th { padding: 3px 5px; }
+    table.mx-chk { font-size: 10.5px; break-inside: avoid; } table.mx-chk td, table.mx-chk th { padding: 5px 7px; }
+    table.mx-chk td { white-space: normal; vertical-align: top; overflow-wrap: anywhere; }  /* checklist comments wrap; numeric mx-tbl stays nowrap */
     table.mx-chk th:nth-child(2), table.mx-chk td.ctr { text-align: center; }
     table.mx-chk th:first-child, table.mx-chk td:first-child { width: 28%; }
     table.mx-chk th:nth-child(2) { width: 12%; }
-    .mx-foot { margin-top: 14px; padding-top: 5px; border-top: 1px solid #ccc; font-size: 8px; color: #888; text-align: center; }
+    .mx-foot { margin-top: 16px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 9.5px; color: #888; text-align: center; }
 
     /* ============ FULL REPORT — comprehensive branded document ============ */
     .fr { font-family: 'Inter', Arial, sans-serif; color: #1F2937; font-size: 10.5px; line-height: 1.5; max-width: 190mm; margin: 0 auto; }

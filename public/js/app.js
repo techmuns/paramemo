@@ -796,24 +796,28 @@ function renderMemoExact(c) {
       ${promoters.length ? row('Promoter Overview', `<ul>${li(promoters)}</ul>`) : ''}
       ${mgmt.length ? row('Mgmt Overview', `<ul>${li(mgmt)}</ul>`) : ''}
 
-      ${memoFinTable(c)}
-      ${memoSegTable(c, 'mn')}
-      ${memoSegTable(c, 'pct')}
-      ${memoCapacity(c)}
+      <div class="mx-grp">
+        ${memoFinTable(c)}
+        ${memoSegTable(c, 'mn')}
+        ${memoSegTable(c, 'pct')}
+        ${memoCapacity(c)}
+      </div>
 
-      ${Array.isArray(c.questions) && c.questions.length ? `<div class="mx-h2">Key Questions</div>${memoQuestions(c)}` : ''}
+      <div class="mx-grp">
+        ${Array.isArray(c.questions) && c.questions.length ? `<div class="mx-h2">Key Questions</div>${memoQuestions(c)}` : ''}
+        <div class="mx-h2">Governance Checklist</div>
+        ${memoGov(c)}
+        <div class="mx-h2">Strategy Checklist</div>
+        ${memoStrategy(c)}
+      </div>
 
-      <div class="mx-h2">Governance Checklist</div>
-      ${memoGov(c)}
-
-      <div class="mx-h2">Strategy Checklist</div>
-      ${memoStrategy(c)}
-
-      <div class="mx-h2 center">Section II – After First Management Meeting</div>
-      <div class="mx-h3">Investment Thesis</div>
-      ${memoThesis(c)}
-      <div class="mx-h3">Issues for Consideration</div>
-      ${memoIssues(c)}
+      <div class="mx-grp">
+        <div class="mx-h2 center">Section II – After First Management Meeting</div>
+        <div class="mx-h3">Investment Thesis</div>
+        ${memoThesis(c)}
+        <div class="mx-h3">Issues for Consideration</div>
+        ${memoIssues(c)}
+      </div>
 
       <div class="mx-foot">Private &amp; Confidential</div>
     </div>`;
