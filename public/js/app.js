@@ -836,6 +836,23 @@ function frReturns(c) {
   ].map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join('');
   return `<table class="fr-facts">${rows}</table>`;
 }
+// Peer comps for the FULL REPORT only (never the memo/Word-replica). Small 3-col
+// table, target highlighted, peer-median line. Empty string when no peers.
+function hasPeers(c) { return !!(c.peers && Array.isArray(c.peers.rows) && c.peers.rows.length); }
+function frPeerComps(c) {
+  if (!hasPeers(c)) return '';
+  const p = c.peers, unit = p.unit || '';
+  const fmtVal = v => v == null ? '—' : (unit === '%' ? v + '%' : v + (unit || ''));
+  const median = peerMedian(p.rows.map(r => r.value));
+  const metricHdr = esc(p.metric) + (unit === 'x' ? ' (×)' : unit === '%' ? ' (%)' : '');
+  const tag = l => `<span class="fr-peer-tag ${l ? 'lst' : 'prv'}">${l ? 'Listed' : 'Private'}</span>`;
+  const selfRow = (p.self && p.self.name)
+    ? `<tr class="fr-peer-self"><td>${esc(p.self.name)} <span class="fr-peer-you">the deal</span></td><td>${tag(!!p.self.listed)}</td><td class="num">${fmtVal(p.self.value)}</td></tr>` : '';
+  const rows = p.rows.map(r => `<tr><td>${esc(r.name)}${r.ticker ? ` <span class="fr-peer-tick">${esc(r.ticker)}</span>` : ''}</td><td>${tag(!!r.listed)}</td><td class="num">${fmtVal(r.value)}</td></tr>`).join('');
+  const medRow = median != null ? `<tr class="fr-peer-med"><td>Peer median</td><td></td><td class="num">${fmtVal(median)}</td></tr>` : '';
+  return `${p.note ? `<p class="fr-cap">${esc(p.note)}</p>` : ''}
+    <table class="fr-peer-tbl"><thead><tr><th>Company</th><th>Type</th><th class="num">${metricHdr}</th></tr></thead><tbody>${selfRow}${rows}${medRow}</tbody></table>`;
+}
 function renderFullReport(c) {
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
   const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
@@ -905,7 +922,9 @@ function renderFullReport(c) {
         </div>
       `)}
 
-      ${c.returns && c.returns.defaults ? sec(8, 'Illustrative returns', `<div class="fr-cap">Base-case sketch from the current assumptions — not a recommendation.</div>${frReturns(c)}`) : ''}
+      ${(c.returns && c.returns.defaults)
+        ? sec(8, 'Illustrative returns', `<div class="fr-cap">Base-case sketch from the current assumptions — not a recommendation.</div>${frReturns(c)}${hasPeers(c) ? `<h3 style="margin-top:14px">How this deal compares</h3>${frPeerComps(c)}` : ''}`)
+        : (hasPeers(c) ? sec(8, 'How this deal compares', frPeerComps(c)) : '')}
 
       <div class="fr-foot">Paragon Partners · Screening Report · Private &amp; Confidential</div>
     </div>`;
