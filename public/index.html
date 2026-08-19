@@ -609,14 +609,63 @@
     .form-err { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 10px; background: rgba(225,29,72,.07); border: 1px solid rgba(225,29,72,.22); color: #b91c1c; font-size: 12.5px; line-height: 1.45; }
 
     /* Progress state */
-    .spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid rgba(12,48,120,.14); border-top-color: var(--navy); animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .prog-step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--hint); padding: 6px 0; transition: color .2s; }
-    .prog-step .ps-dot { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: #EDF0F5; color: var(--hint); flex: 0 0 auto; }
-    .prog-step.active { color: var(--ink); font-weight: 600; }
-    .prog-step.active .ps-dot { background: var(--navy); color: #fff; }
-    .prog-step.done { color: var(--muted); }
-    .prog-step.done .ps-dot { background: var(--go); color: #fff; }
+
+    /* ---- Add-a-deal working screen (colourful, with progress bar) ---- */
+    .gen-wrap { padding: 8px 2px 6px; }
+    .gen-hero { display: grid; place-items: center; margin: 8px 0 16px; }
+    .gen-hero-ic {
+      width: 62px; height: 62px; border-radius: 17px; display: grid; place-items: center; color: #fff;
+      background: linear-gradient(140deg, #2E6FD6, #0C3078);
+      box-shadow: 0 14px 30px -10px rgba(12,48,120,.55); animation: heroFloat 2.6s ease-in-out infinite;
+    }
+    @keyframes heroFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    .gen-head { text-align: center; font-size: 17px; font-weight: 600; color: var(--ink); }
+    .gen-sub  { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 4px; line-height: 1.5; padding: 0 8px; }
+
+    .pbar { position: relative; height: 9px; border-radius: 999px; background: #EDF0F5; overflow: hidden; margin: 18px 0 7px; }
+    .pbar-fill {
+      position: absolute; top: 0; left: 0; bottom: 0; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, #0C3078, #2E6FD6 55%, #14B8A6);
+      transition: width .6s cubic-bezier(.25,.1,.25,1);
+    }
+    .pbar-fill::after {
+      content: ''; position: absolute; inset: 0; border-radius: 999px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent);
+      animation: sheen 1.5s linear infinite;
+    }
+    @keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+    .pbar-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 1px; }
+    .pbar-elapsed { font-size: 11.5px; font-weight: 500; color: var(--hint); font-variant-numeric: tabular-nums; }
+    .pbar-pct { text-align: right; font-size: 11.5px; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+    .gdone-time { display: inline-flex; align-items: center; gap: 5px; margin: 14px auto 0; padding: 4px 11px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600; color: #10B981; background: rgba(16,185,129,.09); }
+
+    .gen-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+    .gstep { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 11px; transition: background .3s; }
+    .gstep.is-active { background: rgba(46,111,214,.07); }
+    .gstep-ic {
+      width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto;
+      color: var(--hint); background: #EDF0F5; transition: color .3s, background .3s, box-shadow .3s;
+    }
+    .gstep.is-active .gstep-ic { color: #fff; background: linear-gradient(140deg, #2E6FD6, #0C3078); box-shadow: 0 7px 16px -7px rgba(12,48,120,.6); }
+    .gstep.is-done   .gstep-ic { color: #fff; background: linear-gradient(140deg, #14B8A6, #10B981); }
+    .gstep-label { flex: 1 1 auto; font-size: 13px; color: var(--hint); transition: color .3s; }
+    .gstep.is-active .gstep-label { color: var(--ink); font-weight: 600; }
+    .gstep.is-done   .gstep-label { color: var(--muted); }
+    .gstep-stat { width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; }
+    .gspin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(12,48,120,.16); border-top-color: var(--navy); animation: spin .7s linear infinite; }
+    .gcheck { color: #10B981; }
+
+    /* Success state */
+    .gdone { text-align: center; }
+    .gdone-hero {
+      width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center; color: #fff; margin: 10px auto 0;
+      background: linear-gradient(140deg, #14B8A6, #10B981); box-shadow: 0 14px 30px -10px rgba(16,185,129,.55);
+      animation: popIn .45s cubic-bezier(.2,.9,.25,1);
+    }
+    @keyframes popIn { from { transform: scale(.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .gdone-actions { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 20px; }
 
     /* ---- The print memo (Export PDF) ---- */
     .print-only { display: none; }

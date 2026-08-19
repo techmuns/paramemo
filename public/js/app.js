@@ -1847,34 +1847,129 @@ function openAddDealModal() {
     bodyEl.querySelector('[data-generate]').addEventListener('click', generate);
   }
 
-  function renderWorking(activeIdx) {
-    const steps = ['Reading the IM', 'Reading the model', 'Writing the memo'];
+  // Steps shown to the partner (plain language, no internal/model detail).
+  const GEN_STEPS = [
+    { icon: 'fileText', label: 'Reading the Information Memorandum' },
+    { icon: 'sheet',    label: 'Reading the financial model' },
+    { icon: 'scale',    label: 'Analysing the numbers & fit' },
+    { icon: 'sparkles', label: 'Writing your screening memo' },
+  ];
+  const BAR_BASE  = [10, 32, 54, 76];   // where the bar jumps to when a step begins
+  const BAR_CREEP = [28, 50, 72, 96];   // where it slowly creeps while that step runs
+
+  // Build the working screen once and return a small controller to drive it.
+  function renderWorking() {
     bodyEl.innerHTML = `
-      <div class="flex flex-col items-center text-center py-6">
-        <div class="spinner mb-4"></div>
-        <div class="font-display font-semibold text-[15px] text-ink">Reading your files…</div>
-        <div class="text-[12.5px] text-ink-muted mt-1">This usually takes about a minute.</div>
-        <div class="mt-5 w-full max-w-[240px] text-left">
-          ${steps.map((s, i) => `
-            <div class="prog-step ${i < activeIdx ? 'done' : i === activeIdx ? 'active' : ''}">
-              <span class="ps-dot">${i < activeIdx ? icon('check', 'w-3 h-3', 3) : `<span class="text-[10px] font-bold">${i + 1}</span>`}</span>${esc(s)}
+      <div class="gen-wrap">
+        <div class="gen-hero"><div class="gen-hero-ic">${icon('sparkles', 'w-6 h-6', 2.2)}</div></div>
+        <div class="gen-head font-display" data-head>Getting started…</div>
+        <div class="gen-sub">This usually takes about a minute. It saves to your pipeline automatically.</div>
+        <div class="pbar"><div class="pbar-fill" data-bar></div></div>
+        <div class="pbar-meta"><span class="pbar-elapsed" data-elapsed>0:00 elapsed</span><span class="pbar-pct" data-pct>0%</span></div>
+        <div class="gen-steps">
+          ${GEN_STEPS.map((s, i) => `
+            <div class="gstep" data-gstep="${i}">
+              <span class="gstep-ic">${icon(s.icon, 'w-4 h-4', 2)}</span>
+              <span class="gstep-label">${esc(s.label)}</span>
+              <span class="gstep-stat"></span>
             </div>`).join('')}
         </div>
       </div>`;
+
+    const barEl = bodyEl.querySelector('[data-bar]');
+    const pctEl = bodyEl.querySelector('[data-pct]');
+    const headEl = bodyEl.querySelector('[data-head]');
+    const elapsedEl = bodyEl.querySelector('[data-elapsed]');
+    const stepEls = [...bodyEl.querySelectorAll('[data-gstep]')];
+    let curPct = 0, pctRAF = 0, creepTO = null, finished = false, startT = 0, timerIV = null;
+
+    const fmtElapsed = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    function startTimer() {
+      if (startT) return;
+      startT = performance.now();
+      timerIV = setInterval(() => { if (elapsedEl) elapsedEl.textContent = fmtElapsed(performance.now() - startT) + ' elapsed'; }, 1000);
+    }
+
+    function tweenPct(target, ms) {
+      cancelAnimationFrame(pctRAF);
+      const start = curPct, t0 = performance.now();
+      const frame = now => {
+        const k = ms <= 0 ? 1 : Math.min(1, (now - t0) / ms);
+        curPct = start + (target - start) * k;
+        pctEl.textContent = Math.round(curPct) + '%';
+        if (k < 1) pctRAF = requestAnimationFrame(frame);
+      };
+      pctRAF = requestAnimationFrame(frame);
+    }
+    function setBar(pct, ms) {
+      barEl.style.transition = `width ${ms}ms cubic-bezier(.25,.1,.25,1)`;
+      requestAnimationFrame(() => { barEl.style.width = pct + '%'; });
+      tweenPct(pct, ms);
+    }
+    const markStat = (el, kind) => {
+      el.querySelector('.gstep-stat').innerHTML =
+        kind === 'done' ? `<span class="gcheck">${icon('check', 'w-4 h-4', 3)}</span>`
+        : kind === 'active' ? '<span class="gspin"></span>' : '';
+    };
+
+    return {
+      stage(i) {
+        if (finished) return;
+        startTimer();
+        clearTimeout(creepTO);
+        stepEls.forEach((el, idx) => {
+          el.classList.toggle('is-done', idx < i);
+          el.classList.toggle('is-active', idx === i);
+          markStat(el, idx < i ? 'done' : idx === i ? 'active' : '');
+        });
+        headEl.textContent = GEN_STEPS[i].label + '…';
+        setBar(BAR_BASE[i], 450);
+        creepTO = setTimeout(() => { if (!finished) setBar(BAR_CREEP[i], 15000); }, 500);
+      },
+      finish() {
+        finished = true;
+        clearTimeout(creepTO); clearInterval(timerIV);
+        stepEls.forEach(el => { el.classList.remove('is-active'); el.classList.add('is-done'); markStat(el, 'done'); });
+        headEl.textContent = 'Memo ready';
+        setBar(100, 450);
+      },
+      elapsedText: () => (startT ? fmtElapsed(performance.now() - startT) : '0:00'),
+    };
+  }
+
+  // Success screen — the partner clicks through to the finished memo.
+  function renderDone(company, builtIn) {
+    bodyEl.innerHTML = `
+      <div class="gen-wrap gdone">
+        <div class="gdone-hero">${icon('check', 'w-8 h-8', 3)}</div>
+        <div class="gen-head font-display" style="margin-top:14px">Your memo is ready</div>
+        <div class="gen-sub"><b>${esc(company.shortName || company.name)}</b> is now in your pipeline — filled across all seven tabs, ready to review.</div>
+        ${builtIn ? `<div class="gdone-time">${icon('check', 'w-3.5 h-3.5', 3)} Built in ${esc(builtIn)}</div>` : ''}
+        <div class="gdone-actions">
+          <button class="hdr-btn" data-again style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Add another</button>
+          <button class="hdr-btn" data-view-memo style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('trendingUp', 'w-4 h-4')} View memo</button>
+        </div>
+      </div>`;
+    bodyEl.querySelector('[data-view-memo]').addEventListener('click', () => { close(); openCompany(company.id); });
+    bodyEl.querySelector('[data-again]').addEventListener('click', () => {
+      sel.im = sel.excel = sel.notes = null; captured.basics = {}; renderForm();
+    });
   }
 
   async function generate() {
     if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
     if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
+    let writeTO = null;
     try {
-      renderWorking(0);
+      const gp = renderWorking();
+      gp.stage(0);
       await ensureUploadLibs();
 
       const imText = await extractPdfText(sel.im);
       let imPdfBase64 = '';
       if (!imText.trim()) imPdfBase64 = await fileToBase64(sel.im);   // scanned PDF → OCR fallback
 
-      renderWorking(1);
+      gp.stage(1);
       const { excelText, sheetNames } = await parseExcel(sel.excel);
 
       let notesText = '';
@@ -1883,22 +1978,28 @@ function openAddDealModal() {
           ? await extractPdfText(sel.notes, 20000) : (await sel.notes.text()).slice(0, 20000);
       }
 
-      renderWorking(2);
+      gp.stage(2);
       const basics = { ...captured.basics };   // typed overrides captured before "working" replaced the form
+      // The AI call covers "analyse" + "write"; light up the writing step partway through the wait.
+      writeTO = setTimeout(() => gp.stage(3), 7000);
 
       const res = await fetch(apiUrl('generate'), {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics, imPdfBase64 }),
       });
+      clearTimeout(writeTO);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `The request failed (${res.status}).`);
       if (!data.company) throw new Error('The AI did not return a memo. Please try again.');
 
+      gp.stage(3);
+      const builtIn = gp.elapsedText();
+      gp.finish();
       addCompany(data.company);
-      toast(`${data.company.shortName || data.company.name} added to the pipeline`);
-      close();
-      openCompany(data.company.id);
+      await new Promise(r => setTimeout(r, 650));   // let the bar fill to 100% before the success screen
+      renderDone(data.company, builtIn);
     } catch (err) {
+      clearTimeout(writeTO);
       console.error(err);
       renderForm((err && err.message) || 'Something went wrong — please try again.');
     }
