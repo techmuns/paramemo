@@ -471,6 +471,15 @@
     .fin thead th.fc { background: #F1EFE6; }
     .fin .fc-start { border-left: 2px solid rgba(180,146,76,.4); }
     .fin tbody tr:hover td.fc { background: rgba(180,146,76,.11); }
+    /* CAGR summary columns (right side) */
+    .fin th.cagr, .fin td.cagr { text-align: right; background: #F4F6FB; border-left: 1px solid var(--border); font-style: italic; }
+    .fin th.cagr { font-style: normal; color: var(--muted); line-height: 1.15; }
+    .fin th.cagr span { display: block; font-size: 9.5px; font-weight: 500; color: var(--hint); font-style: normal; }
+    .fin td.cagr { font-weight: 600; color: var(--navy); }
+    .fin td.cagr.muted { color: var(--hint); font-weight: 500; }
+    /* sub-metrics (growth, margins) sit quietly under their headline row */
+    .fin tr.subrow .rowhead { font-weight: 400; color: var(--muted); padding-left: 22px; font-size: 12px; }
+    .fin tr.subrow td.val { color: var(--muted); }
     /* % mini-bar under the number */
     .cellwrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 44px; }
     .minibar { width: 100%; height: 3px; border-radius: 2px; background: rgba(17,24,39,.07); overflow: hidden; }

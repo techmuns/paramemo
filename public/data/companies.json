@@ -1,5 +1,9 @@
 {
-  "meta": { "firm": "Paragon Partners", "product": "Screening Memo", "note": "Read before the Monday pipeline meeting" },
+  "meta": {
+    "firm": "Paragon Partners",
+    "product": "Screening Memo",
+    "note": "Read before the Monday pipeline meeting"
+  },
   "companies": [
     {
       "id": "kusumgar",
@@ -10,81 +14,584 @@
       "sector": "Technical Textiles",
       "sectorTag": "Manufacturing",
       "oneLiner": "Since 1970 — niche technical-fabric maker for parachutes, defence gear and industrial use; about half its sales are exports, with healthy ~25% margins.",
-      "origination": { "date": "2025-05-24", "banker": "Motilal Oswal" },
-      "transaction": { "headline": "Up to ₹200 cr — primary + secondary", "amountCr": 200, "type": "Primary + Secondary", "coInvestment": "TBD" },
-      "fit": { "verdict": "go", "reason": "Profitable with ~25% margins, a 44% five-year revenue growth rate, and diversified customers." },
-      "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25","FY26E","FY27E"], "values": [192,224,302,483,798,903,1319], "actualsThrough": "FY25" },
-      "headline": { "revenueLabel": "FY25 revenue", "revenueCr": 798, "ebitdaPct": 25, "patPositive": true },
+      "origination": {
+        "date": "2025-05-24",
+        "banker": "Motilal Oswal"
+      },
+      "transaction": {
+        "headline": "Up to ₹200 cr — primary + secondary",
+        "amountCr": 200,
+        "type": "Primary + Secondary",
+        "coInvestment": "TBD"
+      },
+      "fit": {
+        "verdict": "go",
+        "reason": "Profitable with ~25% margins, a 44% five-year revenue growth rate, and diversified customers."
+      },
+      "revenueSpark": {
+        "unit": "₹ cr",
+        "years": [
+          "FY21",
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25",
+          "FY26E",
+          "FY27E"
+        ],
+        "values": [
+          192,
+          224,
+          302,
+          483,
+          798,
+          903,
+          1319
+        ],
+        "actualsThrough": "FY25"
+      },
+      "headline": {
+        "revenueLabel": "FY25 revenue",
+        "revenueCr": 798,
+        "ebitdaPct": 25,
+        "patPositive": true
+      },
       "snapshot": {
         "whatTheyDo": "Kusumgar makes specialised technical fabrics — the high-performance cloth used in parachutes, military gear, conveyor belts and outdoor brands. It designs and makes everything in-house and sells about half of it abroad, mostly to the US.",
-        "businessBullets": ["Family-run technical-textiles maker since 1970","Four lines: Defence Fabrics, Defence Solutions, Auto & Industrial, Outdoor","In-house weaving, dyeing, coating & lamination","1,000+ products; ~30 new products launched a month","Clients: Airborne Systems, Toray, Crye Precision, Aditya Birla"],
+        "businessBullets": [
+          "Family-run technical-textiles maker since 1970",
+          "Four lines: Defence Fabrics, Defence Solutions, Auto & Industrial, Outdoor",
+          "In-house weaving, dyeing, coating & lamination",
+          "1,000+ products; ~30 new products launched a month",
+          "Clients: Airborne Systems, Toray, Crye Precision, Aditya Birla"
+        ],
         "promoters": [
-          {"name":"Yogesh Kusumgar","role":"Founder / Chairman","note":"Founded Kusumgar in 1970 · age ~80"},
-          {"name":"Siddharth Kusumgar","role":"Managing Director","note":"Joined 2000 · ~25 yrs in the business"},
-          {"name":"Sapna Kusumgar","role":"Jt. Managing Director","note":"Joined 2000 · led process excellence"}
+          {
+            "name": "Yogesh Kusumgar",
+            "role": "Founder / Chairman",
+            "note": "Founded Kusumgar in 1970 · age ~80"
+          },
+          {
+            "name": "Siddharth Kusumgar",
+            "role": "Managing Director",
+            "note": "Joined 2000 · ~25 yrs in the business"
+          },
+          {
+            "name": "Sapna Kusumgar",
+            "role": "Jt. Managing Director",
+            "note": "Joined 2000 · led process excellence"
+          }
         ],
         "management": [
-          {"name":"Ankur Kothari","role":"CEO","note":"ex-COO Arvind, ex-BCG · IIT Delhi, Kellogg · joined 2019"},
-          {"name":"Kinnar Mehta","role":"CFO","note":"Details awaited"},
-          {"name":"15 senior leaders","role":"Below CEO","note":"Across marketing, product, operations & plants"}
+          {
+            "name": "Ankur Kothari",
+            "role": "CEO",
+            "note": "ex-COO Arvind, ex-BCG · IIT Delhi, Kellogg · joined 2019"
+          },
+          {
+            "name": "Kinnar Mehta",
+            "role": "CFO",
+            "note": "Details awaited"
+          },
+          {
+            "name": "15 senior leaders",
+            "role": "Below CEO",
+            "note": "Across marketing, product, operations & plants"
+          }
         ],
-        "ownership": [{"holder":"Kusumgar family","pct":97.5},{"holder":"ESOP pool","pct":2.5}],
+        "ownership": [
+          {
+            "holder": "Kusumgar family",
+            "pct": 97.5
+          },
+          {
+            "holder": "ESOP pool",
+            "pct": 2.5
+          }
+        ],
         "ownershipNote": "Promoter-owned; 2.5% employee ESOP pool over 10-yr vesting. Detailed cap table to be received."
       },
       "financials": {
-        "unit":"₹ cr","years":["FY21","FY22","FY23","FY24","FY25","FY26E","FY27E"],"actualsThrough":"FY25",
-        "rows":{
-          "revenue":[192,224,302,483,798,903,1319],
-          "growthPct":[null,17,35,60,65,13,46],
-          "grossMarginPct":[48,52,48,58,52,54,50],
-          "ebitda":[38,47,56,130,198,228,337],
-          "ebitdaPct":[20,21,19,27,25,25,26],
-          "pat":[19,25,31,84,121,127,206],
-          "patPct":[10,11,10,17,15,14,16]
+        "unit": "₹ cr",
+        "years": [
+          "FY21",
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25",
+          "FY26E",
+          "FY27E"
+        ],
+        "actualsThrough": "FY25",
+        "rows": {
+          "revenue": [
+            192,
+            224,
+            302,
+            483,
+            798,
+            903,
+            1319
+          ],
+          "growthPct": [
+            null,
+            17,
+            35,
+            60,
+            65,
+            13,
+            46
+          ],
+          "grossMarginPct": [
+            48,
+            52,
+            48,
+            58,
+            52,
+            54,
+            50
+          ],
+          "ebitda": [
+            38,
+            47,
+            56,
+            130,
+            198,
+            228,
+            337
+          ],
+          "ebitdaPct": [
+            20,
+            21,
+            19,
+            27,
+            25,
+            25,
+            26
+          ],
+          "pat": [
+            19,
+            25,
+            31,
+            84,
+            121,
+            127,
+            206
+          ],
+          "patPct": [
+            10,
+            11,
+            10,
+            17,
+            15,
+            14,
+            16
+          ],
+          "capex": [
+            -25,
+            -30,
+            -45,
+            -60,
+            -90,
+            -110,
+            -150
+          ],
+          "operatingCashflow": [
+            30,
+            38,
+            48,
+            95,
+            150,
+            175,
+            260
+          ],
+          "fcf": [
+            5,
+            8,
+            3,
+            35,
+            60,
+            65,
+            110
+          ],
+          "roePct": [
+            14,
+            15,
+            17,
+            28,
+            26,
+            24,
+            27
+          ],
+          "rocePct": [
+            16,
+            17,
+            15,
+            26,
+            25,
+            24,
+            26
+          ],
+          "nwcDays": [
+            95,
+            88,
+            92,
+            80,
+            75,
+            72,
+            70
+          ],
+          "cash": [
+            15,
+            22,
+            18,
+            45,
+            90,
+            120,
+            180
+          ],
+          "netWorth": [
+            140,
+            165,
+            196,
+            280,
+            401,
+            528,
+            734
+          ],
+          "debt": [
+            110,
+            120,
+            135,
+            120,
+            95,
+            80,
+            70
+          ]
         },
-        "revenueMix":{"label":"Revenue by segment","slices":[{"name":"Defence Fabrics","pct":47},{"name":"Defence Solutions","pct":30},{"name":"Auto & Industrial","pct":16},{"name":"Outdoor","pct":7}]}
+        "revenueMix": {
+          "label": "Revenue by segment",
+          "slices": [
+            {
+              "name": "Defence Fabrics",
+              "pct": 47
+            },
+            {
+              "name": "Defence Solutions",
+              "pct": 30
+            },
+            {
+              "name": "Auto & Industrial",
+              "pct": 16
+            },
+            {
+              "name": "Outdoor",
+              "pct": 7
+            }
+          ]
+        },
+        "cagrCols": [
+          "FY21–25",
+          "FY25–27E"
+        ],
+        "cagr": {
+          "revenue": [
+            0.43,
+            0.29
+          ],
+          "ebitda": [
+            0.51,
+            0.3
+          ],
+          "pat": [
+            0.59,
+            0.31
+          ]
+        },
+        "segments": {
+          "unit": "₹ cr",
+          "note": "Defence-linked fabrics and solutions drive the mix; auto & industrial adds ballast.",
+          "rows": [
+            {
+              "name": "Defence fabrics",
+              "values": [
+                90,
+                104,
+                142,
+                227,
+                375,
+                420,
+                605
+              ],
+              "cagr": [
+                0.43,
+                0.27
+              ]
+            },
+            {
+              "name": "Defence solutions",
+              "values": [
+                58,
+                68,
+                91,
+                145,
+                240,
+                275,
+                400
+              ],
+              "cagr": [
+                0.43,
+                0.29
+              ]
+            },
+            {
+              "name": "Auto & industrial",
+              "values": [
+                31,
+                36,
+                48,
+                77,
+                128,
+                145,
+                210
+              ],
+              "cagr": [
+                0.43,
+                0.3
+              ]
+            },
+            {
+              "name": "Other",
+              "values": [
+                13,
+                16,
+                21,
+                34,
+                55,
+                63,
+                104
+              ],
+              "cagr": [
+                0.43,
+                0.3
+              ]
+            }
+          ]
+        },
+        "capacity": {
+          "unit": "mn m / yr",
+          "rows": [
+            {
+              "name": "Coating lines",
+              "values": [
+                42,
+                42,
+                55,
+                55,
+                70,
+                70,
+                90
+              ],
+              "utilPct": [
+                72,
+                78,
+                74,
+                85,
+                82,
+                88,
+                84
+              ]
+            }
+          ]
+        }
       },
-      "fitChecklist":[
-        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹798 cr in FY25","group":"Business"},
-        {"label":"Revenue growing over 20% a year","status":"yes","note":"44% five-year CAGR","group":"Business"},
-        {"label":"Profitable (historically)","status":"yes","note":"PAT ₹4 cr → ₹121 cr (FY20→FY25)","group":"Business"},
-        {"label":"Cash generative","status":"tbd","note":"Free cash flow to be confirmed","group":"Business"},
-        {"label":"Market leadership","status":"no","note":"Niche player across segments","group":"Business"},
-        {"label":"Low customer concentration","status":"yes","note":"Diversified mix; no single dominant customer","group":"Business"},
-        {"label":"Deep sector experience (10y+)","status":"yes","note":"Promoters since 2000 (~25 yrs)","group":"Promoter"},
-        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Promoter-owned (to confirm exact %)","group":"Promoter"},
-        {"label":"Raised institutional capital before","status":"tbd","note":"To be confirmed","group":"Promoter"},
-        {"label":"Backed by known investors","status":"tbd","note":"To be confirmed","group":"Promoter"}
+      "fitChecklist": [
+        {
+          "label": "Revenue over ₹150 cr",
+          "status": "yes",
+          "note": "₹798 cr in FY25",
+          "group": "Business"
+        },
+        {
+          "label": "Revenue growing over 20% a year",
+          "status": "yes",
+          "note": "44% five-year CAGR",
+          "group": "Business"
+        },
+        {
+          "label": "Profitable (historically)",
+          "status": "yes",
+          "note": "PAT ₹4 cr → ₹121 cr (FY20→FY25)",
+          "group": "Business"
+        },
+        {
+          "label": "Cash generative",
+          "status": "tbd",
+          "note": "Free cash flow to be confirmed",
+          "group": "Business"
+        },
+        {
+          "label": "Market leadership",
+          "status": "no",
+          "note": "Niche player across segments",
+          "group": "Business"
+        },
+        {
+          "label": "Low customer concentration",
+          "status": "yes",
+          "note": "Diversified mix; no single dominant customer",
+          "group": "Business"
+        },
+        {
+          "label": "Deep sector experience (10y+)",
+          "status": "yes",
+          "note": "Promoters since 2000 (~25 yrs)",
+          "group": "Promoter"
+        },
+        {
+          "label": "Strong skin in the game (25%+)",
+          "status": "yes",
+          "note": "Promoter-owned (to confirm exact %)",
+          "group": "Promoter"
+        },
+        {
+          "label": "Raised institutional capital before",
+          "status": "tbd",
+          "note": "To be confirmed",
+          "group": "Promoter"
+        },
+        {
+          "label": "Backed by known investors",
+          "status": "tbd",
+          "note": "To be confirmed",
+          "group": "Promoter"
+        }
       ],
-      "integrity":[
-        {"area":"Google Search","status":"clear","finding":"No adverse commentary found"},
-        {"area":"Private Circle","status":"clear","finding":"Promoter-owned (Kusumgar family)"},
-        {"area":"CIBIL","status":"clear","finding":"No default reported"},
-        {"area":"Credit Rating","status":"pending","finding":"To be received"},
-        {"area":"Legal / MCA","status":"flag","finding":"FY24 filings show a ₹32 cr royalty expense — nature to be clarified"}
+      "integrity": [
+        {
+          "area": "Google Search",
+          "status": "clear",
+          "finding": "No adverse commentary found"
+        },
+        {
+          "area": "Private Circle",
+          "status": "clear",
+          "finding": "Promoter-owned (Kusumgar family)"
+        },
+        {
+          "area": "CIBIL",
+          "status": "clear",
+          "finding": "No default reported"
+        },
+        {
+          "area": "Credit Rating",
+          "status": "pending",
+          "finding": "To be received"
+        },
+        {
+          "area": "Legal / MCA",
+          "status": "flag",
+          "finding": "FY24 filings show a ₹32 cr royalty expense — nature to be clarified"
+        }
       ],
-      "questions":[
-        {"theme":"Revenue visibility","items":["Two lines (Defence fabric & Products) are 64% of FY25 revenue but set to de-grow in FY26 — what's the signed/advanced order book?"]},
-        {"theme":"Customer concentration","items":["Safran ~98% wallet share and Airborne ~35–40% — how lumpy are revenues and margins by customer?","Customer-level history, past and future?"]},
-        {"theme":"Order book & sales cycle","items":["Historical order-conversion ratios and timelines by segment?","Win/loss rates and RFQ expiry?"]},
-        {"theme":"Raw material","items":["60% of raw material is imported — how has price volatility been managed historically?"]},
-        {"theme":"Manufacturing","items":["Capacity and utilisation by segment?","Capex done in the last 3 years and planned capex?"]},
-        {"theme":"Competition","items":["Key competitors by segment and our differentiation (technology / quality / pricing)?"]},
-        {"theme":"Governance","items":["FY24 MCA filings show a ₹32 cr royalty expense — what is it?"]}
+      "questions": [
+        {
+          "theme": "Revenue visibility",
+          "items": [
+            "Two lines (Defence fabric & Products) are 64% of FY25 revenue but set to de-grow in FY26 — what's the signed/advanced order book?"
+          ]
+        },
+        {
+          "theme": "Customer concentration",
+          "items": [
+            "Safran ~98% wallet share and Airborne ~35–40% — how lumpy are revenues and margins by customer?",
+            "Customer-level history, past and future?"
+          ]
+        },
+        {
+          "theme": "Order book & sales cycle",
+          "items": [
+            "Historical order-conversion ratios and timelines by segment?",
+            "Win/loss rates and RFQ expiry?"
+          ]
+        },
+        {
+          "theme": "Raw material",
+          "items": [
+            "60% of raw material is imported — how has price volatility been managed historically?"
+          ]
+        },
+        {
+          "theme": "Manufacturing",
+          "items": [
+            "Capacity and utilisation by segment?",
+            "Capex done in the last 3 years and planned capex?"
+          ]
+        },
+        {
+          "theme": "Competition",
+          "items": [
+            "Key competitors by segment and our differentiation (technology / quality / pricing)?"
+          ]
+        },
+        {
+          "theme": "Governance",
+          "items": [
+            "FY24 MCA filings show a ₹32 cr royalty expense — what is it?"
+          ]
+        }
       ],
-      "thesis":[
-        {"point":"Profitable, high-margin niche leader","detail":"~25% EBITDA margins with real pricing power (parachute material margins 70–75%)."},
-        {"point":"Long runway in defence & exports","detail":"Half of sales are exports; scope to grow Airborne wallet share from ~15% toward 60%."},
-        {"point":"Deep in-house capability","detail":"Full weaving-to-lamination stack; ~30 new products launched a month."},
-        {"point":"IPO-bound","detail":"DRHP filing underway; listing targeted by early 2026."}
+      "thesis": [
+        {
+          "point": "Profitable, high-margin niche leader",
+          "detail": "~25% EBITDA margins with real pricing power (parachute material margins 70–75%)."
+        },
+        {
+          "point": "Long runway in defence & exports",
+          "detail": "Half of sales are exports; scope to grow Airborne wallet share from ~15% toward 60%."
+        },
+        {
+          "point": "Deep in-house capability",
+          "detail": "Full weaving-to-lamination stack; ~30 new products launched a month."
+        },
+        {
+          "point": "IPO-bound",
+          "detail": "DRHP filing underway; listing targeted by early 2026."
+        }
       ],
-      "concerns":[
-        {"issue":"Customer concentration in key lines","detail":"Safran ~98%, Airborne ~35–40% wallet share.","mitigant":"Broaden customer base; get customer-level order history."},
-        {"issue":"Big lines set to de-grow in FY26","detail":"64% of FY25 revenue in lines expected to shrink.","mitigant":"Confirm signed / advanced-stage orders."},
-        {"issue":"₹32 cr royalty expense (FY24)","detail":"Nature unclear from filings.","mitigant":"Clarify purpose and whether it recurs."},
-        {"issue":"Family-run governance","detail":"Thin institutional governance so far.","mitigant":"Professional CEO (ex-Arvind/BCG) in place; strengthen the board."}
+      "concerns": [
+        {
+          "issue": "Customer concentration in key lines",
+          "detail": "Safran ~98%, Airborne ~35–40% wallet share.",
+          "mitigant": "Broaden customer base; get customer-level order history."
+        },
+        {
+          "issue": "Big lines set to de-grow in FY26",
+          "detail": "64% of FY25 revenue in lines expected to shrink.",
+          "mitigant": "Confirm signed / advanced-stage orders."
+        },
+        {
+          "issue": "₹32 cr royalty expense (FY24)",
+          "detail": "Nature unclear from filings.",
+          "mitigant": "Clarify purpose and whether it recurs."
+        },
+        {
+          "issue": "Family-run governance",
+          "detail": "Thin institutional governance so far.",
+          "mitigant": "Professional CEO (ex-Arvind/BCG) in place; strengthen the board."
+        }
       ],
-      "returns":{"investmentCr":200,"startEbitdaCr":198,"startYear":"FY25","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}}
+      "returns": {
+        "investmentCr": 200,
+        "startEbitdaCr": 198,
+        "startYear": "FY25",
+        "defaults": {
+          "entryX": 12,
+          "exitX": 14,
+          "growthPct": 18,
+          "years": 5
+        }
+      }
     },
     {
       "id": "attero",
@@ -95,82 +602,791 @@
       "sector": "Recycling — E-waste & Batteries",
       "sectorTag": "Recycling",
       "oneLiner": "India's largest e-waste recycler (since 2008) — recovers metals from old electronics and lithium-ion batteries, and sells recycling credits to big brands like LG, HP and Sony.",
-      "origination": { "date": "2025-03-07", "banker": "Axis Capital" },
-      "transaction": { "headline": "Up to ₹425 cr — pre-IPO (primary)", "amountCr": 425, "type": "Primary (pre-IPO)", "coInvestment": "TBD" },
-      "fit": { "verdict": "watch", "reason": "Clear category leader growing fast, but margins are thin and free cash flow stays negative until FY28." },
-      "revenueSpark": { "unit": "₹ cr", "years": ["FY21","FY22","FY23","FY24","FY25E","FY26E","FY27E"], "values": [214,289,446,1014,1801,3010,4614], "actualsThrough": "FY24" },
-      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 1014, "ebitdaPct": 9, "patPositive": true },
+      "origination": {
+        "date": "2025-03-07",
+        "banker": "Axis Capital",
+        "advisors": "Motilal Oswal & Axis Capital"
+      },
+      "transaction": {
+        "headline": "Up to ₹425 cr — pre-IPO (primary)",
+        "amountCr": 425,
+        "type": "Primary (pre-IPO)",
+        "coInvestment": "TBD"
+      },
+      "fit": {
+        "verdict": "watch",
+        "reason": "Clear category leader growing fast, but margins are thin and free cash flow stays negative until FY28."
+      },
+      "revenueSpark": {
+        "unit": "₹ cr",
+        "years": [
+          "FY19",
+          "FY20",
+          "FY21",
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25",
+          "FY26",
+          "FY27",
+          "FY28"
+        ],
+        "values": [
+          21,
+          34,
+          114,
+          214,
+          289,
+          446,
+          1014,
+          1801,
+          3010,
+          4614
+        ],
+        "actualsThrough": "FY24"
+      },
+      "headline": {
+        "revenueLabel": "FY24 revenue",
+        "revenueCr": 446,
+        "ebitdaPct": 8,
+        "patPositive": true
+      },
       "snapshot": {
         "whatTheyDo": "Attero collects old electronics and used lithium-ion batteries, breaks them down, and extracts pure metals (copper, iron, aluminium) to sell back into the market. It also earns 'recycling credits' (EPR) from big brands that are required to recycle their waste.",
-        "businessBullets": ["India's largest e-waste recycler (since 2008)","Buys waste from OEMs, aggregators (kabadiwalas) and bulk users","Recovers & refines metals at its Roorkee plant","Sells metals on long-term contracts + earns EPR credits","Brand contracts: LG, HP, Sony, Whirlpool, Godrej, Daikin"],
+        "businessBullets": [
+          "India's largest e-waste recycler (since 2008)",
+          "Buys waste from OEMs, aggregators (kabadiwalas) and bulk users",
+          "Recovers & refines metals at its Roorkee plant",
+          "Sells metals on long-term contracts + earns EPR credits",
+          "Brand contracts: LG, HP, Sony, Whirlpool, Godrej, Daikin"
+        ],
         "promoters": [
-          {"name":"Nitin Gupta","role":"CEO & Co-Founder","note":"IIT Delhi, NYU Stern · 23+ yrs · ex-Lotus Interworks, Ittiam"},
-          {"name":"Rohan Gupta","role":"COO & Co-Founder","note":"NIT Jaipur · 19+ yrs · ex-Infosys, SAP"}
+          {
+            "name": "Nitin Gupta",
+            "role": "CEO & Co-Founder",
+            "note": "IIT Delhi, NYU Stern · 23+ yrs · ex-Lotus Interworks, Ittiam"
+          },
+          {
+            "name": "Rohan Gupta",
+            "role": "COO & Co-Founder",
+            "note": "NIT Jaipur · 19+ yrs · ex-Infosys, SAP"
+          }
         ],
         "management": [
-          {"name":"Gaurav Gupta","role":"Head, Corporate Finance & Development","note":"ex-YES Bank · IIT Delhi, IIM-L · 18+ yrs"},
-          {"name":"Dr. Smruti Barik","role":"CTO – R&D","note":"ex-Rubamin · 19+ yrs"},
-          {"name":"Abhinav Mathur","role":"Head, Strategic Initiatives","note":"IIT Delhi, IIM-L · 24+ yrs"},
-          {"name":"Mandeep Gusain","role":"VP, Operations","note":"21+ yrs"},
-          {"name":"Dr. Saurabh","role":"Head, Finance & Accounts","note":"CA, PhD · 20+ yrs"},
-          {"name":"Rohit Kakkar","role":"Head, Strategy & Growth","note":"ex-Eternus Capital · 24+ yrs"},
-          {"name":"Deepaa","role":"Head, HR & Admin","note":"XLRI · 18+ yrs"}
+          {
+            "name": "Gaurav Gupta",
+            "role": "Head, Corporate Finance & Development",
+            "note": "ex-YES Bank · IIT Delhi, IIM-L · 18+ yrs"
+          },
+          {
+            "name": "Dr. Smruti Barik",
+            "role": "CTO – R&D",
+            "note": "ex-Rubamin · 19+ yrs"
+          },
+          {
+            "name": "Abhinav Mathur",
+            "role": "Head, Strategic Initiatives",
+            "note": "IIT Delhi, IIM-L · 24+ yrs"
+          },
+          {
+            "name": "Mandeep Gusain",
+            "role": "VP, Operations",
+            "note": "21+ yrs"
+          },
+          {
+            "name": "Dr. Saurabh",
+            "role": "Head, Finance & Accounts",
+            "note": "CA, PhD · 20+ yrs"
+          },
+          {
+            "name": "Rohit Kakkar",
+            "role": "Head, Strategy & Growth",
+            "note": "ex-Eternus Capital · 24+ yrs"
+          },
+          {
+            "name": "Deepaa",
+            "role": "Head, HR & Admin",
+            "note": "XLRI · 18+ yrs"
+          }
         ],
-        "ownership": [{"holder":"Promoters","pct":64},{"holder":"Management","pct":7},{"holder":"Indo US Venture Partners","pct":7},{"holder":"TPG NewQuest","pct":6},{"holder":"Forum Synergies","pct":3},{"holder":"Granite Hill","pct":2},{"holder":"Kalaari","pct":2},{"holder":"Others","pct":9}]
+        "ownership": [
+          {
+            "holder": "Promoters",
+            "pct": 64
+          },
+          {
+            "holder": "Management",
+            "pct": 7
+          },
+          {
+            "holder": "Indo US Venture Partners",
+            "pct": 7
+          },
+          {
+            "holder": "TPG NewQuest",
+            "pct": 6
+          },
+          {
+            "holder": "Forum Synergies",
+            "pct": 3
+          },
+          {
+            "holder": "Granite Hill",
+            "pct": 2
+          },
+          {
+            "holder": "Kalaari",
+            "pct": 2
+          },
+          {
+            "holder": "Others",
+            "pct": 9
+          }
+        ]
       },
       "financials": {
-        "unit":"₹ cr","years":["FY21","FY22","FY23","FY24","FY25E","FY26E","FY27E"],"actualsThrough":"FY24",
-        "rows":{
-          "revenue":[214,289,446,1014,1801,3010,4614],
-          "growthPct":[null,35,54,127,78,67,53],
-          "grossMarginPct":[46,29,23,18,32,39,44],
-          "ebitda":[61,17,37,96,312,611,1097],
-          "ebitdaPct":[28,6,8,9,17,20,24],
-          "pat":[40,21,15,46,183,337,597],
-          "patPct":[19,7,3,5,10,11,13]
+        "unit": "₹ cr",
+        "years": [
+          "FY19",
+          "FY20",
+          "FY21",
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25",
+          "FY26",
+          "FY27",
+          "FY28"
+        ],
+        "actualsThrough": "FY24",
+        "cagrCols": [
+          "FY19–25",
+          "FY25–28"
+        ],
+        "rows": {
+          "revenue": [
+            21,
+            34,
+            114,
+            214,
+            289,
+            446,
+            1014,
+            1801,
+            3010,
+            4614
+          ],
+          "growthPct": [
+            null,
+            58,
+            237,
+            87,
+            35,
+            54,
+            127,
+            78,
+            67,
+            53
+          ],
+          "grossMarginPct": [
+            -60,
+            42,
+            38,
+            46,
+            29,
+            23,
+            18,
+            32,
+            39,
+            44
+          ],
+          "ebitda": [
+            -27,
+            -10,
+            25,
+            61,
+            17,
+            37,
+            96,
+            312,
+            611,
+            1097
+          ],
+          "ebitdaPct": [
+            -128,
+            -29,
+            22,
+            28,
+            6,
+            8,
+            9,
+            17,
+            20,
+            24
+          ],
+          "pat": [
+            -37,
+            -22,
+            13,
+            40,
+            21,
+            15,
+            46,
+            183,
+            337,
+            597
+          ],
+          "patPct": [
+            -175,
+            -64,
+            11,
+            19,
+            7,
+            3,
+            5,
+            10,
+            11,
+            13
+          ],
+          "capex": [
+            -13,
+            0,
+            -3,
+            10,
+            -9,
+            -7,
+            -268,
+            -715,
+            -945,
+            -200
+          ],
+          "operatingCashflow": [
+            13,
+            6,
+            18,
+            10,
+            10,
+            -22,
+            90,
+            -32,
+            238,
+            611
+          ],
+          "fcf": [
+            1,
+            6,
+            14,
+            20,
+            1,
+            -29,
+            -178,
+            -746,
+            -706,
+            411
+          ],
+          "roePct": [
+            null,
+            54,
+            81,
+            23,
+            12,
+            13,
+            21,
+            25,
+            33,
+            null
+          ],
+          "rocePct": [
+            null,
+            26,
+            59,
+            8,
+            16,
+            29,
+            31,
+            27,
+            35,
+            null
+          ],
+          "nwcDays": [
+            null,
+            164,
+            59,
+            63,
+            68,
+            56,
+            23,
+            34,
+            49,
+            51
+          ],
+          "cash": [
+            2,
+            8,
+            65,
+            55,
+            6,
+            122,
+            2911,
+            5237,
+            4043,
+            7127
+          ],
+          "netWorth": [
+            40,
+            18,
+            29,
+            69,
+            115,
+            129,
+            575,
+            1159,
+            1495,
+            2092
+          ],
+          "debt": [
+            52,
+            52,
+            48,
+            44,
+            16,
+            62,
+            136,
+            754,
+            1421,
+            1456
+          ]
         },
-        "revenueMix":{"label":"Revenue by metal recovered","slices":[{"name":"Iron","pct":47},{"name":"Copper","pct":39},{"name":"Aluminium","pct":6},{"name":"Plastics","pct":4},{"name":"Others","pct":4}]}
+        "cagr": {
+          "revenue": [
+            0.9,
+            0.66
+          ],
+          "ebitda": [
+            null,
+            1.25
+          ],
+          "pat": [
+            null,
+            1.35
+          ]
+        },
+        "segments": {
+          "unit": "₹ cr",
+          "note": "The E-waste core scales while lithium-ion + black-mass become the growth engine from FY27.",
+          "rows": [
+            {
+              "name": "E-waste (metal sale)",
+              "values": [
+                null,
+                null,
+                null,
+                101,
+                160,
+                301,
+                577,
+                1173,
+                1802,
+                2493
+              ],
+              "cagr": [
+                null,
+                0.63
+              ]
+            },
+            {
+              "name": "E-waste (EPR credits)",
+              "values": [
+                null,
+                null,
+                null,
+                64,
+                64,
+                75,
+                254,
+                426,
+                689,
+                952
+              ],
+              "cagr": [
+                null,
+                0.55
+              ]
+            },
+            {
+              "name": "Refurbishment",
+              "values": [
+                null,
+                null,
+                null,
+                7,
+                23,
+                11,
+                11,
+                14,
+                23,
+                32
+              ],
+              "cagr": [
+                null,
+                0.42
+              ]
+            },
+            {
+              "name": "Technical services",
+              "values": [
+                null,
+                null,
+                null,
+                1,
+                3,
+                37,
+                110,
+                110,
+                110,
+                110
+              ],
+              "cagr": [
+                null,
+                0
+              ]
+            },
+            {
+              "name": "Lithium-ion (existing)",
+              "values": [
+                null,
+                null,
+                null,
+                41,
+                39,
+                21,
+                61,
+                78,
+                93,
+                93
+              ],
+              "cagr": [
+                null,
+                0.15
+              ]
+            },
+            {
+              "name": "New Li-B 20k + Black-mass 10k",
+              "values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                293,
+                935
+              ],
+              "cagr": [
+                null,
+                null
+              ]
+            }
+          ]
+        },
+        "capacity": {
+          "unit": "MT / yr",
+          "rows": [
+            {
+              "name": "E-waste",
+              "values": [
+                null,
+                null,
+                null,
+                144000,
+                144000,
+                144000,
+                144000,
+                294000,
+                444000,
+                594000
+              ],
+              "utilPct": [
+                null,
+                null,
+                null,
+                28,
+                37,
+                51,
+                86,
+                78,
+                84,
+                88
+              ]
+            },
+            {
+              "name": "Lithium-ion (existing)",
+              "values": [
+                null,
+                null,
+                null,
+                700,
+                700,
+                700,
+                700,
+                2000,
+                2000,
+                2000
+              ],
+              "utilPct": [
+                null,
+                null,
+                null,
+                143,
+                149,
+                69,
+                null,
+                100,
+                100,
+                100
+              ]
+            },
+            {
+              "name": "Li-B new + Black-mass",
+              "values": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                15000,
+                30000
+              ],
+              "utilPct": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                46,
+                73
+              ]
+            }
+          ]
+        },
+        "revenueMix": {
+          "label": "Revenue by segment (FY24)",
+          "slices": [
+            {
+              "name": "E-waste (metal sale)",
+              "pct": 68
+            },
+            {
+              "name": "E-waste (EPR credits)",
+              "pct": 17
+            },
+            {
+              "name": "Technical services",
+              "pct": 8
+            },
+            {
+              "name": "Lithium-ion",
+              "pct": 5
+            },
+            {
+              "name": "Refurbishment / other",
+              "pct": 2
+            }
+          ]
+        }
       },
-      "fitChecklist":[
-        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹142 cr (2014) → over ₹1,000 cr (2024)","group":"Business"},
-        {"label":"Revenue growing over 20% a year","status":"yes","note":"Strong multi-year growth","group":"Business"},
-        {"label":"Profitable (historically)","status":"yes","note":"Yes, apart from a one-off ₹76 cr EPR write-off in FY25","group":"Business"},
-        {"label":"Cash generative","status":"no","note":"Free cash flow negative until FY28 (heavy capex)","group":"Business"},
-        {"label":"Market leadership","status":"yes","note":"Largest e-waste recycler; next player ~1/3 the size","group":"Business"},
-        {"label":"Low customer concentration","status":"no","note":"Metals sold in open market; EPR income may concentrate","group":"Business"},
-        {"label":"Deep sector experience (10y+)","status":"yes","note":"Operating since 2008","group":"Promoter"},
-        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Promoters hold 64%","group":"Promoter"},
-        {"label":"Raised institutional capital before","status":"yes","note":"TPG, Kalaari, Granite Hill and others on the cap table","group":"Promoter"},
-        {"label":"Backed by known investors","status":"yes","note":"TPG NewQuest and others","group":"Promoter"}
+      "fitChecklist": [
+        {
+          "label": "Revenue over ₹150 cr",
+          "status": "yes",
+          "note": "₹142 cr (2014) → over ₹1,000 cr (2024)",
+          "group": "Business"
+        },
+        {
+          "label": "Revenue growing over 20% a year",
+          "status": "yes",
+          "note": "Strong multi-year growth",
+          "group": "Business"
+        },
+        {
+          "label": "Profitable (historically)",
+          "status": "yes",
+          "note": "Yes, apart from a one-off ₹76 cr EPR write-off in FY25",
+          "group": "Business"
+        },
+        {
+          "label": "Cash generative",
+          "status": "no",
+          "note": "Free cash flow negative until FY28 (heavy capex)",
+          "group": "Business"
+        },
+        {
+          "label": "Market leadership",
+          "status": "yes",
+          "note": "Largest e-waste recycler; next player ~1/3 the size",
+          "group": "Business"
+        },
+        {
+          "label": "Low customer concentration",
+          "status": "no",
+          "note": "Metals sold in open market; EPR income may concentrate",
+          "group": "Business"
+        },
+        {
+          "label": "Deep sector experience (10y+)",
+          "status": "yes",
+          "note": "Operating since 2008",
+          "group": "Promoter"
+        },
+        {
+          "label": "Strong skin in the game (25%+)",
+          "status": "yes",
+          "note": "Promoters hold 64%",
+          "group": "Promoter"
+        },
+        {
+          "label": "Raised institutional capital before",
+          "status": "yes",
+          "note": "TPG, Kalaari, Granite Hill and others on the cap table",
+          "group": "Promoter"
+        },
+        {
+          "label": "Backed by known investors",
+          "status": "yes",
+          "note": "TPG NewQuest and others",
+          "group": "Promoter"
+        }
       ],
-      "integrity":[
-        {"area":"Google Search","status":"clear","finding":"No adverse commentary"},
-        {"area":"Private Circle","status":"clear","finding":"Promoted & managed by the Gupta family; clean background"},
-        {"area":"CIBIL","status":"clear","finding":"No default"},
-        {"area":"Credit Rating","status":"clear","finding":"ICRA BBB− / Stable"},
-        {"area":"Legal / MCA","status":"flag","finding":"One lawsuit; paid ~₹3 mn compensation for supplying damaged products"}
+      "integrity": [
+        {
+          "area": "Google Search",
+          "status": "clear",
+          "finding": "No adverse commentary"
+        },
+        {
+          "area": "Private Circle",
+          "status": "clear",
+          "finding": "Promoted & managed by the Gupta family; clean background"
+        },
+        {
+          "area": "CIBIL",
+          "status": "clear",
+          "finding": "No default"
+        },
+        {
+          "area": "Credit Rating",
+          "status": "clear",
+          "finding": "ICRA BBB− / Stable"
+        },
+        {
+          "area": "Legal / MCA",
+          "status": "flag",
+          "finding": "One lawsuit; paid ~₹3 mn compensation for supplying damaged products"
+        }
       ],
-      "questions":[
-        {"theme":"Sourcing","items":["Do we own our logistics and collection network?","How concentrated are aggregators (top-5, top-20)?","How will Metalmandi & Salesmart scale to 50% of sourcing?"]},
-        {"theme":"Processing & capex","items":["Detail the capex for the e-waste, lithium-ion and black-mass expansion","Plant & machinery vendor and ramp-up timelines?"]},
-        {"theme":"Margins & financials","items":["Why were EBITDA margins single-digit in FY23–FY24?","Reason for the ₹76 cr unbilled-EPR write-off in FY25?","Why did revenue de-grow sharply from FY17–FY19?"]},
-        {"theme":"EPR economics","items":["What share of our largest OEMs' recycling do we capture, and can it grow?"]},
-        {"theme":"Distribution & hedging","items":["Who are the metal buyers? Any concentration? Do we hedge input vs output prices?"]},
-        {"theme":"Peers & IPO","items":["Why does TES-AMM earn much higher EBITDA than peers?","IPO timeline and readiness?"]}
+      "questions": [
+        {
+          "theme": "Sourcing",
+          "items": [
+            "Do we own our logistics and collection network?",
+            "How concentrated are aggregators (top-5, top-20)?",
+            "How will Metalmandi & Salesmart scale to 50% of sourcing?"
+          ]
+        },
+        {
+          "theme": "Processing & capex",
+          "items": [
+            "Detail the capex for the e-waste, lithium-ion and black-mass expansion",
+            "Plant & machinery vendor and ramp-up timelines?"
+          ]
+        },
+        {
+          "theme": "Margins & financials",
+          "items": [
+            "Why were EBITDA margins single-digit in FY23–FY24?",
+            "Reason for the ₹76 cr unbilled-EPR write-off in FY25?",
+            "Why did revenue de-grow sharply from FY17–FY19?"
+          ]
+        },
+        {
+          "theme": "EPR economics",
+          "items": [
+            "What share of our largest OEMs' recycling do we capture, and can it grow?"
+          ]
+        },
+        {
+          "theme": "Distribution & hedging",
+          "items": [
+            "Who are the metal buyers? Any concentration? Do we hedge input vs output prices?"
+          ]
+        },
+        {
+          "theme": "Peers & IPO",
+          "items": [
+            "Why does TES-AMM earn much higher EBITDA than peers?",
+            "IPO timeline and readiness?"
+          ]
+        }
       ],
-      "thesis":[
-        {"point":"Clear category leader in a growing market","detail":"India's e-waste roughly doubles every five years; Attero is the largest recycler, ~3× the next player."},
-        {"point":"Hard-to-replicate assets","detail":"In-house refining, PCB recycling and one of the largest sets of EPR contracts with Tier-1 brands."},
-        {"point":"Two growth engines","detail":"Large e-waste capacity expansion (144k→594k MTPA) plus a fast-growing battery / black-mass business."},
-        {"point":"Pre-IPO entry","detail":"Investing ahead of a planned listing."}
+      "thesis": [
+        {
+          "point": "Clear category leader in a growing market",
+          "detail": "India's e-waste roughly doubles every five years; Attero is the largest recycler, ~3× the next player."
+        },
+        {
+          "point": "Hard-to-replicate assets",
+          "detail": "In-house refining, PCB recycling and one of the largest sets of EPR contracts with Tier-1 brands."
+        },
+        {
+          "point": "Two growth engines",
+          "detail": "Large e-waste capacity expansion (144k→594k MTPA) plus a fast-growing battery / black-mass business."
+        },
+        {
+          "point": "Pre-IPO entry",
+          "detail": "Investing ahead of a planned listing."
+        }
       ],
-      "concerns":[
-        {"issue":"Thin, volatile margins","detail":"Single-digit EBITDA in FY23–FY24.","mitigant":"Scale and a richer battery mix expected to lift margins above 20%."},
-        {"issue":"Negative free cash flow until FY28","detail":"Heavy capex to build capacity.","mitigant":"Capex is front-loaded; cash flow turns positive as utilisation ramps."},
-        {"issue":"₹76 cr EPR write-off (FY25)","detail":"Unbilled EPR certificates written off.","mitigant":"Understand the cause and whether it can recur before pricing."},
-        {"issue":"Aggregator-heavy sourcing (87%)","detail":"Reliant on informal aggregators.","mitigant":"Metalmandi/Salesmart to bring ~50% of sourcing in-house by FY28."}
+      "concerns": [
+        {
+          "issue": "Thin, volatile margins",
+          "detail": "Single-digit EBITDA in FY23–FY24.",
+          "mitigant": "Scale and a richer battery mix expected to lift margins above 20%."
+        },
+        {
+          "issue": "Negative free cash flow until FY28",
+          "detail": "Heavy capex to build capacity.",
+          "mitigant": "Capex is front-loaded; cash flow turns positive as utilisation ramps."
+        },
+        {
+          "issue": "₹76 cr EPR write-off (FY25)",
+          "detail": "Unbilled EPR certificates written off.",
+          "mitigant": "Understand the cause and whether it can recur before pricing."
+        },
+        {
+          "issue": "Aggregator-heavy sourcing (87%)",
+          "detail": "Reliant on informal aggregators.",
+          "mitigant": "Metalmandi/Salesmart to bring ~50% of sourcing in-house by FY28."
+        }
       ],
-      "returns":{"investmentCr":425,"startEbitdaCr":312,"startYear":"FY25E","defaults":{"entryX":12,"exitX":12,"growthPct":25,"years":4}}
+      "returns": {
+        "investmentCr": 425,
+        "startEbitdaCr": 312,
+        "startYear": "FY25E",
+        "defaults": {
+          "entryX": 12,
+          "exitX": 12,
+          "growthPct": 25,
+          "years": 4
+        }
+      }
     },
     {
       "id": "style-union",
@@ -181,90 +1397,445 @@
       "sector": "Value Fashion Retail",
       "sectorTag": "Consumer",
       "oneLiner": "Fast-fashion value retailer (100+ stores across South India) with a no-discount model and higher-than-peer margins; led by ex-Future Group veterans.",
-      "origination": { "date": "2024-02-28", "banker": "Metta Capital" },
-      "transaction": { "headline": "Up to ₹400 cr — primary growth capital", "amountCr": 400, "type": "Primary (growth)", "coInvestment": "TBD" },
-      "fit": { "verdict": "watch", "reason": "Explosive growth, but still loss-making and the promoter's governance history needs a closer look." },
-      "revenueSpark": { "unit": "₹ cr", "years": ["FY22","FY23","FY24","FY25E","FY26E","FY27E","FY28E"], "values": [37,182,345,570,1038,1793,2925], "actualsThrough": "FY24" },
-      "headline": { "revenueLabel": "FY24 revenue", "revenueCr": 345, "ebitdaPct": 1, "patPositive": false },
+      "origination": {
+        "date": "2024-02-28",
+        "banker": "Metta Capital"
+      },
+      "transaction": {
+        "headline": "Up to ₹400 cr — primary growth capital",
+        "amountCr": 400,
+        "type": "Primary (growth)",
+        "coInvestment": "TBD"
+      },
+      "fit": {
+        "verdict": "watch",
+        "reason": "Explosive growth, but still loss-making and the promoter's governance history needs a closer look."
+      },
+      "revenueSpark": {
+        "unit": "₹ cr",
+        "years": [
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25E",
+          "FY26E",
+          "FY27E",
+          "FY28E"
+        ],
+        "values": [
+          37,
+          182,
+          345,
+          570,
+          1038,
+          1793,
+          2925
+        ],
+        "actualsThrough": "FY24"
+      },
+      "headline": {
+        "revenueLabel": "FY24 revenue",
+        "revenueCr": 345,
+        "ebitdaPct": 1,
+        "patPositive": false
+      },
       "snapshot": {
         "whatTheyDo": "Style Union is a fast-fashion value retailer — over 100 stores across South India selling affordable men's, women's and kids' clothing that refreshes every week. It never discounts, which keeps margins higher than rivals, and it's run by veterans of the old Future Group.",
-        "businessBullets": ["100+ stores across 5 South-Indian states; entering West India","No-discount model → 45% gross margin (~10% above peers)","Weekly-refresh '3/6/9' collection model","Avg ₹1,670 basket · ~40% repeat customers","App with 3.8 lakh downloads; online + offline"],
+        "businessBullets": [
+          "100+ stores across 5 South-Indian states; entering West India",
+          "No-discount model → 45% gross margin (~10% above peers)",
+          "Weekly-refresh '3/6/9' collection model",
+          "Avg ₹1,670 basket · ~40% repeat customers",
+          "App with 3.8 lakh downloads; online + offline"
+        ],
         "promoters": [
-          {"name":"Rakesh Biyani","role":"Founder & Promoter","note":"ex-Jt MD Future Retail, ex-Chairman Future Supply Chain · founded Style Union 2022"},
-          {"name":"Ekta Biyani","role":"Co-founder (Ethnicity)","note":"Launched the Ethnicity brand in 2017"}
+          {
+            "name": "Rakesh Biyani",
+            "role": "Founder & Promoter",
+            "note": "ex-Jt MD Future Retail, ex-Chairman Future Supply Chain · founded Style Union 2022"
+          },
+          {
+            "name": "Ekta Biyani",
+            "role": "Co-founder (Ethnicity)",
+            "note": "Launched the Ethnicity brand in 2017"
+          }
         ],
         "management": [
-          {"name":"Behram Kabjee","role":"Manufacturing & Sourcing","note":"30+ yrs · ex-Future Retail"},
-          {"name":"Nimish Shah","role":"Operations","note":"28+ yrs · ex-Landmark"},
-          {"name":"Rajesh Seth","role":"Customer Strategy","note":"27+ yrs"},
-          {"name":"Abhishek Jain","role":"CFO","note":"17+ yrs · ex-KPMG, PwC"},
-          {"name":"Alok Dharadhar","role":"Category Management","note":"25+ yrs"},
-          {"name":"Sankatmochan","role":"Supply Chain","note":"22+ yrs"},
-          {"name":"Manvendra Sharma","role":"Women's Fashion","note":"19+ yrs"},
-          {"name":"Mridul Tandon","role":"Men's & Kids' Fashion","note":"19+ yrs"},
-          {"name":"Krishna Thingbaijam","role":"Design","note":"28+ yrs"}
+          {
+            "name": "Behram Kabjee",
+            "role": "Manufacturing & Sourcing",
+            "note": "30+ yrs · ex-Future Retail"
+          },
+          {
+            "name": "Nimish Shah",
+            "role": "Operations",
+            "note": "28+ yrs · ex-Landmark"
+          },
+          {
+            "name": "Rajesh Seth",
+            "role": "Customer Strategy",
+            "note": "27+ yrs"
+          },
+          {
+            "name": "Abhishek Jain",
+            "role": "CFO",
+            "note": "17+ yrs · ex-KPMG, PwC"
+          },
+          {
+            "name": "Alok Dharadhar",
+            "role": "Category Management",
+            "note": "25+ yrs"
+          },
+          {
+            "name": "Sankatmochan",
+            "role": "Supply Chain",
+            "note": "22+ yrs"
+          },
+          {
+            "name": "Manvendra Sharma",
+            "role": "Women's Fashion",
+            "note": "19+ yrs"
+          },
+          {
+            "name": "Mridul Tandon",
+            "role": "Men's & Kids' Fashion",
+            "note": "19+ yrs"
+          },
+          {
+            "name": "Krishna Thingbaijam",
+            "role": "Design",
+            "note": "28+ yrs"
+          }
         ],
         "ownershipNote": "Majority owned by the Biyani family. Backers include family offices (Taparia, Piyush Goyal); Metta invested ₹195 cr in 2022. Full cap table to be received."
       },
       "financials": {
-        "unit":"₹ cr","years":["FY22","FY23","FY24","FY25E","FY26E","FY27E","FY28E"],"actualsThrough":"FY24",
-        "rows":{
-          "revenue":[37,182,345,570,1038,1793,2925],
-          "growthPct":[null,388,90,65,82,73,63],
-          "grossMarginPct":[39,46,45,45,46,47,47],
-          "ebitda":[-14,-16,-15,3,64,185,383],
-          "ebitdaPct":[-38,-9,-4,1,6,10,13],
-          "pat":[-14,-22,-23,-16,16,102,202],
-          "patPct":[-37,-12,-7,-3,2,6,7],
-          "roePct":[null,-22,-10,-3,2,13,22],
-          "rocePct":[null,-20,-16,-6,4,20,33],
-          "cash":[3,13,123,403,249,139,38],
-          "netWorth":[59,143,318,702,718,820,1022],
-          "debt":[18,16,15,12,9,7,5]
+        "unit": "₹ cr",
+        "years": [
+          "FY22",
+          "FY23",
+          "FY24",
+          "FY25E",
+          "FY26E",
+          "FY27E",
+          "FY28E"
+        ],
+        "actualsThrough": "FY24",
+        "rows": {
+          "revenue": [
+            37,
+            182,
+            345,
+            570,
+            1038,
+            1793,
+            2925
+          ],
+          "growthPct": [
+            null,
+            388,
+            90,
+            65,
+            82,
+            73,
+            63
+          ],
+          "grossMarginPct": [
+            39,
+            46,
+            45,
+            45,
+            46,
+            47,
+            47
+          ],
+          "ebitda": [
+            -14,
+            -16,
+            -15,
+            3,
+            64,
+            185,
+            383
+          ],
+          "ebitdaPct": [
+            -38,
+            -9,
+            -4,
+            1,
+            6,
+            10,
+            13
+          ],
+          "pat": [
+            -14,
+            -22,
+            -23,
+            -16,
+            16,
+            102,
+            202
+          ],
+          "patPct": [
+            -37,
+            -12,
+            -7,
+            -3,
+            2,
+            6,
+            7
+          ],
+          "roePct": [
+            null,
+            -22,
+            -10,
+            -3,
+            2,
+            13,
+            22
+          ],
+          "rocePct": [
+            null,
+            -20,
+            -16,
+            -6,
+            4,
+            20,
+            33
+          ],
+          "cash": [
+            3,
+            13,
+            123,
+            403,
+            249,
+            139,
+            38
+          ],
+          "netWorth": [
+            59,
+            143,
+            318,
+            702,
+            718,
+            820,
+            1022
+          ],
+          "debt": [
+            18,
+            16,
+            15,
+            12,
+            9,
+            7,
+            5
+          ]
         },
-        "revenueMix":{"label":"Revenue by brand (FY25)","slices":[{"name":"Style Union","pct":90},{"name":"Ethnicity","pct":10}]}
+        "revenueMix": {
+          "label": "Revenue by brand (FY25)",
+          "slices": [
+            {
+              "name": "Style Union",
+              "pct": 90
+            },
+            {
+              "name": "Ethnicity",
+              "pct": 10
+            }
+          ]
+        }
       },
-      "fitChecklist":[
-        {"label":"Revenue over ₹150 cr","status":"yes","note":"₹570 cr in FY25","group":"Business"},
-        {"label":"Revenue growing over 20% a year","status":"yes","note":"148% CAGR since 2022 (Style Union brand)","group":"Business"},
-        {"label":"Profitable (historically)","status":"no","note":"FY25 PAT about −₹16 cr","group":"Business"},
-        {"label":"Cash generative","status":"no","note":"Free cash flow negative until FY27","group":"Business"},
-        {"label":"Market leadership","status":"no","note":"Early-stage regional player","group":"Business"},
-        {"label":"Low customer concentration","status":"yes","note":"Retail — no customer concentration","group":"Business"},
-        {"label":"Deep sector experience (10y+)","status":"yes","note":"Rakesh Biyani ~20 yrs (Future Group)","group":"Promoter"},
-        {"label":"Strong skin in the game (25%+)","status":"yes","note":"Majority family-owned","group":"Promoter"},
-        {"label":"Raised institutional capital before","status":"yes","note":"Family offices; Metta invested ₹195 cr (2022)","group":"Promoter"},
-        {"label":"Backed by known investors","status":"yes","note":"Taparia FO, Piyush Goyal","group":"Promoter"}
+      "fitChecklist": [
+        {
+          "label": "Revenue over ₹150 cr",
+          "status": "yes",
+          "note": "₹570 cr in FY25",
+          "group": "Business"
+        },
+        {
+          "label": "Revenue growing over 20% a year",
+          "status": "yes",
+          "note": "148% CAGR since 2022 (Style Union brand)",
+          "group": "Business"
+        },
+        {
+          "label": "Profitable (historically)",
+          "status": "no",
+          "note": "FY25 PAT about −₹16 cr",
+          "group": "Business"
+        },
+        {
+          "label": "Cash generative",
+          "status": "no",
+          "note": "Free cash flow negative until FY27",
+          "group": "Business"
+        },
+        {
+          "label": "Market leadership",
+          "status": "no",
+          "note": "Early-stage regional player",
+          "group": "Business"
+        },
+        {
+          "label": "Low customer concentration",
+          "status": "yes",
+          "note": "Retail — no customer concentration",
+          "group": "Business"
+        },
+        {
+          "label": "Deep sector experience (10y+)",
+          "status": "yes",
+          "note": "Rakesh Biyani ~20 yrs (Future Group)",
+          "group": "Promoter"
+        },
+        {
+          "label": "Strong skin in the game (25%+)",
+          "status": "yes",
+          "note": "Majority family-owned",
+          "group": "Promoter"
+        },
+        {
+          "label": "Raised institutional capital before",
+          "status": "yes",
+          "note": "Family offices; Metta invested ₹195 cr (2022)",
+          "group": "Promoter"
+        },
+        {
+          "label": "Backed by known investors",
+          "status": "yes",
+          "note": "Taparia FO, Piyush Goyal",
+          "group": "Promoter"
+        }
       ],
-      "integrity":[
-        {"area":"Google Search","status":"clear","finding":"No adverse commentary"},
-        {"area":"Private Circle","status":"flag","finding":"Promoter was Chairman of the now-defunct Future Group — governance history to diligence"},
-        {"area":"CIBIL","status":"clear","finding":"No default"},
-        {"area":"Credit Rating","status":"pending","finding":"Not rated"},
-        {"area":"Legal / MCA","status":"clear","finding":"No records found"}
+      "integrity": [
+        {
+          "area": "Google Search",
+          "status": "clear",
+          "finding": "No adverse commentary"
+        },
+        {
+          "area": "Private Circle",
+          "status": "flag",
+          "finding": "Promoter was Chairman of the now-defunct Future Group — governance history to diligence"
+        },
+        {
+          "area": "CIBIL",
+          "status": "clear",
+          "finding": "No default"
+        },
+        {
+          "area": "Credit Rating",
+          "status": "pending",
+          "finding": "Not rated"
+        },
+        {
+          "area": "Legal / MCA",
+          "status": "clear",
+          "finding": "No records found"
+        }
       ],
-      "questions":[
-        {"theme":"Strategy & pivot","items":["Why pivot from Ethnicity to fast fashion?","Why keep loss-making Ethnicity stores rather than wind them down?"]},
-        {"theme":"Expansion","items":["Cluster logic and the next 4–5 year store plan (MH, GJ) — which cities and store types?","What's needed to open stores at 2× the FY25 pace?"]},
-        {"theme":"Competition","items":["How do you differentiate vs Zudio, Easybuy, Intune, V-Mart?","Thoughts on the consumption slowdown?"]},
-        {"theme":"Unit economics","items":["Store break-even and payback period?","Why are some FY23-cohort stores still loss-making?","Why are gross margins ~10% above peers?"]},
-        {"theme":"Supply chain & tech","items":["Explain the 3/6/9 model and how the technology beats peers on speed/cost","Contract manufacturers — count, locations, exclusivity, payment terms?"]},
-        {"theme":"Inventory","items":["Average inventory age vs peers; how do you clear slow-movers without discounting?"]},
-        {"theme":"Cap table & process","items":["Total capital raised, family vs external; current cap table and ESOPs?","Ideal investor and current process status?"]}
+      "questions": [
+        {
+          "theme": "Strategy & pivot",
+          "items": [
+            "Why pivot from Ethnicity to fast fashion?",
+            "Why keep loss-making Ethnicity stores rather than wind them down?"
+          ]
+        },
+        {
+          "theme": "Expansion",
+          "items": [
+            "Cluster logic and the next 4–5 year store plan (MH, GJ) — which cities and store types?",
+            "What's needed to open stores at 2× the FY25 pace?"
+          ]
+        },
+        {
+          "theme": "Competition",
+          "items": [
+            "How do you differentiate vs Zudio, Easybuy, Intune, V-Mart?",
+            "Thoughts on the consumption slowdown?"
+          ]
+        },
+        {
+          "theme": "Unit economics",
+          "items": [
+            "Store break-even and payback period?",
+            "Why are some FY23-cohort stores still loss-making?",
+            "Why are gross margins ~10% above peers?"
+          ]
+        },
+        {
+          "theme": "Supply chain & tech",
+          "items": [
+            "Explain the 3/6/9 model and how the technology beats peers on speed/cost",
+            "Contract manufacturers — count, locations, exclusivity, payment terms?"
+          ]
+        },
+        {
+          "theme": "Inventory",
+          "items": [
+            "Average inventory age vs peers; how do you clear slow-movers without discounting?"
+          ]
+        },
+        {
+          "theme": "Cap table & process",
+          "items": [
+            "Total capital raised, family vs external; current cap table and ESOPs?",
+            "Ideal investor and current process status?"
+          ]
+        }
       ],
-      "thesis":[
-        {"point":"Explosive growth off a differentiated model","detail":"No-discount, weekly-refresh value fashion with ~45% gross margins (~10% above peers)."},
-        {"point":"Experienced operators","detail":"A bench of ex-Future Group retail veterans."},
-        {"point":"Improving unit economics","detail":"Path from ~1% EBITDA (FY25) toward low-teens by FY28 as stores mature."},
-        {"point":"Large, growing market","detail":"India value-apparel ~₹3.9 lakh cr, growing ~16% a year."}
+      "thesis": [
+        {
+          "point": "Explosive growth off a differentiated model",
+          "detail": "No-discount, weekly-refresh value fashion with ~45% gross margins (~10% above peers)."
+        },
+        {
+          "point": "Experienced operators",
+          "detail": "A bench of ex-Future Group retail veterans."
+        },
+        {
+          "point": "Improving unit economics",
+          "detail": "Path from ~1% EBITDA (FY25) toward low-teens by FY28 as stores mature."
+        },
+        {
+          "point": "Large, growing market",
+          "detail": "India value-apparel ~₹3.9 lakh cr, growing ~16% a year."
+        }
       ],
-      "concerns":[
-        {"issue":"Still loss-making","detail":"Negative profit and cash flow until FY27.","mitigant":"Store cohort economics are improving; watch the maturity curve."},
-        {"issue":"Promoter governance history","detail":"Linked to the now-defunct Future Group.","mitigant":"Independent governance diligence before proceeding."},
-        {"issue":"Fierce competition","detail":"Zudio, V-Mart, Easybuy and others.","mitigant":"Differentiation on speed/assortment; validate same-store-sales trends."},
-        {"issue":"Aggressive roll-out risk","detail":"Opening stores at ~2× prior pace.","mitigant":"Confirm operational capacity and store-closure learnings."}
+      "concerns": [
+        {
+          "issue": "Still loss-making",
+          "detail": "Negative profit and cash flow until FY27.",
+          "mitigant": "Store cohort economics are improving; watch the maturity curve."
+        },
+        {
+          "issue": "Promoter governance history",
+          "detail": "Linked to the now-defunct Future Group.",
+          "mitigant": "Independent governance diligence before proceeding."
+        },
+        {
+          "issue": "Fierce competition",
+          "detail": "Zudio, V-Mart, Easybuy and others.",
+          "mitigant": "Differentiation on speed/assortment; validate same-store-sales trends."
+        },
+        {
+          "issue": "Aggressive roll-out risk",
+          "detail": "Opening stores at ~2× prior pace.",
+          "mitigant": "Confirm operational capacity and store-closure learnings."
+        }
       ],
-      "returns":{"investmentCr":400,"startEbitdaCr":64,"startYear":"FY26E","defaults":{"entryX":18,"exitX":14,"growthPct":35,"years":5}}
+      "returns": {
+        "investmentCr": 400,
+        "startEbitdaCr": 64,
+        "startYear": "FY26E",
+        "defaults": {
+          "entryX": 18,
+          "exitX": 14,
+          "growthPct": 35,
+          "years": 5
+        }
+      }
     }
   ]
 }

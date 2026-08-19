@@ -1094,17 +1094,23 @@ function renderOwnership(c) {
 // rows exist for the company; a row cell is "—" when that year's value is null.
 const FIN_GROUPS = [
   { title: 'Profit & Loss', rows: [
-    { key: 'revenue',        label: 'Revenue',        kind: 'cr'  },
-    { key: 'growthPct',      label: 'Growth',         kind: 'pct', bar: true },
-    { key: 'grossMarginPct', label: 'Gross margin',   kind: 'pct', bar: true },
-    { key: 'ebitda',         label: 'EBITDA',         kind: 'cr'  },
-    { key: 'ebitdaPct',      label: 'EBITDA margin',  kind: 'pct', bar: true },
+    { key: 'revenue',        label: 'Revenue',          kind: 'cr'  },
+    { key: 'growthPct',      label: 'YoY growth',       kind: 'pct', bar: true, sub: true },
+    { key: 'grossMarginPct', label: 'Gross margin',     kind: 'pct', bar: true, sub: true },
+    { key: 'ebitda',         label: 'EBITDA',           kind: 'cr'  },
+    { key: 'ebitdaPct',      label: 'EBITDA margin',    kind: 'pct', bar: true, sub: true },
     { key: 'pat',            label: 'PAT (net profit)', kind: 'cr' },
-    { key: 'patPct',         label: 'PAT margin',     kind: 'pct', bar: true },
+    { key: 'patPct',         label: 'PAT margin',       kind: 'pct', bar: true, sub: true },
   ]},
-  { title: 'Returns', rows: [
+  { title: 'Cash flow', rows: [
+    { key: 'capex',             label: 'Capex',                   kind: 'cr' },
+    { key: 'operatingCashflow', label: 'Operating cash flow',     kind: 'cr' },
+    { key: 'fcf',               label: 'Free cash flow',          kind: 'cr' },
+  ]},
+  { title: 'Returns & efficiency', rows: [
     { key: 'roePct',  label: 'Return on equity',  kind: 'pct', bar: true },
     { key: 'rocePct', label: 'Return on capital', kind: 'pct', bar: true },
+    { key: 'nwcDays', label: 'Working-capital days', kind: 'days' },
   ]},
   { title: 'Balance sheet', rows: [
     { key: 'cash',     label: 'Cash',      kind: 'cr' },
@@ -1159,18 +1165,23 @@ function renderFinTable(c) {
   const card = h('<div class="surface-card overflow-hidden"><div class="fin-scroll"></div></div>');
   const table = h('<table class="fin"></table>');
 
+  // CAGR summary columns show only in the full (forecast-inclusive) view.
+  const cagr = c.financials.cagr || {};
+  const cagrCols = (ui.fin.forecast && Array.isArray(c.financials.cagrCols)) ? c.financials.cagrCols : [];
+
   // Header
   let head = '<thead><tr><th class="rowhead">&nbsp;</th>';
   v.years.forEach((y, i) => {
     const cls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '');
     head += `<th class="${cls}">${esc(y)}</th>`;
   });
+  cagrCols.forEach(cc => head += `<th class="cagr">CAGR<span>${esc(cc)}</span></th>`);
   head += '</tr></thead>';
   table.innerHTML = head;
 
   // Body
   const tbody = h('<tbody></tbody>');
-  const colCount = v.years.length + 1;
+  const colCount = v.years.length + 1 + cagrCols.length;
   FIN_GROUPS.forEach(group => {
     const present = group.rows.filter(r => Array.isArray(rows[r.key]));
     if (!present.length) return;                                   // skip empty groups cleanly
@@ -1178,11 +1189,12 @@ function renderFinTable(c) {
     present.forEach(r => {
       const visible = rows[r.key].slice(0, v.n);
       const maxAbs = Math.max(1, ...visible.filter(x => x != null).map(x => Math.abs(x)));
-      let tr = `<tr><td class="rowhead">${esc(r.label)}</td>`;
+      let tr = `<tr class="${r.sub ? 'subrow' : ''}"><td class="rowhead">${esc(r.label)}</td>`;
       visible.forEach((val, i) => {
         const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '');
         tr += finCell(val, r, maxAbs, fcCls);
       });
+      cagrCols.forEach((cc, ci) => tr += (r.kind === 'cr' && cagr[r.key]) ? cagrCell(cagr[r.key][ci]) : '<td class="val cagr muted"></td>');
       tbody.appendChild(h(tr + '</tr>'));
     });
   });
@@ -1191,7 +1203,7 @@ function renderFinTable(c) {
   return card;
 }
 
-// One financial cell. cr → plain number (red if negative); pct → number + mini-bar.
+// One financial cell. cr → plain number (red if negative); pct → number + mini-bar; days → plain integer.
 function finCell(val, r, maxAbs, fcCls) {
   if (val == null) return `<td class="val muted ${fcCls}">—</td>`;
   const neg = val < 0;
@@ -1202,7 +1214,14 @@ function finCell(val, r, maxAbs, fcCls) {
     const bar = r.bar ? `<div class="minibar"><span style="width:${w}%;background:${barColor}"></span></div>` : '';
     return `<td class="val ${fcCls}"><div class="cellwrap"><span style="color:${numColor};font-weight:600">${val}%</span>${bar}</div></td>`;
   }
+  if (r.kind === 'days') return `<td class="val ${fcCls}">${fmtNum(val)}</td>`;
   return `<td class="val ${neg ? 'neg' : ''} ${fcCls}">${fmtNum(val)}</td>`;
+}
+
+// CAGR cell (right-hand summary columns). NM when a base is non-positive.
+function cagrCell(v) {
+  if (v == null) return '<td class="val cagr muted">NM</td>';
+  return `<td class="val cagr">${Math.round(v * 100)}%</td>`;
 }
 
 // Supporting charts grid (only render charts whose data exists).
