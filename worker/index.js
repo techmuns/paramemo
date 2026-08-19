@@ -108,6 +108,15 @@ async function handleGenerate(request, env) {
     '• headline.revenueLabel and headline.revenueCr MUST be the LATEST ACTUAL year (= actualsThrough), never a forecast ' +
     'year; headline.ebitdaPct and headline.patPositive must reflect that same year.\n' +
     '• Every financials.rows array must be the same length as financials.years; use null for blank cells.\n\n' +
+    'FINANCIALS DEPTH (fill everything the model supports — this drives the whole Financials tab):\n' +
+    '• Convert every money value to ₹ crore (if the model is in ₹ million ÷ 10, ₹ lakh ÷ 100, ₹ thousand ÷ 10000). Keep the model\'s full year span (often 6–10 years).\n' +
+    '• financials.rows — populate each metric the model contains, as an array aligned to financials.years (null where blank): ' +
+    'revenue, growthPct (YoY revenue growth %), grossMarginPct, ebitda, ebitdaPct, pat, patPct, capex, operatingCashflow (post working-capital), fcf (operating cash flow less capex), roePct, rocePct, nwcDays (net working-capital days), cash, netWorth, debt. ' +
+    'All percentages are plain numbers (27 means 27%), not fractions. Negative values are allowed (losses, cash outflows).\n' +
+    '• financials.cagrCols — one or two period labels spanning the model (e.g. "FY19–24","FY24–28"); financials.cagr — { revenue:[…], ebitda:[…], pat:[…] } as FRACTIONS (0.66 = 66% CAGR), one per cagr column, null where the base year is zero/negative (shown as NM).\n' +
+    '• financials.segments — { unit:"₹ cr", note:"one line on how the mix shifts", rows:[ { name, values:[… aligned to years, null before a segment exists ], cagr:[…] } ] } — the revenue split by business segment/product over time, exactly as the model breaks it out.\n' +
+    '• financials.capacity — include ONLY if the model has capacity/volume data: { unit, rows:[ { name, values:[…], utilPct:[…] } ] }.\n' +
+    '• financials.revenueMix — { label, slices:[ {name, pct} ] } for the latest ACTUAL year (shares sum to ~100).\n\n' +
     'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
     'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
     '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
@@ -265,7 +274,7 @@ async function loadTemplate(request, env) {
     const k = (data.companies || []).find(c => c.id === 'kusumgar');
     if (k) return JSON.stringify(k, null, 2);
   } catch { /* fall through */ }
-  return '{ "name": "", "shortName": "", "sector": "", "sectorTag": "", "oneLiner": "", "origination": {"date":"","banker":""}, "transaction": {"headline":"","amountCr":0,"type":"","coInvestment":"TBD"}, "fit": {"verdict":"watch","reason":""}, "revenueSpark": {"unit":"₹ cr","years":[],"values":[],"actualsThrough":""}, "headline": {"revenueLabel":"","revenueCr":0,"ebitdaPct":0,"patPositive":true}, "snapshot": {}, "financials": {"unit":"₹ cr","years":[],"actualsThrough":"","rows":{}}, "fitChecklist": [], "integrity": [], "questions": [], "thesis": [], "concerns": [], "returns": {"investmentCr":0,"startEbitdaCr":0,"startYear":"","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}} }';
+  return '{ "name": "", "shortName": "", "sector": "", "sectorTag": "", "oneLiner": "", "origination": {"date":"","banker":""}, "transaction": {"headline":"","amountCr":0,"type":"","coInvestment":"TBD"}, "fit": {"verdict":"watch","reason":""}, "revenueSpark": {"unit":"₹ cr","years":[],"values":[],"actualsThrough":""}, "headline": {"revenueLabel":"","revenueCr":0,"ebitdaPct":0,"patPositive":true}, "snapshot": {}, "financials": {"unit":"₹ cr","years":[],"actualsThrough":"","cagrCols":[],"rows":{"revenue":[],"growthPct":[],"grossMarginPct":[],"ebitda":[],"ebitdaPct":[],"pat":[],"patPct":[],"capex":[],"operatingCashflow":[],"fcf":[],"roePct":[],"rocePct":[],"nwcDays":[],"cash":[],"netWorth":[],"debt":[]},"cagr":{"revenue":[],"ebitda":[],"pat":[]},"segments":{"unit":"₹ cr","note":"","rows":[]},"revenueMix":{"label":"","slices":[]}}, "fitChecklist": [], "integrity": [], "questions": [], "thesis": [], "concerns": [], "returns": {"investmentCr":0,"startEbitdaCr":0,"startYear":"","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}} }';
 }
 
 /* ------------------------------------------------------------------ *
