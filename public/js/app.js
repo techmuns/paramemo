@@ -214,6 +214,55 @@ function toast(msg) {
   setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 260); }, 2600);
 }
 
+/* ---- In-app confirm dialog ----------------------------------------------
+ * A styled replacement for window.confirm(). The native dialog shows the raw
+ * worker domain and — critically — is silently blocked when the dashboard is
+ * embedded in a cross-origin iframe, so the action would never fire. This is a
+ * normal DOM overlay, so it works the same standalone or embedded. Returns a
+ * Promise<boolean>. */
+function confirmDialog({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false }) {
+  return new Promise(resolve => {
+    const root = $('#modal-root');
+    const overlay = h(`
+      <div class="modal-overlay" role="alertdialog" aria-modal="true">
+        <div class="modal confirm-modal" style="max-width:412px">
+          <div class="px-6 pt-5 pb-1">
+            <h2 class="font-display text-[17px] font-semibold text-ink"></h2>
+            <p class="text-[13.5px] text-ink-muted mt-1.5 leading-relaxed"></p>
+          </div>
+          <div class="flex items-center justify-end gap-2.5 px-6 pb-5 pt-4">
+            <button data-cancel class="hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}"></button>
+            <button data-confirm class="hdr-btn"></button>
+          </div>
+        </div>
+      </div>`);
+    overlay.querySelector('h2').textContent = title;
+    overlay.querySelector('p').textContent = message;
+    overlay.querySelector('[data-cancel]').textContent = cancelLabel;
+    const okBtn = overlay.querySelector('[data-confirm]');
+    okBtn.textContent = confirmLabel;
+    okBtn.style.cssText = danger
+      ? 'color:#fff;background:#E11D48;border-color:#E11D48'
+      : `color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}`;
+
+    let done = false;
+    const finish = val => {
+      if (done) return; done = true;
+      overlay.classList.remove('show');
+      setTimeout(() => overlay.remove(), 200);
+      document.removeEventListener('keydown', onKey);
+      resolve(val);
+    };
+    const onKey = e => { if (e.key === 'Escape') finish(false); else if (e.key === 'Enter') finish(true); };
+    overlay.addEventListener('click', e => { if (e.target === overlay) finish(false); });
+    overlay.querySelector('[data-cancel]').addEventListener('click', () => finish(false));
+    okBtn.addEventListener('click', () => finish(true));
+    document.addEventListener('keydown', onKey);
+    root.appendChild(overlay);
+    requestAnimationFrame(() => { overlay.classList.add('show'); okBtn.focus(); });
+  });
+}
+
 /* -----------------------------------------------------------------------------
  * 3. State + data loading
  * ---------------------------------------------------------------------------*/
@@ -284,7 +333,14 @@ function addCompany(company) {
 
 // Remove an uploaded deal (from KV + local state), then return to the pipeline.
 async function removeCompany(c) {
-  if (!confirm(`Remove “${c.shortName || c.name}” from the pipeline? This can’t be undone.`)) return;
+  const okToRemove = await confirmDialog({
+    title: `Remove ${c.shortName || c.name}?`,
+    message: 'This deletes the deal and its memo from the pipeline. This can’t be undone.',
+    confirmLabel: 'Remove deal',
+    cancelLabel: 'Keep it',
+    danger: true,
+  });
+  if (!okToRemove) return;
   try {
     const res = await fetch(apiUrl('companies/' + encodeURIComponent(c.id)), { method: 'DELETE' });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Failed (${res.status})`); }
@@ -421,12 +477,20 @@ function initHeader() {
 }
 
 // Build the print memo for the open company and open the browser's print dialog.
+// window.print() prints THIS document (the memo in #print-root, shown only under
+// @media print). It works standalone and in a normal embed; a sandboxed iframe
+// without allow-modals can swallow it, so we guard and hint the keyboard shortcut.
 function exportPdf() {
   const c = companyById(ui.companyId);
   if (!c) { toast('Open a company first, then export its memo'); return; }
   const root = $('#print-root');
   root.innerHTML = renderPrintMemo(c);
-  window.print();
+  try {
+    window.print();
+  } catch (err) {
+    const key = /Mac|iP(hone|ad)/.test(navigator.platform || '') ? '⌘P' : 'Ctrl+P';
+    toast(`Press ${key} to save the memo as a PDF`);
+  }
 }
 
 /* -----------------------------------------------------------------------------
