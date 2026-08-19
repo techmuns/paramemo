@@ -277,7 +277,7 @@ const state = {
 const ui = {
   companyId: null,
   tab: 'snapshot',
-  fin: { forecast: true, view: 'table' }, // financials tab: show forecast? · Table|Charts
+  fin: { forecast: true, view: 'table', segPct: false }, // financials: show forecast? · Table|Charts · segment ₹|%
 };
 
 // Anchor data + API URLs to THIS script's own URL (captured while
@@ -1130,8 +1130,88 @@ function finView(c) {
 function renderFinancials(c) {
   const wrap = h('<div class="space-y-5"></div>');
   wrap.appendChild(renderFinControls(c));
-  wrap.appendChild(ui.fin.view === 'charts' ? renderFinCharts(c) : renderFinTable(c));
+  if (ui.fin.view === 'charts') {
+    wrap.appendChild(renderFinCharts(c));
+  } else {
+    wrap.appendChild(renderFinTable(c));
+    const seg = renderFinSegments(c); if (seg) wrap.appendChild(seg);
+    const cap = renderFinCapacity(c); if (cap) wrap.appendChild(cap);
+  }
   return wrap;
+}
+
+// Segment revenue over time — ₹ cr or share-of-revenue (%), toggled.
+function renderFinSegments(c) {
+  const seg = c.financials && c.financials.segments;
+  if (!seg || !Array.isArray(seg.rows) || !seg.rows.length) return null;
+  const v = finView(c);
+  const pct = ui.fin.segPct;
+  // column totals (for % mode), across visible years
+  const totals = v.years.map((_, i) => seg.rows.reduce((s, r) => s + (Number(r.values && r.values[i]) || 0), 0));
+
+  const card = h('<div class="surface-card overflow-hidden"></div>');
+  card.appendChild(h(`
+    <div class="seg-head">
+      <div><span class="seg-title">Revenue by segment</span>${seg.note ? `<span class="seg-note">${esc(seg.note)}</span>` : ''}</div>
+      <div class="switch" role="group" aria-label="Segment units">
+        <button data-seg="cr" class="${pct ? '' : 'on'}">₹ cr</button>
+        <button data-seg="pct" class="${pct ? 'on' : ''}">% of revenue</button>
+      </div>
+    </div>`));
+  const scroll = h('<div class="fin-scroll"></div>');
+  const table = h('<table class="fin"></table>');
+  let head = '<thead><tr><th class="rowhead">&nbsp;</th>';
+  v.years.forEach((y, i) => head += `<th class="${(v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '')}">${esc(y)}</th>`);
+  head += '</tr></thead>';
+  const tbody = h('<tbody></tbody>');
+  seg.rows.forEach((r, ri) => {
+    let tr = `<tr><td class="rowhead"><span class="seg-swatch" style="background:${CHART_PALETTE[ri % CHART_PALETTE.length]}"></span>${esc(r.name)}</td>`;
+    v.years.forEach((_, i) => {
+      const raw = r.values && r.values[i];
+      const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '');
+      if (raw == null) { tr += `<td class="val muted ${fcCls}">—</td>`; return; }
+      tr += pct
+        ? `<td class="val ${fcCls}">${totals[i] ? Math.round(raw / totals[i] * 100) : 0}%</td>`
+        : `<td class="val ${fcCls}">${fmtNum(raw)}</td>`;
+    });
+    tbody.appendChild(h(tr + '</tr>'));
+  });
+  // total row
+  let tot = `<tr class="seg-total"><td class="rowhead">Total revenue</td>`;
+  v.years.forEach((_, i) => { const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : ''); tot += `<td class="val ${fcCls}">${pct ? '100%' : fmtNum(totals[i])}</td>`; });
+  tbody.appendChild(h(tot + '</tr>'));
+  table.innerHTML = head; table.appendChild(tbody);
+  scroll.appendChild(table); card.appendChild(scroll);
+  card.querySelectorAll('[data-seg]').forEach(b => b.addEventListener('click', () => { ui.fin.segPct = b.dataset.seg === 'pct'; renderTabPanel(c, 'financials'); }));
+  return card;
+}
+
+// Capacity & utilisation (installed capacity + how full it runs).
+function renderFinCapacity(c) {
+  const cap = c.financials && c.financials.capacity;
+  if (!cap || !Array.isArray(cap.rows) || !cap.rows.length) return null;
+  const v = finView(c);
+  const card = h('<div class="surface-card overflow-hidden"></div>');
+  card.appendChild(h(`<div class="seg-head"><div><span class="seg-title">Capacity &amp; utilisation</span><span class="seg-note">Installed ${esc(cap.unit || '')} and how full it runs</span></div></div>`));
+  const scroll = h('<div class="fin-scroll"></div>');
+  const table = h('<table class="fin"></table>');
+  let head = '<thead><tr><th class="rowhead">&nbsp;</th>';
+  v.years.forEach((y, i) => head += `<th class="${(v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '')}">${esc(y)}</th>`);
+  head += '</tr></thead>';
+  const tbody = h('<tbody></tbody>');
+  cap.rows.forEach(r => {
+    let tr = `<tr><td class="rowhead">${esc(r.name)}</td>`;
+    v.years.forEach((_, i) => { const val = r.values && r.values[i]; const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : ''); tr += val == null ? `<td class="val muted ${fcCls}">—</td>` : `<td class="val ${fcCls}">${fmtNum(val)}</td>`; });
+    tbody.appendChild(h(tr + '</tr>'));
+    if (Array.isArray(r.utilPct)) {
+      let ur = `<tr class="subrow"><td class="rowhead">Utilisation</td>`;
+      v.years.forEach((_, i) => { const u = r.utilPct[i]; const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : ''); ur += u == null ? `<td class="val muted ${fcCls}">—</td>` : `<td class="val ${fcCls}">${u}%</td>`; });
+      tbody.appendChild(h(ur + '</tr>'));
+    }
+  });
+  table.innerHTML = head; table.appendChild(tbody);
+  scroll.appendChild(table); card.appendChild(scroll);
+  return card;
 }
 
 function renderFinControls(c) {
@@ -1230,8 +1310,12 @@ function renderFinCharts(c) {
   const grid = h('<div class="grid gap-5 lg:grid-cols-2"></div>');
   grid.appendChild(chartCard('Revenue & EBITDA', 'barChart', 'revEbitda'));
   grid.appendChild(chartCard('Margins over time', 'percent', 'margins'));
+  if (fin.segments && Array.isArray(fin.segments.rows) && fin.segments.rows.length)
+    grid.appendChild(chartCard('Segment revenue mix', 'sliders', 'segMix'));
+  if (Array.isArray(fin.rows.operatingCashflow) || Array.isArray(fin.rows.fcf))
+    grid.appendChild(chartCard('Cash generation', 'coins', 'cashFlow'));
   if (fin.revenueMix) grid.appendChild(chartCard(fin.revenueMix.label || 'Revenue mix', 'pieChart', 'revmix'));
-  if (fin.rows.cash && fin.rows.debt) grid.appendChild(chartCard('Cash vs Debt', 'wallet', 'cashDebt'));
+  if (fin.rows.cash && fin.rows.debt) grid.appendChild(chartCard('Cash vs Debt', 'coins', 'cashDebt'));
   return grid;
 }
 function chartCard(title, iconName, chartType) {
@@ -1618,6 +1702,8 @@ function initPanelCharts(c) {
       case 'margins':   ch = buildMargins(cv, c);        break;
       case 'revmix':    ch = buildRevMix(cv, c);         break;
       case 'cashDebt':  ch = buildCashDebt(cv, c);       break;
+      case 'segMix':    ch = buildSegmentMix(cv, c);     break;
+      case 'cashFlow':  ch = buildCashFlow(cv, c);       break;
       case 'returns':   ch = buildReturnsChart(cv, c);   break;
     }
     if (ch) _charts.push(ch);
@@ -1715,6 +1801,33 @@ function buildCashDebt(canvas, c) {
     data: { labels: v.years, datasets: [ds('Cash', r.cash, POS), ds('Debt', r.debt, NEG)] },
     options: cartesianBase(false),
   });
+}
+
+// Segment revenue over time — stacked bars showing how the mix shifts.
+function buildSegmentMix(canvas, c) {
+  const seg = c.financials.segments;
+  if (!seg || !Array.isArray(seg.rows) || !seg.rows.length) return null;
+  const v = finView(c);
+  const opts = cartesianBase(false);
+  opts.scales.x.stacked = true;
+  opts.scales.y.stacked = true;
+  const datasets = seg.rows.map((row, i) => ({
+    label: row.name,
+    data: (row.values || []).slice(0, v.n).map(x => x == null ? 0 : x),
+    backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length],
+    borderRadius: 2, borderSkipped: false, maxBarThickness: 40, categoryPercentage: 0.72, barPercentage: 0.96,
+  }));
+  return new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: v.years, datasets }, options: opts });
+}
+
+// Cash generation — operating cash flow vs free cash flow (the PE-critical view).
+function buildCashFlow(canvas, c) {
+  const v = finView(c), r = v.fin.rows;
+  if (!Array.isArray(r.operatingCashflow) && !Array.isArray(r.fcf)) return null;
+  const ds = (label, arr, hex) => Array.isArray(arr) ? ({ label, data: arr.slice(0, v.n),
+    backgroundColor: barColors(hex, v), borderRadius: 4, borderSkipped: false, maxBarThickness: 24, categoryPercentage: 0.7, barPercentage: 0.9 }) : null;
+  const datasets = [ds('Operating cash flow', r.operatingCashflow, BRAND.navy), ds('Free cash flow', r.fcf, '#14B8A6')].filter(Boolean);
+  return new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: v.years, datasets }, options: cartesianBase(false) });
 }
 
 function buildRevMix(canvas, c) {

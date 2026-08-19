@@ -480,6 +480,13 @@
     /* sub-metrics (growth, margins) sit quietly under their headline row */
     .fin tr.subrow .rowhead { font-weight: 400; color: var(--muted); padding-left: 22px; font-size: 12px; }
     .fin tr.subrow td.val { color: var(--muted); }
+    /* segment + capacity sub-tables */
+    .seg-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px 12px; border-bottom: 1px solid #EEF1F6; }
+    .seg-title { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 14px; color: var(--ink); }
+    .seg-note { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; max-width: 640px; }
+    .seg-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+    .fin tr.seg-total td { border-top: 1.5px solid var(--border-strong); font-weight: 600; color: var(--ink); }
+    .fin tr.seg-total .rowhead { font-weight: 600; }
     /* % mini-bar under the number */
     .cellwrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 44px; }
     .minibar { width: 100%; height: 3px; border-radius: 2px; background: rgba(17,24,39,.07); overflow: hidden; }
