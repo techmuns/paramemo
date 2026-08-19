@@ -123,6 +123,16 @@ async function handleGenerate(request, env) {
     'Set fit.verdict: "go" only for a clearly strong, low-doubt fit; "watch" when there are material unresolved risks ' +
     '(thin margins, negative cash flow, concentration, governance) even if growth is high; "pass" when it fails core ' +
     'criteria. When in doubt, prefer "watch" over "go".\n\n' +
+    'CHECKLISTS & QUESTIONS (produce Paragon\'s standard screening structure for EVERY deal):\n' +
+    '• fitChecklist — the strategy screen; each item { label, status:"yes"|"no"|"tbd", note, group }. Cover, in group "Business": ' +
+    'revenue above a materiality bar, revenue CAGR > ~20% (historical), profitable historically (PAT positive), cash generative (FCF positive), ' +
+    'market leadership, low customer concentration. In group "Promoter": deep sector experience (>10 years), strong skin in the game (promoter stake > ~25%), ' +
+    'raised institutional capital before, backed by known investors. Mark "tbd" when the documents don\'t settle it. Adapt to the sector but keep these core checks.\n' +
+    '• integrity — the governance / diligence scan; each { area, status:"clear"|"flag"|"pending", finding }. ALWAYS include these five: ' +
+    '"Google Search", "Private Circle", "CIBIL", "Credit Rating", "Legal / MCA". These are EXTERNAL checks usually NOT in the IM — mark them ' +
+    '"pending" with finding "To be run" UNLESS the documents give a real result (e.g. a disclosed credit rating, or a lawsuit). Never fabricate a clean result.\n' +
+    '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
+    'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
     'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title from the documents — do not merge, ' +
     'rename, or swap roles between people. Ownership percentages must sum to ~100%.\n\n' +
     'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
