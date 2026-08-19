@@ -89,12 +89,15 @@ async function handleGenerate(request, env) {
   const user = buildUserPrompt({ imText, excelText, sheetNames, notesText, basics, template });
 
   // First attempt, with one repair retry if the JSON is malformed/incomplete.
-  let obj = extractJson(await callClaude({ system, user }, env));
+  // callClaude returns { text, model } — model = whichever id in the chain answered.
+  let ans = await callClaude({ system, user }, env);
+  let obj = extractJson(ans.text);
   let problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
   if (problems.length) {
     const repair = `Your previous output had these problems: ${problems.join('; ')}. ` +
       `Return the corrected, COMPLETE JSON object only — same schema, all required keys present.`;
-    obj = extractJson(await callClaude({ system, user: `${user}\n\n${repair}` }, env));
+    ans = await callClaude({ system, user: `${user}\n\n${repair}` }, env);
+    obj = extractJson(ans.text);
     problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
     if (problems.length) throw new ApiError(502, `The AI could not produce a valid memo (${problems[0]}). Please try again.`);
   }
@@ -103,6 +106,8 @@ async function handleGenerate(request, env) {
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
   const id = await uniqueId(base, env);
   const company = normalizeCompany(obj, id, basics);
+  company.generatedBy = ans.model;                          // which Bedrock model actually answered
+  company.generatedAt = new Date().toISOString().slice(0, 10);
 
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
@@ -113,16 +118,27 @@ async function handleGenerate(request, env) {
 
 /* ------------------------------------------------------------------ *
  * The AI call — Claude via Amazon Bedrock CONVERSE endpoint (Bearer key)
- * Mirrors a proven working setup: single Bedrock API key as a Bearer token,
- * the /converse endpoint, and the Converse request/response shape.
+ * Tries a chain of model ids IN ORDER so we can prefer Sonnet 5 but fall back
+ * safely. Fall through to the next id only on "can't use this model" errors
+ * (HTTP 400/403/404); 429/5xx are retried on the SAME id (never fall through).
+ * Returns { text, model } — model = the id that actually answered.
  * ------------------------------------------------------------------ */
+const DEFAULT_MODEL_CHAIN = [
+  'anthropic.claude-sonnet-5',                        // preferred (clean Bedrock id)
+  'us.anthropic.claude-sonnet-5',                     // US cross-region inference profile
+  'us.anthropic.claude-sonnet-4-5-20250929-v1:0',    // proven fallback — keep last
+];
+function modelChain(env) {
+  if (env.BEDROCK_MODEL_ID && env.BEDROCK_MODEL_ID.trim()) return [env.BEDROCK_MODEL_ID.trim()]; // single-id override
+  const raw = env.BEDROCK_MODEL_IDS && env.BEDROCK_MODEL_IDS.trim();
+  if (raw) { const list = raw.split(',').map(s => s.trim()).filter(Boolean); if (list.length) return list; }
+  return DEFAULT_MODEL_CHAIN;
+}
+
 async function callClaude({ system, user, maxTokens = 8000 }, env) {
   // ⬇️ The real key plugs in here: BEDROCK_API_KEY is a Cloudflare secret (never in the repo).
   if (!env.BEDROCK_API_KEY) throw new ApiError(503, 'AI is not configured yet (secret BEDROCK_API_KEY is missing).');
   const region = env.AWS_REGION || 'us-east-1';
-  const modelId = env.BEDROCK_MODEL_ID || 'us.anthropic.claude-sonnet-4-5-20250929-v1:0';
-
-  const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
   const headers = {
     'Authorization': `Bearer ${env.BEDROCK_API_KEY}`,   // Bedrock API key (Bearer, not SigV4)
     'Content-Type': 'application/json',
@@ -134,31 +150,42 @@ async function callClaude({ system, user, maxTokens = 8000 }, env) {
     inferenceConfig: { temperature: 0, maxTokens },
   });
 
-  // Retry on 429 / >=500 (and transient network errors) with exponential backoff.
-  let lastErr = 'The AI request failed.';
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s, 4s
-    let res;
-    try {
-      res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(90_000) });
-    } catch (e) {
-      lastErr = `network error: ${e.message}`;
-      continue; // transient — retry
+  const models = modelChain(env);
+  const tried = [];
+  for (const modelId of models) {
+    const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
+    let lastErr = '', unusable = false;
+    // Retry 429/5xx (and transient network errors) on THIS id with exponential backoff.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s, 4s
+      let res;
+      try {
+        res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(90_000) });
+      } catch (e) { lastErr = `network error: ${e.message}`; continue; }
+
+      if (res.status === 429 || res.status >= 500) {                 // retry on the same id
+        lastErr = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
+        continue;
+      }
+      if ([400, 403, 404].includes(res.status)) {                    // "can't use this model" → try next id
+        lastErr = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
+        unusable = true;
+        break;
+      }
+      if (res.status !== 200) {                                      // any other non-200 → hard error
+        throw new ApiError(502, `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const parts = data && data.output && data.output.message && data.output.message.content;
+      const text = Array.isArray(parts) ? parts.map(p => (p && p.text) || '').join('') : '';
+      if (!text) throw new ApiError(502, 'The AI returned an empty response.');
+      return { text, model: modelId };                               // success — remember which id answered
     }
-    if (res.status === 429 || res.status >= 500) {
-      lastErr = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
-      continue; // retryable
-    }
-    if (res.status !== 200) {
-      throw new ApiError(502, `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
-    }
-    const data = await res.json();
-    const parts = data && data.output && data.output.message && data.output.message.content;
-    const text = Array.isArray(parts) ? parts.map(p => (p && p.text) || '').join('') : '';
-    if (!text) throw new ApiError(502, 'The AI returned an empty response.');
-    return text;
+    tried.push(`${modelId} → ${lastErr}`);
+    // Only 400/403/404 falls through to the next id; exhausted 429/5xx/network errors stop here.
+    if (!unusable) throw new ApiError(502, lastErr || 'The AI request failed.');
   }
-  throw new ApiError(502, lastErr);   // exhausted retries
+  throw new ApiError(502, `No usable Bedrock model. Tried: ${tried.join(' | ')}`);
 }
 
 // Optional OCR fallback via Mistral (best-effort; only when a scanned PDF is sent).

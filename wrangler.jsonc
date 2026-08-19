@@ -9,12 +9,14 @@
     { "binding": "DEALS", "id": "f0459fd5e5dd4e78a52efa10efc4dfb9" }
   ],
 
-  // Non-secret config. AWS_REGION is your Bedrock region; BEDROCK_MODEL_ID is a
-  // Claude model or (recommended) a cross-region inference-profile id enabled in
-  // your Bedrock account — replace it with one from your Bedrock console.
+  // Non-secret config. AWS_REGION is your Bedrock region.
+  // BEDROCK_MODEL_IDS is a comma-separated fallback chain, tried IN ORDER until
+  // one works (prefer Sonnet 5, fall back to the proven Sonnet 4.5 profile).
+  // Edit these to match models enabled in your Bedrock account. To force a single
+  // model instead of the chain, set BEDROCK_MODEL_ID (it overrides the list).
   // Secrets (BEDROCK_API_KEY, optional MISTRAL_API_KEY) are NOT set here — see README.
   "vars": {
     "AWS_REGION": "us-east-1",
-    "BEDROCK_MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    "BEDROCK_MODEL_IDS": "anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-4-5-20250929-v1:0"
   }
 }
