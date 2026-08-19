@@ -180,6 +180,11 @@ async function handleGenerate(request, env) {
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
     'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title from the documents — do not merge, ' +
     'rename, or swap roles between people. Ownership percentages must sum to ~100%.\n\n' +
+    'RETURNS (ALWAYS include — this is the ONE illustrative block: a base-case returns sketch that is explicitly assumptions, not extracted facts, so here you MUST fill numbers rather than leave nulls):\n' +
+    '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number> } }. Every field is REQUIRED; all are numbers except startYear. Never null, never omit.\n' +
+    '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected.\n' +
+    '• startYear = a recent year that has MEANINGFUL POSITIVE EBITDA (the latest actual year, or the nearest forward year if the latest actual EBITDA is negligible or negative). startEbitdaCr = that year\'s EBITDA in ₹ cr, a positive number matching financials.\n' +
+    '• defaults = standard PE assumptions, illustrative not extracted: entryX / exitX = entry & exit EV/EBITDA multiples (typically 10–16×, sector-appropriate), growthPct = a plausible EBITDA growth % over the hold anchored to the model\'s trajectory, years = hold period (4–6).\n\n' +
     'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
     'financials you output (same years, same actual-vs-forecast split).';
 
@@ -232,7 +237,7 @@ function modelChain(env) {
   return DEFAULT_MODEL_CHAIN;
 }
 
-async function callClaude({ system, user, maxTokens = 8000 }, env) {
+async function callClaude({ system, user, maxTokens = 16000 }, env) {   // rich memos are large; give the JSON room so the trailing keys never truncate
   // ⬇️ The real key plugs in here: BEDROCK_API_KEY is a Cloudflare secret (never in the repo).
   if (!env.BEDROCK_API_KEY) throw new ApiError(503, 'AI is not configured yet (secret BEDROCK_API_KEY is missing).');
   const region = env.AWS_REGION || 'us-east-1';
@@ -360,7 +365,9 @@ function validateCompany(o) {
   if (!isObj(o.financials) || !Array.isArray(o.financials.years) || !isObj(o.financials.rows)) p.push('missing "financials.years/rows"');
   if (!isObj(o.snapshot)) p.push('missing "snapshot"');
   for (const k of ['fitChecklist', 'integrity', 'questions', 'thesis', 'concerns']) if (!Array.isArray(o[k])) p.push(`missing "${k}" array`);
-  if (!isObj(o.returns) || typeof o.returns.investmentCr !== 'number' || !isObj(o.returns.defaults)) p.push('missing "returns"');
+  // NOTE: "returns" is intentionally NOT a hard requirement here — it is the illustrative
+  // assumptions block, which normalizeCompany() always backfills into a valid shape. A good,
+  // data-rich memo must never be thrown away just because the IM stated no deal size.
   return p;
 }
 
@@ -378,8 +385,68 @@ function normalizeCompany(o, id, basics = {}) {
   if (!o.oneLiner && o.snapshot && o.snapshot.whatTheyDo) o.oneLiner = o.snapshot.whatTheyDo;
   if (!isObj(o.origination)) o.origination = { date: '', banker: basics.banker || 'TBD' };
   if (!o.origination.date) o.origination.date = new Date().toISOString().slice(0, 10);
+  o.returns = coerceReturns(o);   // guarantee a valid illustrative-returns block (the Returns tab depends on it)
   o._uploaded = true;  // marker (UI can badge uploaded deals if desired)
   return o;
+}
+
+// The illustrative-returns block drives the Returns tab and returns math, so it must always be
+// well-formed. Prefer the model's values; otherwise derive sensible ones from the financials and
+// the transaction size. This is the one block where a reasonable assumption beats a dead-end error.
+function coerceReturns(o) {
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const r   = isObj(o.returns) ? o.returns : {};
+  const fin = isObj(o.financials) ? o.financials : {};
+  const years  = Array.isArray(fin.years) ? fin.years : [];
+  const rows   = isObj(fin.rows) ? fin.rows : {};
+  const ebitda = Array.isArray(rows.ebitda)  ? rows.ebitda  : [];
+  const revrow = Array.isArray(rows.revenue) ? rows.revenue : [];
+  const posEbitda = i => typeof ebitda[i] === 'number' && ebitda[i] > 0;
+
+  // defaults (entry/exit multiples, growth, hold) — keep the model's when sane, else PE-standard
+  const din = isObj(r.defaults) ? r.defaults : {};
+  const defaults = {
+    entryX: num(din.entryX) > 0 ? din.entryX : 12,
+    exitX:  num(din.exitX)  > 0 ? din.exitX  : 13,
+    growthPct: num(din.growthPct) != null ? din.growthPct : 18,
+    years:  num(din.years) > 0 ? Math.round(din.years) : 5,
+  };
+
+  // start year + starting EBITDA: prefer the model; else pick a year with meaningful positive EBITDA
+  let startYear = (typeof r.startYear === 'string' && r.startYear) ? r.startYear : '';
+  let startEbitdaCr = num(r.startEbitdaCr);
+  if (!startYear || startEbitdaCr == null || startEbitdaCr <= 0) {
+    let idx = years.indexOf(fin.actualsThrough);
+    if (!(idx >= 0 && posEbitda(idx))) {              // latest actual EBITDA not usable → scan forward, then anywhere
+      let found = -1;
+      for (let i = Math.max(idx, 0); i < years.length; i++) if (posEbitda(i)) { found = i; break; }
+      if (found < 0) for (let i = 0; i < years.length; i++) if (posEbitda(i)) { found = i; break; }
+      idx = found;
+    }
+    if (idx >= 0) {
+      if (!startYear) startYear = years[idx] || '';
+      if (startEbitdaCr == null || startEbitdaCr <= 0) startEbitdaCr = num(ebitda[idx]);
+    }
+    if (startEbitdaCr == null || startEbitdaCr <= 0) {  // last resort: 15% of latest revenue
+      const rev = num(revrow[years.indexOf(fin.actualsThrough)]) || num(revrow[revrow.length - 1]);
+      if (rev > 0) startEbitdaCr = Math.round(rev * 0.15 * 10) / 10;
+    }
+    if (startEbitdaCr == null || startEbitdaCr <= 0) startEbitdaCr = 10;   // absolute floor so multiples stay finite
+    if (!startYear) startYear = fin.actualsThrough || years[years.length - 1] || 'FY';
+  }
+
+  // investment cheque: model → transaction size → ~20% of entry enterprise value, rounded to a clean figure
+  let investmentCr = num(r.investmentCr);
+  if (investmentCr == null || investmentCr <= 0) {
+    const txn = isObj(o.transaction) ? num(o.transaction.amountCr) : null;
+    investmentCr = (txn > 0) ? txn : roundNice(Math.max(50, defaults.entryX * startEbitdaCr * 0.2));
+  }
+  return { investmentCr, startEbitdaCr, startYear, defaults };
+}
+function roundNice(n) {                                  // clean round figures for an illustrative cheque
+  if (!(n > 0)) return 50;
+  const step = n < 500 ? 25 : 50;
+  return Math.round(n / step) * step;
 }
 
 function slugify(s) {
