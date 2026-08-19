@@ -505,70 +505,75 @@ function renderPrintMemo(c) {
   const fy = (c.headline && c.headline.revenueLabel || '').split(' ')[0];
 
   const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
-  const dealFacts = [
-    ['Sector', c.sector], ['Ask', t.headline], ['Type', t.type],
-    ['Co-investment', t.coInvestment || '—'], ['Banker', o.banker], ['Origination', fmtDate(o.date)],
-  ].map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v == null ? '—' : v)}</td></tr>`).join('');
+  const overview = `${s.whatTheyDo ? `<p>${esc(s.whatTheyDo)}</p>` : (c.oneLiner ? `<p>${esc(c.oneLiner)}</p>` : '')}${bullets ? `<ul class="pm-ul">${bullets}</ul>` : ''}`;
+  const people = arr => (arr || []).map(p => `<li><b>${esc(p.name)}</b> — ${esc(p.role)}${p.note ? '. ' + esc(p.note) : ''}</li>`).join('');
+  const promoters = people(s.promoters), mgmt = people(s.management);
+  const questions = (c.questions || []).map(q =>
+    `<div class="pm-q"><div class="pm-q-th">${esc(q.theme)}</div><ul class="pm-ul">${(q.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul></div>`).join('');
+  const coInv = (t.coInvestment && t.coInvestment !== 'TBD') ? t.coInvestment : 'Yes / No';
+  const orig = `Date: ${esc(fmtDate(o.date) || 'TBU')}${o.banker ? ' &nbsp;·&nbsp; Source: ' + esc(o.banker) : ''}${o.advisors ? ' &nbsp;·&nbsp; Advisors: ' + esc(o.advisors) : ''}`;
+  const row = (label, body) => `<div class="pm-row"><div class="pm-row-l">${esc(label)}</div><div class="pm-row-b">${body}</div></div>`;
 
   return `
     <div class="pm">
-      <div class="pm-cover">
-        <div class="pm-eyebrow">Paragon Partners · Screening Memo</div>
-        <div class="pm-title-row">
-          <div class="pm-mono">${esc(c.monogram || initials(c.shortName || c.name))}</div>
-          <div>
-            <h1>${esc(c.name)}</h1>
-            <div class="pm-titlesub">${esc(c.project)} · ${esc(c.sector)}</div>
-          </div>
-          <div class="pm-fit pm-fit-${esc(c.fit ? c.fit.verdict : 'watch')}">● ${fit.label}</div>
-        </div>
-        <div class="pm-facts">
-          <span><b>Deal</b>${esc(dealHeadline(c))}</span>
-          <span><b>Banker</b>${esc(o.banker)} · ${esc(fmtDate(o.date))}</span>
-          <span><b>Latest revenue</b>${esc(fmtCr(c.headline.revenueCr))}${fy ? ' (' + esc(fy) + ')' : ''}</span>
-        </div>
-        <p class="pm-reason"><b>Fit — ${fit.label}:</b> ${esc(c.fit ? c.fit.reason : '')}</p>
+      <div class="pm-head">
+        <img src="assets/paragon-logo.png" class="pm-logo" alt="Paragon Partners"/>
+        <div class="pm-h-title">${esc(c.name)} <span>(${esc(fmtDate(o.date) || '')})</span></div>
       </div>
 
-      <div class="pm-section">
-        <h2>What they do</h2>
-        <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
-        ${bullets ? `<ul class="pm-bullets">${bullets}</ul>` : ''}
-      </div>
+      ${row('Company', esc(c.name))}
+      ${row('Sector', esc(c.sector || '—'))}
+      ${row('Transaction Overview', `${esc(t.headline || '—')}<div class="pm-sub">Co-Investment: ${esc(coInv)}</div>`)}
+      ${row('Origination', orig)}
+      ${overview ? row('Company Overview', overview) : ''}
+      ${promoters ? row('Promoter Overview', `<ul class="pm-ul">${promoters}</ul>`) : ''}
+      ${mgmt ? row('Management Overview', `<ul class="pm-ul">${mgmt}</ul>`) : ''}
 
-      <div class="pm-section">
-        <h2>The deal</h2>
-        <table class="pm-facts-tbl" style="width:100%;border-collapse:collapse">${dealFacts}</table>
-      </div>
-
-      <div class="pm-section">
-        <h2>Financials (₹ crore)</h2>
+      <div class="pm-block">
+        <div class="pm-block-h">Financials <span>(₹ crore; tinted = forecast)</span></div>
         ${printFinTable(c)}
+        ${printSegments(c)}
       </div>
 
-      <div class="pm-section">
-        <h2>Fit checklist</h2>
-        ${printChecklist(c)}
-      </div>
+      ${questions ? `<div class="pm-block"><div class="pm-block-h">Key Questions</div>${questions}</div>` : ''}
 
-      <div class="pm-section">
-        <h2>Integrity checks</h2>
+      <div class="pm-block">
+        <div class="pm-block-h">Governance Checklist</div>
         ${printIntegrity(c)}
       </div>
 
-      <div class="pm-cols">
-        <div class="pm-section" style="margin-top:0">
-          <h2>Why we’d invest</h2>
-          ${(c.thesis || []).map(x => `<div class="pm-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('')}
-        </div>
-        <div class="pm-section" style="margin-top:0">
-          <h2>What worries us</h2>
-          ${(c.concerns || []).map(x => `<div class="pm-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('')}
-        </div>
+      <div class="pm-block">
+        <div class="pm-block-h">Strategy Checklist &nbsp; <span class="pm-fit-tag pm-fit-${esc(c.fit ? c.fit.verdict : 'watch')}">Fit: ${fit.label}</span></div>
+        <p class="pm-fitreason">${esc(c.fit ? c.fit.reason : '')}</p>
+        ${printChecklist(c)}
       </div>
 
-      <div class="pm-foot">Paragon Partners · Screening Memo · Confidential — prepared for the Monday pipeline meeting${generatedLine(c) ? '<br>' + generatedLine(c) : ''}</div>
+      ${(c.thesis && c.thesis.length) || (c.concerns && c.concerns.length) ? `
+      <div class="pm-block">
+        <div class="pm-block-h">Section II — Investment Thesis &amp; Issues</div>
+        <div class="pm-cols">
+          <div><div class="pm-col-h">Thesis</div>${(c.thesis || []).map(x => `<div class="pm-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<span class="pm-sub">To be filled after the management meeting.</span>'}</div>
+          <div><div class="pm-col-h">Issues &amp; mitigants</div>${(c.concerns || []).map(x => `<div class="pm-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<span class="pm-sub">To be filled after the management meeting.</span>'}</div>
+        </div>
+      </div>` : ''}
+
+      <div class="pm-foot">Paragon Partners · Screening Memo · Confidential${generatedLine(c) ? ' · ' + generatedLine(c) : ''}</div>
     </div>`;
+}
+
+// Compact segment-revenue table for print (only if segments exist).
+function printSegments(c) {
+  const seg = c.financials && c.financials.segments;
+  if (!seg || !Array.isArray(seg.rows) || !seg.rows.length) return '';
+  const fin = c.financials, years = fin.years, cut = years.indexOf(fin.actualsThrough) + 1;
+  const totals = years.map((_, i) => seg.rows.reduce((sum, r) => sum + (Number(r.values && r.values[i]) || 0), 0));
+  const head = '<tr><th>Segment revenue</th>' + years.map((y, i) => `<th class="${i >= cut ? 'fc' : ''}">${esc(y)}</th>`).join('') + '</tr>';
+  const body = seg.rows.map(r => {
+    const cells = years.map((y, i) => { const v = r.values && r.values[i], fc = i >= cut ? 'fc' : ''; return v == null ? `<td class="${fc}">—</td>` : `<td class="${fc}">${fmtNum(v)}</td>`; }).join('');
+    return `<tr><td>${esc(r.name)}</td>${cells}</tr>`;
+  }).join('');
+  const totRow = `<tr class="pm-tot"><td>Total</td>${years.map((y, i) => `<td class="${i >= cut ? 'fc' : ''}">${fmtNum(totals[i])}</td>`).join('')}</tr>`;
+  return `<table class="pm-tbl" style="margin-top:8px"><thead>${head}</thead><tbody>${body}${totRow}</tbody></table>`;
 }
 
 // Compact financials table for print: all years, forecast columns tinted, negatives red.
@@ -576,17 +581,24 @@ function printFinTable(c) {
   const fin = c.financials;
   if (!fin || !Array.isArray(fin.years)) return '';
   const years = fin.years, cut = years.indexOf(fin.actualsThrough) + 1;
-  const defs = FIN_GROUPS.flatMap(g => g.rows).filter(r => Array.isArray(fin.rows[r.key]));
-  const head = '<tr><th></th>' + years.map((y, i) => `<th class="${i >= cut ? 'fc' : ''}">${esc(y)}</th>`).join('') + '</tr>';
-  const body = defs.map(r => {
-    const arr = fin.rows[r.key];
-    const cells = years.map((y, i) => {
-      const v = arr[i], fc = i >= cut ? 'fc' : '';
-      if (v == null) return `<td class="${fc}">—</td>`;
-      const neg = v < 0 ? 'neg' : '';
-      return `<td class="${fc} ${neg}">${r.kind === 'pct' ? v + '%' : fmtNum(v)}</td>`;
+  const cagr = fin.cagr || {}, cagrCols = Array.isArray(fin.cagrCols) ? fin.cagrCols : [];
+  const colspan = years.length + 1 + cagrCols.length;
+  const head = '<tr><th></th>' + years.map((y, i) => `<th class="${i >= cut ? 'fc' : ''}">${esc(y)}</th>`).join('') +
+    cagrCols.map(cc => `<th class="cg">CAGR<br>${esc(cc)}</th>`).join('') + '</tr>';
+  const body = FIN_GROUPS.map(group => {
+    const present = group.rows.filter(r => Array.isArray(fin.rows[r.key]));
+    if (!present.length) return '';
+    const gh = `<tr class="pm-grp"><td colspan="${colspan}">${esc(group.title)}</td></tr>`;
+    return gh + present.map(r => {
+      const arr = fin.rows[r.key];
+      const cells = years.map((y, i) => {
+        const v = arr[i], fc = i >= cut ? 'fc' : '';
+        if (v == null) return `<td class="${fc}">—</td>`;
+        return `<td class="${fc} ${v < 0 ? 'neg' : ''}">${r.kind === 'pct' ? v + '%' : fmtNum(v)}</td>`;
+      }).join('');
+      const cg = cagrCols.map((cc, ci) => (r.kind === 'cr' && cagr[r.key]) ? `<td class="cg">${cagr[r.key][ci] == null ? 'NM' : Math.round(cagr[r.key][ci] * 100) + '%'}</td>` : '<td class="cg"></td>').join('');
+      return `<tr class="${r.sub ? 'pm-subr' : ''}"><td>${esc(r.label)}</td>${cells}${cg}</tr>`;
     }).join('');
-    return `<tr><td>${esc(r.label)}</td>${cells}</tr>`;
   }).join('');
   return `<table class="pm-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
