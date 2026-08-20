@@ -416,6 +416,7 @@ async function runJob(job, payload) {
       const nm = xf.name || 'document';
       try {
         if (/pdf$/i.test(nm) || (xf.type || '').includes('pdf')) imText += `\n\n===== Additional document: ${nm} =====\n` + await extractPdfText(xf, 40000);
+        else if (/\.docx$/i.test(nm) || /wordprocessingml/.test(xf.type || '')) imText += `\n\n===== Additional Word document: ${nm} =====\n` + await extractDocxText(xf);
         else if (/\.(xlsx|xls)$/i.test(nm)) { const r = await parseExcel(xf); imText += `\n\n===== Additional spreadsheet: ${nm} =====\n` + (r.excelText || ''); }
         else if (/\.(txt|md|csv|json)$/i.test(nm) || (xf.type || '').startsWith('text')) imText += `\n\n===== Additional notes: ${nm} =====\n` + (await xf.text()).slice(0, 40000);
       } catch (_) { /* skip an unreadable extra doc, never block the memo */ }
@@ -2408,6 +2409,39 @@ async function extractPdfText(file, cap = 80000) {
   }
   return pages.join('\n').replace(/[ \t]+\n/g, '\n').trim().slice(0, cap);
 }
+// Word .docx → plain text, entirely in the browser. A .docx is a ZIP; we read word/document.xml
+// from the central directory and inflate it with the platform's DecompressionStream (no library).
+async function extractDocxText(file, cap = 60000) {
+  try {
+    const u8 = new Uint8Array(await file.arrayBuffer());
+    const dv = new DataView(u8.buffer);
+    // locate the End Of Central Directory record (scan back from the tail)
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= 0 && i >= u8.length - 22 - 65536; i--) { if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; } }
+    if (eocd < 0) return '';
+    let p = dv.getUint32(eocd + 16, true);                 // central directory offset
+    const count = dv.getUint16(eocd + 10, true);
+    let lho = -1, method = 8, compSize = 0;
+    for (let n = 0; n < count && dv.getUint32(p, true) === 0x02014b50; n++) {   // walk central directory entries
+      const m = dv.getUint16(p + 10, true), cSize = dv.getUint32(p + 20, true);
+      const fnLen = dv.getUint16(p + 28, true), exLen = dv.getUint16(p + 30, true), cmLen = dv.getUint16(p + 32, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + fnLen));
+      if (name === 'word/document.xml') { lho = dv.getUint32(p + 42, true); method = m; compSize = cSize; break; }
+      p += 46 + fnLen + exLen + cmLen;
+    }
+    if (lho < 0 || dv.getUint32(lho, true) !== 0x04034b50) return '';
+    const dataStart = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+    const comp = u8.subarray(dataStart, dataStart + compSize);
+    const xmlBytes = method === 0 ? comp
+      : new Uint8Array(await new Response(new Response(comp).body.pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
+    const xml = new TextDecoder().decode(xmlBytes);
+    return xml
+      .replace(/<w:tab\b[^>]*\/?>/g, '\t').replace(/<w:br\b[^>]*\/?>/g, '\n')
+      .replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '')   // paragraphs → newlines, then strip all tags
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+      .replace(/\n{3,}/g, '\n\n').trim().slice(0, cap);
+  } catch (_) { return ''; }
+}
 // ---- Vision: render document pages to JPEGs the model can read (logos, org charts, tables) ----
 // Each page is rendered near Claude's vision sweet spot (~1540px long edge → ~1.15MP after the
 // API's own downscale). Bedrock caps images per request, so a long doc — or several docs — is
@@ -2565,7 +2599,7 @@ function openAddDealModal() {
     <input type="file" data-file="im" accept="application/pdf,.pdf">
     <input type="file" data-file="excel" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
     <input type="file" data-file="notes" accept="application/pdf,.pdf,.txt,.md,text/plain">
-    <input type="file" data-file="extra" multiple accept=".pdf,application/pdf,.xlsx,.xls,.txt,.md,.csv,.json,text/plain,image/*">
+    <input type="file" data-file="extra" multiple accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xlsx,.xls,.txt,.md,.csv,.json,text/plain,image/*">
   </div>`);
   overlay.appendChild(inputs);
   const fileInput = k => inputs.querySelector(`[data-file="${k}"]`);
@@ -2595,7 +2629,7 @@ function openAddDealModal() {
         <span class="uz-ico">${icon(n ? 'check' : 'plus', 'w-4 h-4', n ? 3 : 2)}</span>
         <span class="uz-body">
           <span class="uz-title">Other documents <span class="text-ink-hint font-normal">(optional)</span></span>
-          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Anything else you have — extra IMs, term sheets, decks, images, notes'}</span>
+          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Anything else you have — extra IMs, term sheets, Word docs, decks, images, notes'}</span>
         </span>
       </button>${chips}`;
   }
