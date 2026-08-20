@@ -116,13 +116,16 @@ async function handleGenerate(request, env) {
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
   const { excelText = '', sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
   let imText = String(payload.imText || '').trim();
+  // The browser also renders the IM/deck pages to JPEGs so the vision model can read logo walls,
+  // org charts and infographics that never appear in the extracted text. Cap defensively.
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 28);
 
   // OCR fallback: if the PDF had no extractable text (scanned image) and Mistral is
   // configured, OCR the bytes the browser sent. Best-effort; failures fall through.
   if (!imText && imPdfBase64 && env.MISTRAL_API_KEY) {
     imText = (await mistralOcr(imPdfBase64, env).catch(() => '')) || '';
   }
-  if (!imText && !String(excelText).trim()) {
+  if (!imText && !imPages.length && !String(excelText).trim()) {
     throw new ApiError(422, "Couldn't read the documents — the PDF may be a scanned image. Please paste the key details in the fields and try again.");
   }
 
@@ -130,15 +133,20 @@ async function handleGenerate(request, env) {
   const template = await loadTemplate(request, env);
 
   const system =
-    'You are a disciplined, skeptical private-equity screening analyst. You read a company\'s ' +
-    'Information Memorandum (IM) and its Excel financial model and produce a screening memo as ' +
+    'You are a disciplined, skeptical private-equity screening analyst. You are given a company\'s ' +
+    'Information Memorandum (IM) — BOTH as rendered PAGE IMAGES and as its extracted text — together with its ' +
+    'Excel financial model, and you produce a screening memo as ' +
     'STRICT JSON only, matching the given schema exactly (same keys and nesting). ' +
     'Return ONLY the JSON object — no markdown, no commentary.\n\n' +
     'WRITING: plain, non-technical English a busy partner can skim. All money in ₹ crore, rounded.\n\n' +
-    'ACCURACY: every number and fact must come from the provided text of the documents. Never invent, extrapolate, or guess. ' +
-    'If a value is not in the documents, use an empty/TBD value — checklist status "tbd", "TBD" strings, ' +
+    'READ THE PAGE IMAGES CAREFULLY. Company decks put critical facts inside images that are NOT in the extracted text — ' +
+    'management & promoter names/titles (team & leadership slides), customer/partner names (logo walls), plant locations, ' +
+    'the fundraise / deal terms, and charts. Look at every page image and read these out: promoters, management, customers/' +
+    'clients/partners (transcribe the names shown on logos), segments, capacity and any deal/ask details. The page images ARE part of the documents.\n\n' +
+    'ACCURACY: every number and fact must come from the documents you are given — the IM page images and their extracted text, and the Excel model. Never invent, extrapolate, or guess. ' +
+    'If a value is in none of them, use an empty/TBD value — checklist status "tbd", "TBD" strings, ' +
     'an ownershipNote instead of an ownership array, or null cells — never fill a gap with a plausible number.\n' +
-    'DO NOT USE OUTSIDE KNOWLEDGE. The IM deck is often mostly images (logo walls, org charts, photos) whose text does NOT reach you — you only receive whatever text was extracted. Never supply from memory or inference: names of people (promoters, management), names of customers/clients/partners, investor names, a founding year, an ESOP, a royalty, a customer-concentration percentage, or any other specific fact. Include such an item ONLY if that exact word/name/number appears in the provided text. If the text names no management or promoters, return an empty people list (or a single "To be confirmed" note) rather than inventing anyone. Name only the customers actually written in the text — do not add plausible sector names. Do not turn an unrelated number (e.g. a sustainability "98%") into a concentration or ownership figure. When unsure whether something was in the documents, leave it out or mark it TBD.\n\n' +
+    'DO NOT USE OUTSIDE KNOWLEDGE beyond what the pages actually show. A name, client, founding year, ESOP, royalty or concentration % counts as "in the documents" only if you can read it in a page image or the extracted text — never from memory or inference. If neither the images nor the text name the management/promoters, return an empty people list (or a single "To be confirmed" note) rather than inventing anyone. Name only the customers actually shown (as text or as a logo you can read) — do not add plausible sector names. Do not turn an unrelated number (e.g. a sustainability "98%") into a concentration or ownership figure.\n\n' +
     'FINANCIAL YEARS (critical — must not drift):\n' +
     '• Copy the fiscal-year column headers from the Excel model VERBATIM (e.g. "FY21","FY22","FY24E"). ' +
     'Do not shift, renumber, relabel or infer years.\n' +
@@ -181,8 +189,8 @@ async function handleGenerate(request, env) {
     '"pending" with finding "To be run" UNLESS the documents give a real result (e.g. a disclosed credit rating, or a lawsuit). Never fabricate a clean result.\n' +
     '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
-    'PEOPLE & OWNERSHIP: list each promoter/manager with their EXACT name and title AS WRITTEN in the provided text — do not merge, ' +
-    'rename, or swap roles between people, and do NOT supply names from general knowledge. If the text names no people (e.g. the team/org slide is only an image), return an empty promoters/management list or a single "To be confirmed" entry — never invent a plausible name or title. Ownership percentages must sum to ~100% and only when the text states them; otherwise use an ownershipNote.\n\n' +
+    'PEOPLE & OWNERSHIP: read the team / leadership / board slides in the PAGE IMAGES and list each promoter/manager with their EXACT name and title as shown (in the images or the text) — do not merge, ' +
+    'rename, or swap roles between people, and do NOT supply names from general knowledge. If neither the images nor the text name any people, return an empty promoters/management list or a single "To be confirmed" entry — never invent a plausible name or title. Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
     'RETURNS (ALWAYS include — this is the ONE illustrative block: a base-case returns sketch that is explicitly assumptions, not extracted facts, so here you MUST fill numbers rather than leave nulls):\n' +
     '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number> } }. Every field is REQUIRED; all are numbers except startYear. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected.\n' +
@@ -195,13 +203,13 @@ async function handleGenerate(request, env) {
 
   // First attempt, with one repair retry if the JSON is malformed/incomplete.
   // callClaude returns { text, model } — model = whichever id in the chain answered.
-  let ans = await callClaude({ system, user }, env);
+  let ans = await callClaude({ system, user, images: imPages }, env);
   let obj = extractJson(ans.text);
   let problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
   if (problems.length) {
     const repair = `Your previous output had these problems: ${problems.join('; ')}. ` +
       `Return the corrected, COMPLETE JSON object only — same schema, all required keys present.`;
-    ans = await callClaude({ system, user: `${user}\n\n${repair}` }, env);
+    ans = await callClaude({ system, user: `${user}\n\n${repair}`, images: imPages }, env);
     obj = extractJson(ans.text);
     problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
     if (problems.length) throw new ApiError(502, `The AI could not produce a valid memo (${problems[0]}). Please try again.`);
@@ -240,7 +248,7 @@ function modelChain(env) {
   return DEFAULT_MODEL_CHAIN;
 }
 
-async function callClaude({ system, user, maxTokens = 16000 }, env) {   // rich memos are large; give the JSON room so the trailing keys never truncate
+async function callClaude({ system, user, images = [], maxTokens = 16000 }, env) {   // rich memos are large; give the JSON room so the trailing keys never truncate
   // ⬇️ The real key plugs in here: BEDROCK_API_KEY is a Cloudflare secret (never in the repo).
   if (!env.BEDROCK_API_KEY) throw new ApiError(503, 'AI is not configured yet (secret BEDROCK_API_KEY is missing).');
   const region = env.AWS_REGION || 'us-east-1';
@@ -249,9 +257,13 @@ async function callClaude({ system, user, maxTokens = 16000 }, env) {   // rich 
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   };
+  // The IM/deck is usually image-heavy (logo walls, org charts, infographics) — send the page
+  // images alongside the text so the vision model reads what text extraction cannot.
+  const content = [{ text: user }];
+  for (const b64 of images) content.push({ image: { format: 'jpeg', source: { bytes: b64 } } });
   const body = JSON.stringify({
     system: [{ text: system }],
-    messages: [{ role: 'user', content: [{ text: user }] }],
+    messages: [{ role: 'user', content }],
     inferenceConfig: { temperature: 0, maxTokens },
   });
 

@@ -409,8 +409,9 @@ async function runJob(job, payload) {
     stage(0);
     await ensureUploadLibs();
     const imText = await extractPdfText(payload.files.im);
+    const imPages = await renderPdfPageImages(payload.files.im);   // let Claude SEE the deck (logos, org charts, infographics)
     let imPdfBase64 = '';
-    if (!imText.trim()) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
+    if (!imText.trim() && !imPages.length) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
 
     stage(1);
     const { excelText, sheetNames } = await parseExcel(payload.files.excel);
@@ -426,7 +427,7 @@ async function runJob(job, payload) {
     writeTO = setTimeout(() => stage(3), 7000);   // light up "writing" partway through the AI wait
     const res = await fetch(apiUrl('generate'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64 }),
+      body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64, imPages }),
     });
     clearTimeout(writeTO);
     const data = await res.json().catch(() => ({}));
@@ -2394,6 +2395,29 @@ async function extractPdfText(file, cap = 80000) {
     if (pages.join('\n').length > cap) break;
   }
   return pages.join('\n').replace(/[ \t]+\n/g, '\n').trim().slice(0, cap);
+}
+// Render the IM/deck pages to downscaled JPEGs so the vision model can read logo walls, org
+// charts and infographics that text extraction misses. Returns base64 JPEG strings (no data: prefix).
+async function renderPdfPageImages(file, { maxPages = 24, maxW = 1120, quality = 0.62 } = {}) {
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+    const n = Math.min(pdf.numPages, maxPages);
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      const page = await pdf.getPage(i);
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: Math.min(2, maxW / base.width) });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);   // JPEG has no alpha
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const url = canvas.toDataURL('image/jpeg', quality);
+      if (url && url.indexOf(',') > 0) out.push(url.slice(url.indexOf(',') + 1));
+    }
+    return out;
+  } catch (_) { return []; }   // vision is additive — never block generation on a render failure
 }
 // Excel → CSV of the best financial sheet(s) via SheetJS (capped ~40k chars).
 async function parseExcel(file, cap = 40000) {
