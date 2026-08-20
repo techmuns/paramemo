@@ -408,10 +408,22 @@ async function runJob(job, payload) {
   try {
     stage(0);
     await ensureUploadLibs();
-    const imText = await extractPdfText(payload.files.im);
-    const imPages = await renderPdfPageImages(payload.files.im);   // let Claude SEE the deck (logos, org charts, infographics)
+    const extras = (payload.files.extra || []).filter(Boolean);
+    let imText = await extractPdfText(payload.files.im);
+    // Pull text from any extra supporting documents the partner added (more IMs, term sheets,
+    // management decks, notes, extra spreadsheets). Images contribute through the vision path below.
+    for (const xf of extras) {
+      const nm = xf.name || 'document';
+      try {
+        if (/pdf$/i.test(nm) || (xf.type || '').includes('pdf')) imText += `\n\n===== Additional document: ${nm} =====\n` + await extractPdfText(xf, 40000);
+        else if (/\.(xlsx|xls)$/i.test(nm)) { const r = await parseExcel(xf); imText += `\n\n===== Additional spreadsheet: ${nm} =====\n` + (r.excelText || ''); }
+        else if (/\.(txt|md|csv|json)$/i.test(nm) || (xf.type || '').startsWith('text')) imText += `\n\n===== Additional notes: ${nm} =====\n` + (await xf.text()).slice(0, 40000);
+      } catch (_) { /* skip an unreadable extra doc, never block the memo */ }
+    }
+    imText = imText.trim();
+    const imPages = await renderAllDocImages([payload.files.im, ...extras]);   // let Claude SEE every doc (logos, org charts, teams)
     let imPdfBase64 = '';
-    if (!imText.trim() && !imPages.length) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
+    if (!imText && !imPages.length) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
 
     stage(1);
     const { excelText, sheetNames } = await parseExcel(payload.files.excel);
@@ -2396,56 +2408,105 @@ async function extractPdfText(file, cap = 80000) {
   }
   return pages.join('\n').replace(/[ \t]+\n/g, '\n').trim().slice(0, cap);
 }
-// Render the IM/deck pages to JPEGs so the vision model can read logo walls, org charts and
-// infographics that text extraction misses. Returns base64 JPEG strings (no data: prefix).
-// Resolution is tuned to Claude's vision sweet spot (~1540px long edge → ~1.15MP after the API's
-// own downscale). Bedrock caps images per request, so a long IM is packed N-up into <= maxImages
-// composites rather than dropping any page — nothing the client needs is ever silently lost.
-async function renderPdfPageImages(file, { maxImages = 20, targetW = 1540, quality = 0.72, maxDim = 7600 } = {}) {
-  try {
-    const buf = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-    const total = pdf.numPages;
-    const per = Math.max(1, Math.ceil(total / maxImages));   // pages packed into one image when the doc is long
-    const renderTile = async (i) => {
+// ---- Vision: render document pages to JPEGs the model can read (logos, org charts, tables) ----
+// Each page is rendered near Claude's vision sweet spot (~1540px long edge → ~1.15MP after the
+// API's own downscale). Bedrock caps images per request, so a long doc — or several docs — is
+// packed N-up into a shared budget of <= maxImages composites; no page of any document is dropped.
+function _downscaleCanvas(c, maxDim) {
+  const m = Math.max(c.width, c.height);
+  if (m <= maxDim) return c;
+  const s = maxDim / m, d = document.createElement('canvas');
+  d.width = Math.round(c.width * s); d.height = Math.round(c.height * s);
+  d.getContext('2d').drawImage(c, 0, 0, d.width, d.height);
+  return d;
+}
+// Render a doc's pages into <= maxImages canvases. Pack at most maxPerImage pages/image so text
+// stays legible; if the doc is larger than the budget can show 2-up, the front is imaged and the
+// rest is left to the full text extraction (which reads every page anyway).
+async function renderPdfToCanvases(pdf, { maxImages, targetW, maxDim, maxPerImage = 2 }) {
+  const total = pdf.numPages;
+  const per = Math.max(1, Math.min(maxPerImage, Math.ceil(total / maxImages)));
+  const coverable = Math.min(total, per * maxImages);
+  const out = [];
+  for (let start = 1; start <= coverable; start += per) {
+    const tiles = [];
+    for (let i = start; i <= Math.min(start + per - 1, coverable); i++) {
       const page = await pdf.getPage(i);
       const base = page.getViewport({ scale: 1 });
       const vp = page.getViewport({ scale: Math.min(2.2, targetW / base.width) });
       const c = document.createElement('canvas');
       c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
-      const cx = c.getContext('2d');
-      cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);              // JPEG has no alpha
+      const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);   // JPEG has no alpha
       await page.render({ canvasContext: cx, viewport: vp }).promise;
-      return c;
-    };
-    const downscale = (c) => {                                                   // keep within the API's max dimension
-      const m = Math.max(c.width, c.height);
-      if (m <= maxDim) return c;
-      const s = maxDim / m, d = document.createElement('canvas');
-      d.width = Math.round(c.width * s); d.height = Math.round(c.height * s);
-      d.getContext('2d').drawImage(c, 0, 0, d.width, d.height);
-      return d;
-    };
-    const out = [];
-    for (let start = 1; start <= total; start += per) {
-      const tiles = [];
-      for (let i = start; i <= Math.min(start + per - 1, total); i++) tiles.push(await renderTile(i));
-      let composite = tiles[0];
-      if (tiles.length > 1) {                                                    // stack pages vertically into one image
-        const W = Math.max(...tiles.map(t => t.width));
-        const H = tiles.reduce((s, t) => s + t.height, 0) + (tiles.length - 1) * 6;
-        composite = document.createElement('canvas');
-        composite.width = W; composite.height = H;
-        const cx = composite.getContext('2d');
-        cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
-        let y = 0; for (const t of tiles) { cx.drawImage(t, 0, y); y += t.height + 6; }
-      }
-      const url = downscale(composite).toDataURL('image/jpeg', quality);
-      if (url && url.indexOf(',') > 0) out.push(url.slice(url.indexOf(',') + 1));
+      tiles.push(c);
     }
-    return out;
+    let composite = tiles[0];
+    if (tiles.length > 1) {                                  // stack pages vertically into one image
+      const W = Math.max(...tiles.map(t => t.width));
+      const H = tiles.reduce((s, t) => s + t.height, 0) + (tiles.length - 1) * 6;
+      composite = document.createElement('canvas'); composite.width = W; composite.height = H;
+      const cx = composite.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+      let y = 0; for (const t of tiles) { cx.drawImage(t, 0, y); y += t.height + 6; }
+    }
+    out.push(_downscaleCanvas(composite, maxDim));
+  }
+  return out;
+}
+async function imageFileToCanvas(file, { maxDim }) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * scale)); c.height = Math.max(1, Math.round(bmp.height * scale));
+  const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+  cx.drawImage(bmp, 0, 0, c.width, c.height);
+  return c;
+}
+// Render every uploaded PDF/image into one shared budget of <= maxImages JPEGs, then encode within
+// a total byte budget (so a big multi-doc upload never exceeds the model's request-size limit).
+async function renderAllDocImages(files, { maxImages = 20, targetW = 1540, maxDim = 7600, budgetBytes = 6_000_000 } = {}) {
+  try {
+    const docs = [];
+    for (const f of files) {
+      if (!f) continue;
+      const isPdf = /pdf$/i.test(f.name || '') || (f.type || '').includes('pdf');
+      const isImg = /^image\//.test(f.type || '') || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name || '');
+      if (isPdf) { const pdf = await window.pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise; docs.push({ type: 'pdf', pdf, pages: pdf.numPages }); }
+      else if (isImg) docs.push({ type: 'img', file: f, pages: 1 });
+    }
+    if (!docs.length) return [];
+    // Allocate in order so the PRIMARY doc (the IM, first) gets priority coverage — ideally every
+    // page 1-up — and later supporting docs share whatever budget remains (reserving >=1 slot each).
+    const canvases = []; let remaining = maxImages;
+    for (let di = 0; di < docs.length && remaining > 0; di++) {
+      const d = docs[di], laterDocs = docs.length - di - 1;
+      const budget = Math.max(1, Math.min(d.pages, remaining - laterDocs));
+      try {
+        if (d.type === 'img') canvases.push(await imageFileToCanvas(d.file, { maxDim }));
+        else canvases.push(...await renderPdfToCanvases(d.pdf, { maxImages: budget, targetW, maxDim }));
+      } catch (_) { /* skip a doc that fails to render */ }
+      remaining = maxImages - canvases.length;
+    }
+    // Encode within the byte budget: step quality down until the whole set fits (keeps the model's
+    // request small enough to never 413/timeout on a large multi-document upload).
+    for (const q of [0.72, 0.62, 0.52, 0.42]) {
+      const enc = canvases.map(c => _canvasToB64(c, q)).filter(Boolean);
+      const bytes = enc.reduce((s, b) => s + b.length * 0.75, 0);
+      if (bytes <= budgetBytes) return enc.slice(0, maxImages);
+      if (q === 0.42) {                                    // last resort: trim trailing images to fit the budget
+        let sum = 0; const kept = [];
+        for (const b of enc) { sum += b.length * 0.75; if (sum > budgetBytes) break; kept.push(b); }
+        return kept.length ? kept : enc.slice(0, 1);
+      }
+    }
+    return [];
   } catch (_) { return []; }   // vision is additive — never block generation on a render failure
 }
+function _canvasToB64(c, quality) {
+  const url = c.toDataURL('image/jpeg', quality);
+  return (url && url.indexOf(',') > 0) ? url.slice(url.indexOf(',') + 1) : '';
+}
+// Back-compat single-file wrapper (IM-only path + tests).
+async function renderPdfPageImages(file, opts) { return renderAllDocImages([file], opts); }
 // Excel → CSV of the best financial sheet(s) via SheetJS (capped ~40k chars).
 async function parseExcel(file, cap = 40000) {
   const buf = await file.arrayBuffer();
@@ -2480,7 +2541,7 @@ async function fileToBase64(file) {
 /* ---- The real "Add a deal" modal: upload → AI → memo ---- */
 function openAddDealModal() {
   const root = $('#modal-root');
-  const sel = { im: null, excel: null, notes: null };   // chosen files
+  const sel = { im: null, excel: null, notes: null, extra: [] };   // chosen files (extra = any supporting docs)
   let jobUnsub = null, gpCtl = null;                     // background-job mirror (see generate/close)
 
   const overlay = h(`
@@ -2504,6 +2565,7 @@ function openAddDealModal() {
     <input type="file" data-file="im" accept="application/pdf,.pdf">
     <input type="file" data-file="excel" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
     <input type="file" data-file="notes" accept="application/pdf,.pdf,.txt,.md,text/plain">
+    <input type="file" data-file="extra" multiple accept=".pdf,application/pdf,.xlsx,.xls,.txt,.md,.csv,.json,text/plain,image/*">
   </div>`);
   overlay.appendChild(inputs);
   const fileInput = k => inputs.querySelector(`[data-file="${k}"]`);
@@ -2521,6 +2583,23 @@ function openAddDealModal() {
       </button>`;
   }
 
+  // Optional "anything else you have" — multiple supporting docs (PDFs, images, more IMs, term
+  // sheets, extra spreadsheets, notes). Every one is read (text + vision) into the memo.
+  function extraZone() {
+    const n = sel.extra.length;
+    const chips = n ? `<div class="flex flex-wrap gap-2 mt-2">${sel.extra.map((f, i) =>
+      `<span class="file-chip">${icon('fileText', 'w-3.5 h-3.5')}<span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>` +
+      `<button type="button" data-rm-extra="${i}" aria-label="Remove" style="line-height:1;color:var(--muted)">${icon('x', 'w-3.5 h-3.5')}</button></span>`).join('')}</div>` : '';
+    return `
+      <button class="uz ${n ? 'has-file' : ''}" type="button" data-uz-extra>
+        <span class="uz-ico">${icon(n ? 'check' : 'plus', 'w-4 h-4', n ? 3 : 2)}</span>
+        <span class="uz-body">
+          <span class="uz-title">Other documents <span class="text-ink-hint font-normal">(optional)</span></span>
+          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Anything else you have — extra IMs, term sheets, decks, images, notes'}</span>
+        </span>
+      </button>${chips}`;
+  }
+
   function renderForm(errMsg) {
     bodyEl.innerHTML = `
       ${errMsg ? `<div class="form-err mb-4">${icon('alert', 'w-4 h-4 shrink-0 mt-0.5')}<span>${esc(errMsg)}</span></div>` : ''}
@@ -2528,6 +2607,7 @@ function openAddDealModal() {
         ${dropzone('im', 'Information Memorandum · PDF', 'Click to choose the IM (PDF)', true)}
         ${dropzone('excel', 'Financial model · Excel', 'Click to choose the model (.xlsx)', true)}
         ${dropzone('notes', 'Banker notes', 'Click to add notes (PDF or text)', false)}
+        ${extraZone()}
       </div>
       <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div class="field"><label>Company name</label><input data-basic="name" placeholder="e.g. Acme Ltd" autocomplete="off"></div>
@@ -2535,7 +2615,7 @@ function openAddDealModal() {
         <div class="field"><label>Banker</label><input data-basic="banker" placeholder="e.g. Axis Capital" autocomplete="off"></div>
         <div class="field"><label>Deal ask</label><input data-basic="ask" placeholder="e.g. Up to ₹300 cr" autocomplete="off"></div>
       </div>
-      <p class="text-[11.5px] text-ink-hint mt-4">Files are read in your browser; only the extracted text is sent to your firm's own AI. The AI fills in every tab — you can review before Monday.</p>
+      <p class="text-[11.5px] text-ink-hint mt-4">Files are read in your browser and sent to your firm's own AI (text and page images) — add anything else you have and it's all read in. The AI fills every tab; a data-rich memo can take a couple of minutes to build.</p>
       <div class="flex items-center justify-end gap-2.5 mt-5">
         <button class="modal-close hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Close</button>
         <button class="hdr-btn" data-generate style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">
@@ -2544,8 +2624,13 @@ function openAddDealModal() {
       </div>`;
     bodyEl.querySelectorAll('.modal-close').forEach(b => b.addEventListener('click', close));
     bodyEl.querySelectorAll('[data-uz]').forEach(b => b.addEventListener('click', () => fileInput(b.dataset.uz).click()));
+    const ez = bodyEl.querySelector('[data-uz-extra]');
+    if (ez) ez.addEventListener('click', () => fileInput('extra').click());
+    bodyEl.querySelectorAll('[data-rm-extra]').forEach(b => b.addEventListener('click', () => { sel.extra.splice(+b.dataset.rmExtra, 1); reRender(); }));
     bodyEl.querySelector('[data-generate]').addEventListener('click', generate);
   }
+  // Re-render the form and restore the partner's typed basics into the fresh inputs.
+  const reRender = () => { renderForm(); Object.entries(captured.basics).forEach(([k, v]) => { const i = bodyEl.querySelector(`[data-basic="${k}"]`); if (i) i.value = v; }); };
 
   // Steps shown to the partner (plain language, no internal/model detail).
   const GEN_STEPS = [
@@ -2659,7 +2744,7 @@ function openAddDealModal() {
       </div>`;
     bodyEl.querySelector('[data-view-memo]').addEventListener('click', () => { close(); openCompany(company.id); });
     bodyEl.querySelector('[data-again]').addEventListener('click', () => {
-      sel.im = sel.excel = sel.notes = null; captured.basics = {}; renderForm();
+      sel.im = sel.excel = sel.notes = null; sel.extra = []; captured.basics = {}; renderForm();
     });
   }
 
@@ -2668,7 +2753,7 @@ function openAddDealModal() {
   function generate() {
     if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
     if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
-    const job = startGeneration({ files: { im: sel.im, excel: sel.excel, notes: sel.notes }, basics: { ...captured.basics } });
+    const job = startGeneration({ files: { im: sel.im, excel: sel.excel, notes: sel.notes, extra: sel.extra.slice() }, basics: { ...captured.basics } });
     gpCtl = renderWorking(job);
     let lastStage = -1, shown = false;
     const update = () => {
@@ -2695,13 +2780,17 @@ function openAddDealModal() {
     if (b) { const v = b.value.trim(); if (v) captured.basics[b.dataset.basic] = v; else delete captured.basics[b.dataset.basic]; }
   });
 
-  // Wire the hidden inputs → store file + re-render the form (keeps basics via captured).
+  // Wire the hidden inputs → store file + re-render the form (keeps basics via captured/reRender).
   ['im', 'excel', 'notes'].forEach(k => fileInput(k).addEventListener('change', e => {
     sel[k] = e.target.files[0] || null;
-    renderForm();
-    // restore typed basics into the re-rendered inputs
-    Object.entries(captured.basics).forEach(([key, val]) => { const i = bodyEl.querySelector(`[data-basic="${key}"]`); if (i) i.value = val; });
+    reRender();
   }));
+  // Extra supporting docs: append (multiple), and clear the input so the same file can be re-added.
+  fileInput('extra').addEventListener('change', e => {
+    for (const f of e.target.files) sel.extra.push(f);
+    e.target.value = '';
+    reRender();
+  });
 
   const close = () => {
     if (jobUnsub) { jobUnsub(); jobUnsub = null; }   // stop mirroring, but the job keeps running

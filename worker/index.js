@@ -272,14 +272,21 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
   const tried = [];
   for (const modelId of models) {
     const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
-    let lastErr = '', unusable = false;
-    // Retry 429/5xx (and transient network errors) on THIS id with exponential backoff.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s, 4s
+    let lastErr = '', unusable = false, timedOut = false;
+    // A rich, vision-backed memo legitimately takes a few minutes to generate, so give it a
+    // generous timeout. Retry only genuinely-transient failures (429/5xx, a dropped connection);
+    // do NOT hammer a timed-out call — another few-minute wait won't help and only risks the
+    // browser giving up. One slow-but-complete attempt beats four aborted ones.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s
       let res;
       try {
-        res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(90_000) });
-      } catch (e) { lastErr = `network error: ${e.message}`; continue; }
+        res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(280_000) });
+      } catch (e) {
+        lastErr = `network error: ${e.message}`;
+        if (e.name === 'TimeoutError') { timedOut = true; break; }  // too slow — stop; don't burn another few minutes
+        continue;                                                    // transient blip — retry
+      }
 
       if (res.status === 429 || res.status >= 500) {                 // retry on the same id
         lastErr = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
@@ -300,6 +307,7 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
       return { text, model: modelId };                               // success — remember which id answered
     }
     tried.push(`${modelId} → ${lastErr}`);
+    if (timedOut) throw new ApiError(504, 'The memo took too long to build (the documents may be very large). Please try again — it usually completes on a second run.');
     // Only 400/403/404 falls through to the next id; exhausted 429/5xx/network errors stop here.
     if (!unusable) throw new ApiError(502, lastErr || 'The AI request failed.');
   }
