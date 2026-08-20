@@ -118,7 +118,7 @@ async function handleGenerate(request, env) {
   let imText = String(payload.imText || '').trim();
   // The browser also renders the IM/deck pages to JPEGs so the vision model can read logo walls,
   // org charts and infographics that never appear in the extracted text. Cap defensively.
-  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 28);
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 20);
 
   // OCR fallback: if the PDF had no extractable text (scanned image) and Mistral is
   // configured, OCR the bytes the browser sent. Best-effort; failures fall through.
@@ -139,10 +139,11 @@ async function handleGenerate(request, env) {
     'STRICT JSON only, matching the given schema exactly (same keys and nesting). ' +
     'Return ONLY the JSON object — no markdown, no commentary.\n\n' +
     'WRITING: plain, non-technical English a busy partner can skim. All money in ₹ crore, rounded.\n\n' +
-    'READ THE PAGE IMAGES CAREFULLY. Company decks put critical facts inside images that are NOT in the extracted text — ' +
+    'READ THE PAGE IMAGES CAREFULLY — this is the single most important thing you do. Company decks put critical facts inside images that are NOT in the extracted text — ' +
     'management & promoter names/titles (team & leadership slides), customer/partner names (logo walls), plant locations, ' +
-    'the fundraise / deal terms, and charts. Look at every page image and read these out: promoters, management, customers/' +
-    'clients/partners (transcribe the names shown on logos), segments, capacity and any deal/ask details. The page images ARE part of the documents.\n\n' +
+    'the fundraise / deal terms, and charts. Go through EVERY page image one by one, top to bottom — do not skip a page — and transcribe what you see: ' +
+    'promoters, management (each person\'s exact name + title), customers/clients/partners (read the name off every logo, even small ones), business segments, ' +
+    'plants/capacity, certifications, competitors, and any deal / ask / valuation details. Completeness is critical: it is far better to capture every real name and number the pages show than to summarise. The page images ARE the documents.\n\n' +
     'ACCURACY: every number and fact must come from the documents you are given — the IM page images and their extracted text, and the Excel model. Never invent, extrapolate, or guess. ' +
     'If a value is in none of them, use an empty/TBD value — checklist status "tbd", "TBD" strings, ' +
     'an ownershipNote instead of an ownership array, or null cells — never fill a gap with a plausible number.\n' +

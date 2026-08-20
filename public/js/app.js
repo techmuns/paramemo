@@ -2396,24 +2396,51 @@ async function extractPdfText(file, cap = 80000) {
   }
   return pages.join('\n').replace(/[ \t]+\n/g, '\n').trim().slice(0, cap);
 }
-// Render the IM/deck pages to downscaled JPEGs so the vision model can read logo walls, org
-// charts and infographics that text extraction misses. Returns base64 JPEG strings (no data: prefix).
-async function renderPdfPageImages(file, { maxPages = 24, maxW = 1120, quality = 0.62 } = {}) {
+// Render the IM/deck pages to JPEGs so the vision model can read logo walls, org charts and
+// infographics that text extraction misses. Returns base64 JPEG strings (no data: prefix).
+// Resolution is tuned to Claude's vision sweet spot (~1540px long edge → ~1.15MP after the API's
+// own downscale). Bedrock caps images per request, so a long IM is packed N-up into <= maxImages
+// composites rather than dropping any page — nothing the client needs is ever silently lost.
+async function renderPdfPageImages(file, { maxImages = 20, targetW = 1540, quality = 0.72, maxDim = 7600 } = {}) {
   try {
     const buf = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-    const n = Math.min(pdf.numPages, maxPages);
-    const out = [];
-    for (let i = 1; i <= n; i++) {
+    const total = pdf.numPages;
+    const per = Math.max(1, Math.ceil(total / maxImages));   // pages packed into one image when the doc is long
+    const renderTile = async (i) => {
       const page = await pdf.getPage(i);
       const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: Math.min(2, maxW / base.width) });
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);   // JPEG has no alpha
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      const url = canvas.toDataURL('image/jpeg', quality);
+      const vp = page.getViewport({ scale: Math.min(2.2, targetW / base.width) });
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+      const cx = c.getContext('2d');
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);              // JPEG has no alpha
+      await page.render({ canvasContext: cx, viewport: vp }).promise;
+      return c;
+    };
+    const downscale = (c) => {                                                   // keep within the API's max dimension
+      const m = Math.max(c.width, c.height);
+      if (m <= maxDim) return c;
+      const s = maxDim / m, d = document.createElement('canvas');
+      d.width = Math.round(c.width * s); d.height = Math.round(c.height * s);
+      d.getContext('2d').drawImage(c, 0, 0, d.width, d.height);
+      return d;
+    };
+    const out = [];
+    for (let start = 1; start <= total; start += per) {
+      const tiles = [];
+      for (let i = start; i <= Math.min(start + per - 1, total); i++) tiles.push(await renderTile(i));
+      let composite = tiles[0];
+      if (tiles.length > 1) {                                                    // stack pages vertically into one image
+        const W = Math.max(...tiles.map(t => t.width));
+        const H = tiles.reduce((s, t) => s + t.height, 0) + (tiles.length - 1) * 6;
+        composite = document.createElement('canvas');
+        composite.width = W; composite.height = H;
+        const cx = composite.getContext('2d');
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+        let y = 0; for (const t of tiles) { cx.drawImage(t, 0, y); y += t.height + 6; }
+      }
+      const url = downscale(composite).toDataURL('image/jpeg', quality);
       if (url && url.indexOf(',') > 0) out.push(url.slice(url.indexOf(',') + 1));
     }
     return out;
