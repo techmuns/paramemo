@@ -18,12 +18,12 @@ const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
       // endsWith keeps the routes working even if the app is served under a sub-path.
-      if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env);
+      if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env, ctx);
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
@@ -109,7 +109,7 @@ async function handleDelete(request, env) {
 /* ------------------------------------------------------------------ *
  * POST /api/generate — the upload → AI → memo flow
  * ------------------------------------------------------------------ */
-async function handleGenerate(request, env) {
+async function handleGenerate(request, env, ctx) {
   if (!env.DEALS) throw new ApiError(503, 'Storage is not configured yet (KV namespace "DEALS" is missing).');
 
   let payload;
@@ -202,8 +202,30 @@ async function handleGenerate(request, env) {
 
   const user = buildUserPrompt({ imText, excelText, sheetNames, notesText, basics, template });
 
-  // First attempt, with one repair retry if the JSON is malformed/incomplete.
-  // callClaude returns { text, model } — model = whichever id in the chain answered.
+  // A rich, vision-backed memo can take a few minutes — far longer than Cloudflare's ~100s edge
+  // timeout (HTTP 524). So STREAM the response: return headers immediately and emit a keepalive
+  // byte every few seconds while the model works, then write the final JSON. This keeps the client
+  // connection alive for as long as generation needs. Final line is the JSON payload.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  let finished = false;
+  const ka = setInterval(() => { if (!finished) writer.write(enc.encode(' ')).catch(() => {}); }, 5000);   // keep the edge from idling out
+  const run = (async () => {
+    let out;
+    try { out = { company: await generateCompany({ system, user, imPages, basics, env }) }; }
+    catch (e) { out = { error: (e && e.message) || 'The memo could not be built. Please try again.', status: e instanceof ApiError ? e.status : 500 }; }
+    finished = true; clearInterval(ka);
+    try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
+    try { await writer.close(); } catch (_) {}
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(run);   // keep the worker alive until the stream is fully written
+  return new Response(readable, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+}
+
+// The heavy lifting: call the model (with one repair retry), validate, normalize, persist. Returns
+// the finished company or throws an ApiError. Kept separate so handleGenerate can stream around it.
+async function generateCompany({ system, user, imPages, basics, env }) {
   let ans = await callClaude({ system, user, images: imPages }, env);
   let obj = extractJson(ans.text);
   let problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
@@ -216,7 +238,6 @@ async function handleGenerate(request, env) {
     if (problems.length) throw new ApiError(502, `The AI could not produce a valid memo (${problems[0]}). Please try again.`);
   }
 
-  // Assign a unique id (never collide with a seed or an existing upload) and persist.
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
   const id = await uniqueId(base, env);
   const company = normalizeCompany(obj, id, basics);
@@ -226,8 +247,7 @@ async function handleGenerate(request, env) {
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
-
-  return json({ company });
+  return company;
 }
 
 /* ------------------------------------------------------------------ *

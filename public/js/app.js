@@ -402,6 +402,31 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
   return job;
 }
 
+// POST to /api/generate and read the streamed response. The worker emits keepalive spaces while it
+// works (so Cloudflare never 524s a long build) and a final JSON line; we read to the end, parse the
+// last line, and throw an error carrying its HTTP status so the caller can decide whether to retry.
+async function callGenerate(bodyObj) {
+  const res = await fetch(apiUrl('generate'), {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(bodyObj),
+  });
+  let buf = '';
+  if (res.body && res.body.getReader) {
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    for (;;) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); }
+    buf += dec.decode();
+  } else {
+    buf = await res.text();                                  // fallback for environments without a readable body
+  }
+  const lastLine = (buf.split('\n').pop() || '').trim();
+  let data;
+  try { data = JSON.parse(lastLine); }
+  catch { const e = new Error(`The request failed (HTTP ${res.status || '—'}).`); e.status = res.status || 0; throw e; }
+  if (data.error) { const e = new Error(data.error); e.status = data.status || res.status; throw e; }
+  if (!data.company) { const e = new Error('The AI did not return a memo. Please try again.'); e.status = 502; throw e; }
+  return data;
+}
+
 async function runJob(job, payload) {
   const stage = i => { if (job.status === 'running') { job.stageIdx = i; emitJobs(); } };
   let writeTO = null;
@@ -438,14 +463,21 @@ async function runJob(job, payload) {
 
     stage(2);
     writeTO = setTimeout(() => stage(3), 7000);   // light up "writing" partway through the AI wait
-    const res = await fetch(apiUrl('generate'), {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64, imPages }),
-    });
+    const bodyObj = { imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64, imPages };
+    // No-interruption layer: the worker streams (so a multi-minute build never trips the edge
+    // timeout), and we automatically retry once on a transient/server failure before surfacing it.
+    let data = null, lastErr = null;
+    for (let attempt = 0; attempt < 2 && job.status === 'running'; attempt++) {
+      try { data = await callGenerate(bodyObj); lastErr = null; break; }
+      catch (e) {
+        lastErr = e;
+        const retriable = !e.status || e.status >= 500;   // network / stream / 5xx → retry; 4xx (bad input) → don't
+        if (attempt === 0 && retriable) { await new Promise(r => setTimeout(r, 1500)); continue; }
+        break;
+      }
+    }
     clearTimeout(writeTO);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `The request failed (${res.status}).`);
-    if (!data.company) throw new Error('The AI did not return a memo. Please try again.');
+    if (!data) throw lastErr || new Error('The memo could not be built. Please try again.');
 
     job.stageIdx = 3;
     job.company = data.company;
