@@ -312,7 +312,7 @@ async function loadCompanies() {
   const hidden = new Set(hiddenSeeds);
   const seeds = (Array.isArray(seed.companies) ? seed.companies : []).filter(c => !hidden.has(c.id));   // sample can be hidden
   const seedIds = new Set(seeds.map(c => c.id));
-  const companies = [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))].map(normalizeYears);
+  const companies = [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))].map(prepCompany);
   return { meta: seed.meta || null, peerLiveEnabled, companies };
 }
 
@@ -337,10 +337,41 @@ function normalizeYears(c) {
   if (c && c.returns && c.returns.startYear) c.returns.startYear = fyLabel(c.returns.startYear);
   return c;
 }
+// Defence-in-depth for rendering: guarantee the containers/arrays every tab and export reads, so a
+// seed with a gap, older stored data, or an odd model shape can never white-screen a tab or export.
+// (New uploads are already coerced server-side; this protects everything else at the render edge.)
+const _o = v => v && typeof v === 'object' && !Array.isArray(v);
+function hardenCompany(c) {
+  if (!_o(c)) return c;
+  if (!_o(c.transaction)) c.transaction = {};
+  if (!_o(c.origination)) c.origination = {};
+  if (!_o(c.headline)) c.headline = {};
+  if (!_o(c.snapshot)) c.snapshot = {};
+  if (!_o(c.fit)) c.fit = { verdict: 'watch', reason: '' };
+  for (const k of ['fitChecklist', 'integrity', 'questions', 'thesis', 'concerns']) if (!Array.isArray(c[k])) c[k] = [];
+  c.questions.forEach(t => { if (_o(t) && !Array.isArray(t.items)) t.items = []; });
+  if (!_o(c.financials)) c.financials = {};
+  const f = c.financials;
+  if (!Array.isArray(f.years)) f.years = [];
+  if (!_o(f.rows)) f.rows = {};
+  if (_o(f.segments) && !Array.isArray(f.segments.rows)) f.segments.rows = [];
+  if (_o(f.capacity) && !Array.isArray(f.capacity.rows)) f.capacity.rows = [];
+  if (!_o(c.revenueSpark)) c.revenueSpark = {};
+  if (!Array.isArray(c.revenueSpark.years)) c.revenueSpark.years = f.years.slice();
+  if (!Array.isArray(c.revenueSpark.values)) c.revenueSpark.values = Array.isArray(f.rows.revenue) ? f.rows.revenue.slice() : [];
+  if (!_o(c.returns)) c.returns = {};
+  if (!_o(c.returns.defaults)) c.returns.defaults = { entryX: 12, exitX: 13, growthPct: 18, years: 5 };
+  if (!(Number(c.returns.investmentCr) > 0)) c.returns.investmentCr = Number(c.returns.investmentCr) || 0;
+  if (!(Number(c.returns.startEbitdaCr) > 0)) c.returns.startEbitdaCr = 10;   // avoid /0 in the returns math
+  return c;
+}
+// Prepare any company entering state: harden its shape, then normalise year labels to FY__.
+const prepCompany = c => normalizeYears(hardenCompany(c));
 
 // Add or replace a company in local state + the dropdown (used after an upload).
 function addCompany(company) {
   if (!company || !company.id) return;
+  company = prepCompany(company);
   state.companies = state.companies.filter(c => c.id !== company.id);
   state.companies.push(company);
   populateCompanyDropdown();
@@ -2329,7 +2360,7 @@ function barColors(hex, v) { return v.years.map((_, i) => v.isForecast(i) ? tint
 
 function buildRevEbitda(canvas, c) {
   const v = finView(c), r = v.fin.rows;
-  const ds = (label, arr, hex) => ({ label, data: arr.slice(0, v.n), backgroundColor: barColors(hex, v),
+  const ds = (label, arr, hex) => ({ label, data: (arr || []).slice(0, v.n), backgroundColor: barColors(hex, v),
     borderRadius: 4, borderSkipped: false, maxBarThickness: 30, categoryPercentage: 0.68, barPercentage: 0.9 });
   return new Chart(canvas.getContext('2d'), {
     type: 'bar',
@@ -2342,7 +2373,7 @@ function buildMargins(canvas, c) {
   const v = finView(c), r = v.fin.rows;
   const dash = ctx => (ctx.p1DataIndex >= v.actualsCut ? [5, 4] : undefined);
   const line = (label, arr, hex) => ({
-    label, data: arr.slice(0, v.n), borderColor: hex, backgroundColor: hex, borderWidth: 2.5, tension: 0.3,
+    label, data: (arr || []).slice(0, v.n), borderColor: hex, backgroundColor: hex, borderWidth: 2.5, tension: 0.3,
     pointRadius: 2.5, pointHoverRadius: 5, pointBackgroundColor: hex, pointBorderColor: '#fff', pointBorderWidth: 1.5,
     segment: { borderDash: dash },
   });
@@ -2355,8 +2386,8 @@ function buildMargins(canvas, c) {
 
 function buildCashDebt(canvas, c) {
   const v = finView(c), r = v.fin.rows;
-  if (!r.cash || !r.debt) return null;
-  const ds = (label, arr, hex) => ({ label, data: arr.slice(0, v.n), backgroundColor: barColors(hex, v),
+  if (!Array.isArray(r.cash) || !Array.isArray(r.debt)) return null;
+  const ds = (label, arr, hex) => ({ label, data: (arr || []).slice(0, v.n), backgroundColor: barColors(hex, v),
     borderRadius: 4, borderSkipped: false, maxBarThickness: 26, categoryPercentage: 0.68, barPercentage: 0.9 });
   return new Chart(canvas.getContext('2d'), {
     type: 'bar',
@@ -2394,12 +2425,12 @@ function buildCashFlow(canvas, c) {
 
 function buildRevMix(canvas, c) {
   const mix = c.financials.revenueMix;
-  if (!mix) return null;
+  if (!mix || !Array.isArray(mix.slices) || !mix.slices.length) return null;
   return buildDoughnut(canvas, mix.slices.map(s => s.name), mix.slices.map(s => s.pct), true);
 }
 function buildOwnershipChart(canvas, c) {
   const own = c.snapshot && c.snapshot.ownership;
-  if (!own) return null;
+  if (!Array.isArray(own) || !own.length) return null;
   // Legend is off here — the companion table beside it acts as the legend.
   return buildDoughnut(canvas, own.map(o => o.holder), own.map(o => o.pct), false);
 }

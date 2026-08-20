@@ -114,8 +114,11 @@ async function handleGenerate(request, env, ctx) {
 
   let payload;
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
-  const { excelText = '', sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
-  let imText = String(payload.imText || '').trim();
+  const { sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
+  const excelText = String(payload.excelText || '').slice(0, 120000);
+  // Cap combined document text (IM + any extra docs the browser concatenated) so a big multi-doc
+  // upload can never overflow the model's context and trip a request-size error.
+  let imText = String(payload.imText || '').trim().slice(0, 220000);
   // The browser also renders the IM/deck pages to JPEGs so the vision model can read logo walls,
   // org charts and infographics that never appear in the extracted text. Cap defensively.
   const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 20);
@@ -229,13 +232,17 @@ async function generateCompany({ system, user, imPages, basics, env }) {
   let ans = await callClaude({ system, user, images: imPages }, env);
   let obj = extractJson(ans.text);
   let problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
-  if (problems.length) {
+  if (problems.length) {                                     // one repair pass to nudge the model
     const repair = `Your previous output had these problems: ${problems.join('; ')}. ` +
       `Return the corrected, COMPLETE JSON object only — same schema, all required keys present.`;
-    ans = await callClaude({ system, user: `${user}\n\n${repair}`, images: imPages }, env);
-    obj = extractJson(ans.text);
-    problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
-    if (problems.length) throw new ApiError(502, `The AI could not produce a valid memo (${problems[0]}). Please try again.`);
+    const ans2 = await callClaude({ system, user: `${user}\n\n${repair}`, images: imPages }, env);
+    const obj2 = extractJson(ans2.text);
+    if (obj2) { ans = ans2; obj = obj2; problems = validateCompany(obj); }   // prefer a parseable retry
+  }
+  // Only a fundamentally unusable response fails; anything parseable with a financial backbone is
+  // coerced into a usable memo (numeric strings, verdict casing, missing arrays are all recovered).
+  if (!isObj(obj) || !isObj(obj.financials) || !Array.isArray(obj.financials.years) || !obj.financials.years.length) {
+    throw new ApiError(502, `The AI could not read the documents into a memo (${problems[0] || 'no financials found'}). Please try again — it usually works on a second run.`);
   }
 
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
@@ -415,8 +422,67 @@ function validateCompany(o) {
   return p;
 }
 
+// Coerce the model's output into the shapes the UI needs so a trivially-off response still yields
+// a usable memo instead of a dead-end: numeric strings → numbers (handles ₹, commas, %, unicode
+// minus, accounting parens), verdict synonyms/casing → go/watch/pass, missing containers → defaults.
+function num(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  if (typeof v !== 'string') return null;
+  const neg = /^\s*\(.*\)\s*$/.test(v);
+  const c = v.replace(/[−–—]/g, '-').replace(/[^0-9.\-]/g, '');
+  if (!c || c === '-' || c === '.' || c === '-.') return null;
+  const n = parseFloat(c);
+  return isFinite(n) ? (neg ? -Math.abs(n) : n) : null;
+}
+function coerceCompany(o, basics = {}) {
+  const str = (v, d = '') => (typeof v === 'string' && v.trim()) ? v.trim() : (v == null ? d : String(v));
+  o.name = str(o.name, basics.name || 'Company');
+  o.shortName = str(o.shortName) || String(o.name).split(/[\s(]/)[0] || 'Company';
+  o.sector = str(o.sector, basics.sector || 'Other');
+  o.sectorTag = str(o.sectorTag, o.sector || 'Other');
+  if (o.oneLiner != null) o.oneLiner = str(o.oneLiner);
+
+  if (!isObj(o.fit)) o.fit = {};
+  const V = String(o.fit.verdict || '').toLowerCase();
+  o.fit.verdict = /\b(go|buy|proceed|invest|strong|attractive)\b/.test(V) ? 'go' : /\b(pass|reject|avoid|decline|drop|no-go)\b/.test(V) ? 'pass' : 'watch';
+  o.fit.reason = str(o.fit.reason);
+
+  if (!isObj(o.transaction)) o.transaction = {};
+  o.transaction.headline = str(o.transaction.headline, basics.ask || 'TBD');
+  if (o.transaction.amountCr != null) o.transaction.amountCr = num(o.transaction.amountCr);
+
+  if (!isObj(o.headline)) o.headline = {};
+  o.headline.revenueCr = num(o.headline.revenueCr);
+  o.headline.ebitdaPct = num(o.headline.ebitdaPct);
+  o.headline.revenueLabel = str(o.headline.revenueLabel);
+  o.headline.patPositive = !!o.headline.patPositive;
+
+  if (!isObj(o.snapshot)) o.snapshot = {};
+  for (const k of ['fitChecklist', 'integrity', 'questions', 'thesis', 'concerns']) if (!Array.isArray(o[k])) o[k] = [];
+
+  if (!isObj(o.financials)) o.financials = {};
+  const fin = o.financials;
+  fin.years = Array.isArray(fin.years) ? fin.years.map(y => str(y)) : [];
+  if (!isObj(fin.rows)) fin.rows = {};
+  for (const k of Object.keys(fin.rows)) if (Array.isArray(fin.rows[k])) fin.rows[k] = fin.rows[k].map(num);
+  if (isObj(fin.segments) && Array.isArray(fin.segments.rows)) fin.segments.rows.forEach(r => { if (r && Array.isArray(r.values)) r.values = r.values.map(num); });
+  if (isObj(fin.capacity) && Array.isArray(fin.capacity.rows)) fin.capacity.rows.forEach(r => { if (r) { if (Array.isArray(r.values)) r.values = r.values.map(num); if (Array.isArray(r.utilPct)) r.utilPct = r.utilPct.map(num); } });
+
+  if (!isObj(o.revenueSpark)) o.revenueSpark = {};
+  o.revenueSpark.years = Array.isArray(o.revenueSpark.years) ? o.revenueSpark.years.map(y => str(y)) : fin.years.slice();
+  o.revenueSpark.values = Array.isArray(o.revenueSpark.values) ? o.revenueSpark.values.map(num) : (Array.isArray(fin.rows.revenue) ? fin.rows.revenue.slice() : []);
+
+  if (o.headline.revenueCr == null && Array.isArray(fin.rows.revenue) && fin.rows.revenue.length) {
+    const idx = fin.years.indexOf(fin.actualsThrough);
+    o.headline.revenueCr = num(fin.rows.revenue[idx >= 0 ? idx : fin.rows.revenue.length - 1]);
+  }
+  if (o.headline.revenueCr == null) o.headline.revenueCr = 0;
+  return o;
+}
+
 // Fill display-only fields the UI expects, set the id, and prefer partner basics.
 function normalizeCompany(o, id, basics = {}) {
+  coerceCompany(o, basics);       // make the model's types/enums UI-safe before anything reads them
   o.id = id;
   if (basics.name) o.name = basics.name;
   if (basics.sector) o.sector = basics.sector;
