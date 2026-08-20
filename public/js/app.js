@@ -437,24 +437,26 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
 // works (so Cloudflare never 524s a long build) and a final JSON line; we read to the end, parse the
 // last line, and throw an error carrying its HTTP status so the caller can decide whether to retry.
 async function callGenerate(bodyObj) {
-  const res = await fetch(apiUrl('generate'), {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(bodyObj),
-  });
-  let buf = '';
-  if (res.body && res.body.getReader) {
-    const reader = res.body.getReader(), dec = new TextDecoder();
-    for (;;) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); }
-    buf += dec.decode();
-  } else {
-    buf = await res.text();                                  // fallback for environments without a readable body
-  }
+  let res, buf = '';
+  try {
+    res = await fetch(apiUrl('generate'), {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(bodyObj),
+    });
+    if (res.body && res.body.getReader) {
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      for (;;) { const { done, value } = await reader.read(); if (done) break; buf += dec.decode(value, { stream: true }); }
+      buf += dec.decode();
+    } else {
+      buf = await res.text();                                // fallback for environments without a readable body
+    }
+  } catch { const e = new Error('The connection dropped while building your memo. Please check your internet and try again.'); e.status = 0; throw e; }
   const lastLine = (buf.split('\n').pop() || '').trim();
   let data;
   try { data = JSON.parse(lastLine); }
-  catch { const e = new Error(`The request failed (HTTP ${res.status || '—'}).`); e.status = res.status || 0; throw e; }
+  catch { const e = new Error('The memo builder didn\'t respond properly this time. Please try again.'); e.status = res.status || 0; throw e; }
   if (data.error) { const e = new Error(data.error); e.status = data.status || res.status; throw e; }
-  if (!data.company) { const e = new Error('The AI did not return a memo. Please try again.'); e.status = 502; throw e; }
+  if (!data.company) { const e = new Error('The memo builder didn\'t return a finished memo. Please try again.'); e.status = 502; throw e; }
   return data;
 }
 
@@ -463,9 +465,13 @@ async function runJob(job, payload) {
   let writeTO = null;
   try {
     stage(0);
-    await ensureUploadLibs();
+    try { await ensureUploadLibs(); }
+    catch { throw new Error("We couldn't load the file readers — please check your internet connection and try again."); }
     const extras = (payload.files.extra || []).filter(Boolean);
-    let imText = await extractPdfText(payload.files.im);
+    const imName = (payload.files.im && payload.files.im.name) || 'the IM';
+    let imText;
+    try { imText = await extractPdfText(payload.files.im); }
+    catch { throw new Error(`We couldn't open "${imName}". It looks corrupted or password-protected — please re-save it as a normal PDF and upload it again.`); }
     // Pull text from any extra supporting documents the partner added (more IMs, term sheets,
     // management decks, notes, extra spreadsheets). Images contribute through the vision path below.
     for (const xf of extras) {
@@ -483,13 +489,18 @@ async function runJob(job, payload) {
     if (!imText && !imPages.length) imPdfBase64 = await fileToBase64(payload.files.im);   // scanned PDF → OCR fallback
 
     stage(1);
-    const { excelText, sheetNames } = await parseExcel(payload.files.excel);
+    const xlName = (payload.files.excel && payload.files.excel.name) || 'the Excel model';
+    let excelText = '', sheetNames = [];
+    try { ({ excelText, sheetNames } = await parseExcel(payload.files.excel)); }
+    catch { throw new Error(`We couldn't read the Excel model "${xlName}". Please make sure it opens in Excel (and isn't password-protected), then upload it again.`); }
 
     let notesText = '';
     if (payload.files.notes) {
       const n = payload.files.notes;
-      notesText = /pdf$/i.test(n.name) || (n.type || '').includes('pdf')
-        ? await extractPdfText(n, 20000) : (await n.text()).slice(0, 20000);
+      try {
+        notesText = /pdf$/i.test(n.name) || (n.type || '').includes('pdf')
+          ? await extractPdfText(n, 20000) : (await n.text()).slice(0, 20000);
+      } catch { notesText = ''; }   // banker notes are optional — never fail the memo over them
     }
 
     stage(2);

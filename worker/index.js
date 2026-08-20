@@ -110,7 +110,7 @@ async function handleDelete(request, env) {
  * POST /api/generate — the upload → AI → memo flow
  * ------------------------------------------------------------------ */
 async function handleGenerate(request, env, ctx) {
-  if (!env.DEALS) throw new ApiError(503, 'Storage is not configured yet (KV namespace "DEALS" is missing).');
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet — please contact your administrator.");
 
   let payload;
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
@@ -129,7 +129,7 @@ async function handleGenerate(request, env, ctx) {
     imText = (await mistralOcr(imPdfBase64, env).catch(() => '')) || '';
   }
   if (!imText && !imPages.length && !String(excelText).trim()) {
-    throw new ApiError(422, "Couldn't read the documents — the PDF may be a scanned image. Please paste the key details in the fields and try again.");
+    throw new ApiError(422, "We couldn't read any text from your documents. If the IM is a scan or photo, please upload a text-based PDF (or add the details in the fields), then try again.");
   }
 
   // Concrete schema example = the kusumgar seed entry (so the model matches the exact shape).
@@ -242,7 +242,7 @@ async function generateCompany({ system, user, imPages, basics, env }) {
   // Only a fundamentally unusable response fails; anything parseable with a financial backbone is
   // coerced into a usable memo (numeric strings, verdict casing, missing arrays are all recovered).
   if (!isObj(obj) || !isObj(obj.financials) || !Array.isArray(obj.financials.years) || !obj.financials.years.length) {
-    throw new ApiError(502, `The AI could not read the documents into a memo (${problems[0] || 'no financials found'}). Please try again — it usually works on a second run.`);
+    throw new ApiError(502, "We couldn't pull a complete memo out of these documents — the financials were hard to read. Please try again (it usually works on a second run), or upload a clearer financial model.");
   }
 
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
@@ -278,7 +278,7 @@ function modelChain(env) {
 
 async function callClaude({ system, user, images = [], maxTokens = 16000 }, env) {   // rich memos are large; give the JSON room so the trailing keys never truncate
   // ⬇️ The real key plugs in here: BEDROCK_API_KEY is a Cloudflare secret (never in the repo).
-  if (!env.BEDROCK_API_KEY) throw new ApiError(503, 'AI is not configured yet (secret BEDROCK_API_KEY is missing).');
+  if (!env.BEDROCK_API_KEY) throw new ApiError(503, "The memo builder isn't switched on yet — please contact your administrator.");
   const region = env.AWS_REGION || 'us-east-1';
   const headers = {
     'Authorization': `Bearer ${env.BEDROCK_API_KEY}`,   // Bedrock API key (Bearer, not SigV4)
@@ -325,20 +325,22 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
         break;
       }
       if (res.status !== 200) {                                      // any other non-200 → hard error
-        throw new ApiError(502, `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`);
+        console.error('memo-builder non-200', res.status, (await res.text().catch(() => '')).slice(0, 300));
+        throw new ApiError(502, 'The memo builder hit a problem while writing your memo. Please try again in a moment.');
       }
       const data = await res.json();
       const parts = data && data.output && data.output.message && data.output.message.content;
       const text = Array.isArray(parts) ? parts.map(p => (p && p.text) || '').join('') : '';
-      if (!text) throw new ApiError(502, 'The AI returned an empty response.');
+      if (!text) throw new ApiError(502, 'The memo builder came back empty this time. Please try again.');
       return { text, model: modelId };                               // success — remember which id answered
     }
     tried.push(`${modelId} → ${lastErr}`);
     if (timedOut) throw new ApiError(504, 'The memo took too long to build (the documents may be very large). Please try again — it usually completes on a second run.');
     // Only 400/403/404 falls through to the next id; exhausted 429/5xx/network errors stop here.
-    if (!unusable) throw new ApiError(502, lastErr || 'The AI request failed.');
+    if (!unusable) { console.error('memo-builder error', lastErr); throw new ApiError(502, 'The memo builder is busy right now. Please wait a moment and try again.'); }
   }
-  throw new ApiError(502, `No usable Bedrock model. Tried: ${tried.join(' | ')}`);
+  console.error('no usable model. tried:', tried.join(' | '));
+  throw new ApiError(502, 'The memo builder is temporarily unavailable. Please try again shortly, or contact your administrator if it persists.');
 }
 
 // Optional OCR fallback via Mistral (best-effort; only when a scanned PDF is sent).
