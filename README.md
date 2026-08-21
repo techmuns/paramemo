@@ -106,6 +106,18 @@ don't, scanned PDFs just prompt the partner to paste the key details.
 npx wrangler secret put MISTRAL_API_KEY   # optional
 ```
 
+**Optional live screener** — on the Returns tab, any deal whose peer set names
+**listed** players (with NSE tickers) shows a *"Listed peers · live from
+Screener"* panel that pulls each one's current **P/E, market cap and ROE** from
+[screener.in](https://www.screener.in); for a P/E-benchmarked deal those
+multiples also backfill the comparison table and its median. It works without
+any key (a best-effort direct fetch), but screener blocks datacenter IPs, so set
+a [scrape.do](https://scrape.do) token for reliable results:
+
+```bash
+npx wrangler secret put SCRAPEDO_API_KEY   # optional — reliable live peer data
+```
+
 ### 4 · Deploy
 
 ```bash

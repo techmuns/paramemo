@@ -312,17 +312,17 @@ async function loadCompanies() {
   if (!seed) throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
 
   // Uploaded deals from the Worker's KV (may be [] or unavailable on a static-only host).
-  let uploaded = [], hiddenSeeds = [], peerLiveEnabled = false;
+  let uploaded = [], hiddenSeeds = [], peerLiveEnabled = false, peerLiveProxy = false;
   try {
     const res = await fetch(apiUrl('companies'), { cache: 'no-cache' });
-    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; if (Array.isArray(d.hiddenSeeds)) hiddenSeeds = d.hiddenSeeds; peerLiveEnabled = !!d.peerLiveEnabled; }
+    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; if (Array.isArray(d.hiddenSeeds)) hiddenSeeds = d.hiddenSeeds; peerLiveEnabled = !!d.peerLiveEnabled; peerLiveProxy = !!d.peerLiveProxy; }
   } catch (_) { /* no API (static preview) — seeds only */ }
 
   const hidden = new Set(hiddenSeeds);
   const seeds = (Array.isArray(seed.companies) ? seed.companies : []).filter(c => !hidden.has(c.id));   // sample can be hidden
   const seedIds = new Set(seeds.map(c => c.id));
   const companies = [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))].map(prepCompany);
-  return { meta: seed.meta || null, peerLiveEnabled, companies };
+  return { meta: seed.meta || null, peerLiveEnabled, peerLiveProxy, companies };
 }
 
 // Indian PE deals run on fiscal years; some Excel models label the columns as bare calendar
@@ -2319,29 +2319,85 @@ function renderPeerComps(c) {
   maybeAddPeerLive(card, c);
   return card;
 }
-// B5 (optional): a live "update listed peers" button — only when the Worker has a
-// scrape.do key AND the metric is a market multiple with listed tickers.
+// Live screener for LISTED players. Any deal whose peer set names listed companies
+// with NSE tickers gets a "listed peers · live" panel that pulls each one's current
+// P/E and market cap from Screener.in (via /api/peer-multiple). When the memo itself
+// benchmarks on P/E, the fetched multiples also backfill the comparison table above.
+// Fetched data is cached on the company (c._peerLive) so it survives that re-render.
+const _num = v => (v == null || isNaN(v)) ? null : Number(v);
+function nowLabel() {
+  try { return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }); }
+  catch (_) { return ''; }
+}
 function maybeAddPeerLive(card, c) {
   const p = c.peers;
-  if (!state.peerLiveEnabled || !p) return;
-  if (p.metric !== 'P/E' && p.metric !== 'EV/EBITDA') return;
-  const listed = p.rows.filter(r => r.listed && r.ticker);
-  if (!listed.length) return;
+  if (!state.peerLiveEnabled || !p || !Array.isArray(p.rows)) return;
+  const listed = p.rows.filter(r => r && r.listed && r.ticker);
+  if (!listed.length) return;                       // no listed tickers → nothing to look up
   const box = card.querySelector('[data-peer-live]');
-  const btn = h(`<button class="peer-live-btn" type="button">${icon('refreshCw', 'w-3.5 h-3.5')} <span>Update listed peers</span> <span class="peer-live-tag">live</span></button>`);
-  btn.addEventListener('click', async () => {
-    btn.disabled = true; btn.querySelector('span').textContent = 'Updating…';
-    for (const r of listed) {
+  if (!box) return;
+
+  const renderPanel = () => {
+    const live = c._peerLive;
+    box.innerHTML = `
+      <div class="peer-live-head">
+        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live from Screener</span>
+        <button class="peer-live-btn" type="button" data-live-fetch>
+          ${icon('refreshCw', 'w-3.5 h-3.5')}<span>${live ? 'Refresh' : 'Fetch live market data'}</span><span class="peer-live-tag">live</span>
+        </button>
+      </div>
+      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current P/E and market cap straight from Screener.in.</p>`}</div>`;
+    box.querySelector('[data-live-fetch]').addEventListener('click', fetchLive);
+  };
+
+  const liveTable = live => {
+    const cell = v => v == null ? '<span class="peer-live-na">—</span>' : v;
+    const rows = listed.map(r => {
+      const d = live.byTicker[r.ticker] || {};
+      const pe  = d.pe != null ? d.pe.toFixed(1) + '×' : null;
+      const mc  = d.marketCapCr != null ? fmtCr(d.marketCapCr) : null;
+      const roe = d.roe != null ? d.roe + '%' : null;
+      return `<tr>
+        <td>${esc(r.name)} <span class="peer-tick">${esc(r.ticker)}</span></td>
+        <td class="num">${cell(pe)}</td><td class="num">${cell(mc)}</td><td class="num">${cell(roe)}</td></tr>`;
+    }).join('');
+    const got = listed.some(r => { const d = live.byTicker[r.ticker]; return d && (d.pe != null || d.marketCapCr != null); });
+    const foot = got
+      ? `Live from Screener.in${live.ts ? ' · ' + esc(live.ts) : ''}${state.peerLiveProxy ? '' : ' · direct (best-effort)'}.`
+      : `Screener returned no figures right now.${state.peerLiveProxy ? ' Try Refresh in a moment.' : ' Set the SCRAPEDO_API_KEY secret for reliable results.'}`;
+    return `
+      <div class="peer-scroll mt-2">
+        <table class="peer-tbl peer-live-tbl">
+          <thead><tr><th>Listed peer</th><th class="num">P/E</th><th class="num">Market cap</th><th class="num">ROE</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p class="peer-live-hint">${foot}</p>`;
+  };
+
+  const fetchLive = async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const span = btn.querySelector('span'); span.textContent = 'Fetching…';
+    const byTicker = (c._peerLive && c._peerLive.byTicker) || {};
+    await Promise.all(listed.map(async r => {
       try {
         const res = await fetch(apiUrl('peer-multiple') + '?ticker=' + encodeURIComponent(r.ticker));
         const d = await res.json().catch(() => ({}));
-        const val = p.metric === 'P/E' ? d.pe : null;
-        if (val != null && !isNaN(val)) r.value = Math.round(val * 10) / 10;
-      } catch (_) { /* leave as — */ }
+        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), roce: _num(d.roce), roe: _num(d.roe) };
+      } catch (_) { byTicker[r.ticker] = byTicker[r.ticker] || {}; }
+    }));
+    c._peerLive = { ts: nowLabel(), byTicker };
+    // If the memo benchmarks on P/E, fill the comparison table's value column from live P/E.
+    if (p.metric === 'P/E') {
+      let filled = false;
+      listed.forEach(r => { const pe = byTicker[r.ticker] && byTicker[r.ticker].pe; if (pe != null) { r.value = Math.round(pe * 10) / 10; filled = true; } });
+      if (filled) { renderTabPanel(c, 'returns'); return; }   // re-render; c._peerLive persists → panel shows too
     }
-    renderTabPanel(c, 'returns');   // re-render with filled values
-  });
-  box.appendChild(btn);
+    renderPanel();
+  };
+
+  renderPanel();
 }
 
 function recomputeReturns(c, root) {
@@ -3108,6 +3164,7 @@ async function init() {
     state.meta = data.meta || null;
     state.companies = Array.isArray(data.companies) ? data.companies : [];
     state.peerLiveEnabled = !!data.peerLiveEnabled;
+    state.peerLiveProxy = !!data.peerLiveProxy;
     populateCompanyDropdown();
     window.addEventListener('hashchange', route);
     route();                       // respects a deep-link hash on first load

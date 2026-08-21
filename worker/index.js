@@ -48,44 +48,63 @@ async function readHiddenSeeds(env) {
   catch { return []; }
 }
 async function handleCompanies(env) {
-  const peerLiveEnabled = !!(env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim());
-  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled });   // KV not bound yet → no uploads
+  // The live-screener endpoint always responds (scrape.do when SCRAPEDO_API_KEY is set,
+  // a best-effort direct screener.in fetch otherwise), so the "listed peers · live"
+  // panel is offered wherever a deal has listed tickers. `peerLiveProxy` tells the UI
+  // whether the reliable proxy path is configured.
+  const peerLiveProxy = !!(env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim());
+  const peerLiveEnabled = true;
+  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy });   // KV not bound yet → no uploads
   const index = await readIndex(env);
   const companies = [];
   for (const id of index) {
     const raw = await env.DEALS.get(`company:${id}`);
     if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
   }
-  return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled });
+  return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled, peerLiveProxy });
 }
 
-// GET /api/peer-multiple?ticker=XXX — live P/E + market cap via scrape.do → screener.in.
-// Purely additive: returns {} on any failure or when no key is configured.
+// GET /api/peer-multiple?ticker=XXX — live market ratios for a LISTED peer from
+// screener.in. Uses scrape.do when SCRAPEDO_API_KEY is set (reliable, the proxy
+// gets past screener's bot-blocking); otherwise it tries screener.in directly as
+// a best-effort fallback. Purely additive: returns {} on any failure, never throws.
 async function handlePeerMultiple(request, env) {
-  const key = env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim();
-  if (!key) return json({});
   const ticker = (new URL(request.url).searchParams.get('ticker') || '').trim().toUpperCase();
   if (!/^[A-Z0-9&.-]{1,20}$/.test(ticker)) return json({});
+
+  const key = env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim();
+  const target = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
+  const fetchUrl = key
+    ? `https://api.scrape.do/?token=${encodeURIComponent(key)}&url=${encodeURIComponent(target)}`
+    : target;   // direct fallback (may be blocked for datacenter IPs — that's fine, we just return {})
+
   try {
-    const target = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
-    const url = `https://api.scrape.do/?token=${encodeURIComponent(key)}&url=${encodeURIComponent(target)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) return json({});
+    const res = await fetch(fetchUrl, {
+      signal: AbortSignal.timeout(12000),
+      headers: key ? {} : { 'user-agent': 'Mozilla/5.0 (compatible; ParagonScreening/1.0)', 'accept': 'text/html' },
+    });
+    if (!res.ok) return json({ ticker, ok: false });
     const html = await res.text();
-    // screener.in renders "Stock P/E" and "Market Cap" as label/number pairs
+
+    // screener.in renders each top ratio as a "<span class=name>LABEL</span> … <span class=number>N</span>" pair.
     const grab = label => {
-      const re = new RegExp(label + '[\\s\\S]{0,160}?<span[^>]*class="number"[^>]*>\\s*([\\d,]+(?:\\.\\d+)?)', 'i');
+      const re = new RegExp(label + '[\\s\\S]{0,180}?<span[^>]*class="number"[^>]*>\\s*(-?[\\d,]+(?:\\.\\d+)?)', 'i');
       const m = html.match(re);
-      return m ? parseFloat(m[1].replace(/,/g, '')) : null;
+      const n = m ? parseFloat(m[1].replace(/,/g, '')) : null;
+      return (n == null || isNaN(n)) ? null : n;
     };
+    const out = { ticker, ok: true };
     const pe = grab('Stock P/E');
     const marketCapCr = grab('Market Cap');
-    const out = {};
-    if (pe != null && !isNaN(pe)) out.pe = pe;
-    if (marketCapCr != null && !isNaN(marketCapCr)) out.marketCapCr = marketCapCr;
+    const roce = grab('ROCE');
+    const roe = grab('ROE');
+    if (pe != null) out.pe = pe;
+    if (marketCapCr != null) out.marketCapCr = marketCapCr;
+    if (roce != null) out.roce = roce;
+    if (roe != null) out.roe = roe;
     return json(out);
   } catch (_) {
-    return json({});
+    return json({ ticker, ok: false });
   }
 }
 
