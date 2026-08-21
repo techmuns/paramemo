@@ -163,7 +163,7 @@ let _tipTarget = null, _tipEl = null;
 function showTip(target) {
   const text = target.getAttribute('data-tip');
   if (!text) return;
-  hideTip();
+  removeTipEl();                      // never hideTip() here — that would clear the target we're about to set
   _tipEl = h('<div class="tipbox" role="tooltip"></div>');
   _tipEl.textContent = text;
   document.body.appendChild(_tipEl);
@@ -177,20 +177,29 @@ function showTip(target) {
   _tipEl.style.left = `${left}px`;
   _tipEl.dataset.place = place;
   _tipEl.style.setProperty('--arrow', `${Math.max(10, Math.min(tr.width - 10, r.left + r.width / 2 - left))}px`);
+  _tipTarget = target;                // set LAST: showTip is the only thing that owns a live target
   requestAnimationFrame(() => _tipEl && _tipEl.classList.add('show'));
 }
-function hideTip() { if (_tipEl) { _tipEl.remove(); _tipEl = null; } _tipTarget = null; }
+function removeTipEl() { if (_tipEl) { _tipEl.remove(); _tipEl = null; } }
+function hideTip() { removeTipEl(); _tipTarget = null; }
+// Any mouseover tells us where the cursor now is: on the same target (keep), on a
+// different one (swap), or on nothing tipped (hide). That last case is what makes
+// the tip disappear the moment the cursor leaves the pill — mouseout alone misses
+// fast exits, re-renders and elements that get removed while hovered.
 document.addEventListener('mouseover', e => {
   const t = e.target.closest('[data-tip]');
-  if (t && t !== _tipTarget) { _tipTarget = t; showTip(t); }
+  if (t === _tipTarget) return;
+  if (t) showTip(t); else hideTip();
 });
 document.addEventListener('mouseout', e => {
   const t = e.target.closest('[data-tip]');
   if (t && t === _tipTarget && !t.contains(e.relatedTarget)) hideTip();
 });
-document.addEventListener('focusin',  e => { const t = e.target.closest('[data-tip]'); if (t) { _tipTarget = t; showTip(t); } });
+document.addEventListener('mousedown', hideTip, true);
+document.addEventListener('focusin',  e => { const t = e.target.closest('[data-tip]'); if (t) showTip(t); });
 document.addEventListener('focusout', hideTip);
 window.addEventListener('scroll', hideTip, true);
+window.addEventListener('blur', hideTip);
 
 /* ---- Toast (small, transient confirmation) ---- */
 function toast(msg) {
@@ -259,7 +268,7 @@ function confirmDialog({ title, message, confirmLabel = 'Confirm', cancelLabel =
 const state = {
   meta: null,
   companies: [],
-  view: 'cards',                     // pipeline: 'cards' | 'table'
+  view: 'table',                     // pipeline: 'table' | 'cards' — tables are the default view everywhere
   sort: { key: 'fit', dir: 'asc' },  // default: Fit (Go→Watch→Pass), tie-break by deal size
   jobs: [],                          // in-flight / finished upload jobs (background processing)
 };
@@ -1142,11 +1151,12 @@ function renderPipelineHeader() {
         </div>
         <p class="mt-2 text-[13.5px] text-ink-muted">${esc(note)}</p>
       </div>
-      <div class="shrink-0">
+      <div class="shrink-0 flex items-center gap-3">
         <div class="seg" role="tablist" aria-label="View">
-          <button class="seg-btn" data-view="cards" role="tab">${icon('grid', 'w-4 h-4')}<span>Cards</span></button>
           <button class="seg-btn" data-view="table" role="tab">${icon('table', 'w-4 h-4')}<span>Table</span></button>
+          <button class="seg-btn" data-view="cards" role="tab">${icon('grid', 'w-4 h-4')}<span>Cards</span></button>
         </div>
+        <button class="add-deal-btn" type="button" data-add-deal>${icon('plus', 'w-4 h-4', 2.4)}<span>Add a deal</span></button>
       </div>
     </div>`);
 
@@ -1155,6 +1165,7 @@ function renderPipelineHeader() {
     b.setAttribute('aria-selected', String(b.dataset.view === state.view));
     b.addEventListener('click', () => setView(b.dataset.view));
   });
+  wrap.querySelector('[data-add-deal]').addEventListener('click', openAddDealModal);
   return wrap;
 }
 
@@ -1323,7 +1334,6 @@ function sortedCompanies() {
 }
 
 function renderTable() {
-  const wrap = h('<div></div>');
   const card = h('<div class="surface-card overflow-hidden"><div class="table-scroll"></div></div>');
   const table = h('<table class="deal-table"></table>');
 
@@ -1346,12 +1356,7 @@ function renderTable() {
   table.appendChild(tbody);
 
   card.querySelector('.table-scroll').appendChild(table);
-  wrap.appendChild(card);
-
-  const add = h(`<button class="add-btn-row mt-4" type="button">${icon('plus', 'w-5 h-5', 2.4)}<span>Add a deal</span></button>`);
-  add.addEventListener('click', openAddDealModal);
-  wrap.appendChild(add);
-  return wrap;
+  return card;   // "Add a deal" now lives in the pipeline header, so no dashed row here
 }
 
 function renderTableRow(c) {
@@ -1524,14 +1529,21 @@ function renderSnapshot(c) {
   return wrap;
 }
 
+// Paragraph first (full width), facts underneath in a two-up grid. Side-by-side
+// columns left a tall dead gap next to the shorter one — the bullets are usually
+// far taller than the paragraph.
 function renderWhatTheyDo(c) {
   const s = c.snapshot || {};
-  const body = h('<div class="grid gap-5 lg:grid-cols-5 items-start"></div>');
-  body.appendChild(h(`<p class="lede lg:col-span-3">${esc(s.whatTheyDo || '')}</p>`));
-  const chips = h('<div class="lg:col-span-2 flex flex-col gap-2"></div>');
-  (s.businessBullets || []).forEach(b =>
-    chips.appendChild(h(`<span class="bullet-chip"><span class="b-ico">${icon('check', 'w-3.5 h-3.5', 2.6)}</span><span>${esc(b)}</span></span>`)));
-  body.appendChild(chips);
+  const bullets = (s.businessBullets || []).filter(Boolean);
+  const body = h('<div></div>');
+  if (s.whatTheyDo) body.appendChild(h(`<p class="lede">${esc(s.whatTheyDo)}</p>`));
+  if (bullets.length) {
+    const chips = h(`<div class="grid gap-2.5 sm:grid-cols-2 ${s.whatTheyDo ? 'mt-4' : ''}"></div>`);
+    bullets.forEach(b =>
+      chips.appendChild(h(`<span class="bullet-chip"><span class="b-ico">${icon('check', 'w-3.5 h-3.5', 2.6)}</span><span>${esc(b)}</span></span>`)));
+    body.appendChild(chips);
+  }
+  if (!s.whatTheyDo && !bullets.length) body.appendChild(h('<p class="text-[13px] text-ink-hint">No business description in the documents.</p>'));
   return sectionCard('What they do', 'layers', body);
 }
 
@@ -2000,13 +2012,13 @@ function renderQuestions(c) {
   const bar = h(`
     <div class="flex items-center justify-between gap-3">
       <div class="text-[13px] text-ink-muted">${themes.length} themes · ${totalQ} questions for management</div>
-      <button class="link-btn" data-toggle-all type="button">Expand all</button>
+      <button class="link-btn" data-toggle-all type="button">Collapse all</button>
     </div>`);
   wrap.appendChild(bar);
 
   const listWrap = h('<div class="space-y-2.5"></div>');
-  themes.forEach((t, i) => {
-    const open = i === 0;                          // first theme open so the pattern is visible
+  themes.forEach(t => {
+    const open = true;                             // every theme open — the questions are the point of the tab
     const acc = h(`
       <div class="accordion${open ? ' open' : ''}">
         <button class="acc-head" type="button" aria-expanded="${open}">
@@ -2703,7 +2715,7 @@ function openAddDealModal() {
         <span class="uz-ico">${icon(n ? 'check' : 'plus', 'w-4 h-4', n ? 3 : 2)}</span>
         <span class="uz-body">
           <span class="uz-title">Other documents <span class="text-ink-hint font-normal">(optional)</span></span>
-          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Anything else you have — extra IMs, term sheets, Word docs, decks, images, notes'}</span>
+          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Extra IMs, term sheets, Word docs, decks, images, notes'}</span>
         </span>
       </button>${chips}`;
   }
@@ -2723,8 +2735,7 @@ function openAddDealModal() {
         <div class="field"><label>Banker</label><input data-basic="banker" placeholder="e.g. Axis Capital" autocomplete="off"></div>
         <div class="field"><label>Deal ask</label><input data-basic="ask" placeholder="e.g. Up to ₹300 cr" autocomplete="off"></div>
       </div>
-      <p class="text-[11.5px] text-ink-hint mt-4">Files are read in your browser and sent to your firm's own AI (text and page images) — add anything else you have and it's all read in. The AI fills every tab; a data-rich memo can take a couple of minutes to build.</p>
-      <div class="flex items-center justify-end gap-2.5 mt-5">
+      <div class="flex items-center justify-end gap-2.5 mt-6">
         <button class="modal-close hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Close</button>
         <button class="hdr-btn" data-generate style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">
           ${icon('trendingUp', 'w-4 h-4')} Generate memo

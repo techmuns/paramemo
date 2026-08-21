@@ -269,6 +269,17 @@
       transition: border-color .18s, background .18s;
     }
     .add-btn-row:hover { border-color: var(--navy); background: rgba(12,48,120,.05); }
+    /* Primary "Add a deal" action — always on the pipeline header, next to the view toggle */
+    .add-deal-btn {
+      display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 16px 0 13px;
+      border-radius: 999px; font-size: 13.5px; font-weight: 600; white-space: nowrap;
+      color: #fff; background: linear-gradient(140deg, #16419b, var(--navy));
+      border: 1px solid var(--navy); box-shadow: 0 6px 14px -6px rgba(12,48,120,.55);
+      transition: filter .16s, box-shadow .16s, transform .16s;
+    }
+    .add-deal-btn:hover { filter: brightness(1.08); box-shadow: 0 9px 20px -7px rgba(12,48,120,.6); }
+    .add-deal-btn:active { transform: translateY(1px); }
+    .add-deal-btn:focus-visible { outline: none; box-shadow: var(--ring-navy); }
 
     /* ---- Table ----------------------------------------------------------- */
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--r-lg); }
@@ -673,10 +684,12 @@
     .uz.has-file { border-style: solid; border-color: var(--border-strong); background: #fff; }
     .uz .uz-ico { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto; color: var(--navy); background: rgba(12,48,120,.08); }
     .uz.has-file .uz-ico { color: #fff; background: linear-gradient(150deg,#16419b,#0a2660); }
-    .uz-body { min-width: 0; flex: 1 1 auto; }
-    .uz-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+    /* The zone's two lines are <span>s, so they must be blockified — overflow/ellipsis
+       does nothing on an inline box, which is what let long labels spill out of the card. */
+    .uz-body { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+    .uz-title { display: block; font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
     .uz-title .req { color: #E11D48; }
-    .uz-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .uz-sub { display: block; font-size: 11.5px; color: var(--muted); margin-top: 1px; line-height: 1.35; overflow-wrap: anywhere; }
     .field label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--hint); margin-bottom: 4px; }
     .field input {
       width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px;
