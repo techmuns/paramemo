@@ -830,6 +830,10 @@
     table.pm-tbl thead th { background: #0C3078; color: #fff; font-family: 'Sora', sans-serif; font-weight: 600; font-size: 8.5px; }
     table.pm-tbl td.neg { color: #DC2626; }
     table.pm-tbl .fc { background: rgba(180,146,76,.09); }
+    /* Forecast HEADER cells: the pale .fc tint over the navy header left white text on
+       near-white (FY25–FY28 vanished). Give them a gold-toned navy so they read AND
+       still signal "forecast". Body forecast cells keep the pale tint (dark text). */
+    table.pm-tbl thead th.fc { background: #4a4a2f; color: #F3E7C8; }
     table.pm-tbl .cg { background: #F4F6FB; color: #0C3078; font-weight: 600; font-style: italic; }
     table.pm-tbl thead th.cg { color: #C7D2FE; background: #0a2660; font-style: normal; }
     tr.pm-grp td { background: #EFF2F8; font-family: 'Sora', sans-serif; font-weight: 700; font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: #6B7280; text-align: left; }
@@ -864,14 +868,17 @@
     .mx-row { display: grid; grid-template-columns: 150px 1fr; border: 1px solid #9AA3B5; margin-bottom: 7px; break-inside: avoid; }
     .mx-row-l { padding: 7px 10px; font-weight: 700; border-right: 1px solid #9AA3B5; }
     .mx-row-b { padding: 7px 11px; }
-    .mx-row-b ul { margin: 0; padding-left: 16px; } .mx-row-b li { margin-bottom: 2px; }
+    /* Tailwind's preflight resets list markers to none — restore them for the memo's lists. */
+    .mx-row-b ul { margin: 0; padding-left: 18px; list-style: disc; } .mx-row-b li { margin-bottom: 2px; }
+    .mx-row-b li::marker { color: #9AA3B5; }
     .mx-hl { background: #FFF176; padding: 0 3px; font-weight: 600; }
     .mx-h2 { font-weight: 700; font-size: 14px; margin: 0 0 8px; text-decoration: underline; break-after: avoid; }
     .mx-grp .mx-h2:not(:first-child) { margin-top: 18px; }
     .mx-h2.center { text-align: center; font-size: 15px; text-decoration: none; margin: 0 0 12px; }
     .mx-h3 { font-weight: 700; font-size: 12.5px; margin: 13px 0 6px; break-after: avoid; }
     .mx-q { margin-bottom: 8px; break-inside: avoid; } .mx-q-h { font-weight: 700; }
-    .mx-q ul, .fr-q ul { margin: 2px 0 0; padding-left: 18px; } .mx-q li { margin-bottom: 2px; }
+    .mx-q ul, .fr-q ul { margin: 2px 0 0; padding-left: 20px; list-style: decimal; } .mx-q li, .fr-q li { margin-bottom: 2px; }
+    .mx-q li::marker, .fr-q li::marker { color: #0C3078; font-weight: 700; }
     table.mx-tbl { width: 100%; border-collapse: collapse; font-size: 9px; margin-top: 6px; break-inside: avoid; }
     table.mx-tbl th, table.mx-tbl td { border: 1px solid #9AA3B5; padding: 3px 5px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
     table.mx-tbl th { background: #1F2A5A; color: #fff; font-weight: 700; }
@@ -911,7 +918,7 @@
     .fr-n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: #0C3078; color: #fff; font-size: 11px; flex: 0 0 auto; }
     .fr-sec h3 { font-family: 'Sora',sans-serif; font-size: 11px; font-weight: 700; color: #374151; margin: 8px 0 4px; }
     .fr p { margin: 0 0 6px; }
-    .fr-ul { margin: 4px 0; padding-left: 16px; } .fr-ul li { margin-bottom: 2px; }
+    .fr-ul { margin: 4px 0; padding-left: 18px; list-style: disc; } .fr-ul li { margin-bottom: 2px; } .fr-ul li::marker { color: var(--gold); }
     .fr-cap { font-size: 9.5px; color: #6B7280; margin-bottom: 5px; }
     .fr-people-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; }
     .fr-person { margin-bottom: 6px; } .fr-person b { font-size: 10.5px; } .fr-person span { display: block; font-size: 9.5px; color: #6B7280; } .fr-person .nt { color: #9CA3AF; }

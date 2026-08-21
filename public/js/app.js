@@ -1151,11 +1151,11 @@ function renderFullReport(c) {
         ${printChecklist(c)}
       `)}
 
-      ${sec(5, 'Integrity &amp; governance', printIntegrity(c))}
+      ${sec(5, 'Integrity & governance', printIntegrity(c))}
 
       ${Array.isArray(c.questions) && c.questions.length ? sec(6, 'Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
 
-      ${sec(7, 'Investment thesis &amp; risks', `
+      ${sec(7, 'Investment thesis & risks', `
         <div class="fr-cols">
           <div><h3>Why we'd invest</h3>${(c.thesis || []).map(x => `<div class="fr-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
           <div><h3>What worries us</h3>${(c.concerns || []).map(x => `<div class="fr-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
