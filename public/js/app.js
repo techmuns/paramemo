@@ -756,22 +756,138 @@ function initHeader() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEx(); });
 }
 
-// Build the print memo for the open company and open the browser's print dialog.
-// window.print() prints THIS document (the memo in #print-root, shown only under
-// @media print). It works standalone and in a normal embed; a sandboxed iframe
-// without allow-modals can swallow it, so we guard and hint the keyboard shortcut.
+/* ---- Export ---------------------------------------------------------------
+ * Chrome IGNORES window.print() inside a sandboxed iframe ("the document is
+ * sandboxed and the 'allow-modals' keyword is not set") — it does not throw, so
+ * the old try/catch never saw it and Export looked dead when the dashboard is
+ * embedded. Three routes, tried in order, so one of them always works:
+ *   1. a new top-level tab holding a self-contained copy that prints itself
+ *      (the whole point: a fresh top-level document is never sandboxed by us),
+ *   2. this document's own print dialog — watched via `beforeprint`, which is
+ *      the only reliable way to tell that a print() was swallowed,
+ *   3. an in-app preview the partner can read, print, download or pop out.
+ * ---------------------------------------------------------------------------*/
+const isEmbedded = () => { try { return window.self !== window.top; } catch (_) { return true; } };
+const PRINT_KEY = () => (/Mac|iP(hone|ad)/.test(navigator.platform || '') ? '⌘P' : 'Ctrl+P');
+
+// A standalone HTML document carrying the same styles, so the memo looks identical
+// in a new tab or a downloaded file. <base> keeps the logo's relative src working.
+function exportDocHtml(c, doc, body) {
+  const css = $$('style').map(s => s.textContent).join('\n');
+  const links = $$('link[rel="stylesheet"]').map(l => l.outerHTML).join('\n');
+  const title = `${c.shortName || c.name} — ${doc === 'report' ? 'Screening report' : 'Screening memo'}`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<base href="${esc(document.baseURI)}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+${links}
+<style>${css}</style>
+<style>
+  body { background:#fff; margin:0; padding:18px 16px 44px; }
+  .xp-bar { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+            max-width:190mm; margin:0 auto 18px; padding-bottom:12px; border-bottom:1px solid #E7EAF1; }
+  .xp-hint { font:500 12.5px Inter,system-ui,sans-serif; color:#6B7280; }
+  .xp-print { font:600 13.5px Inter,system-ui,sans-serif; color:#fff; background:#0C3078; border:0;
+              border-radius:9px; padding:9px 16px; cursor:pointer; }
+  @media print { .xp-bar { display:none !important; } body { padding:0; } }
+</style></head>
+<body>
+  <div class="xp-bar">
+    <span class="xp-hint">Choose <b>Save as PDF</b> in the print dialog. If it didn't open, use the button.</span>
+    <button class="xp-print" type="button" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+  ${body}
+  <script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},400);});<\/script>
+</body></html>`;
+}
+
+// Route 1 — a new top-level tab. Returns false when the browser blocked it.
+function openPrintWindow(html) {
+  let w = null;
+  try { w = window.open('', '_blank'); } catch (_) { w = null; }
+  if (!w || !w.document) return false;
+  try { w.document.open(); w.document.write(html); w.document.close(); w.focus(); return true; }
+  catch (_) { try { w.close(); } catch (__) {} return false; }
+}
+
+// Route 2 — print this document. `beforeprint` fires synchronously before the
+// dialog, so if it hasn't fired shortly after the call, the print was swallowed.
+function printSelf(onBlocked) {
+  let fired = false;
+  const mark = () => { fired = true; };
+  let mql = null;
+  const onMql = e => { if (e.matches) fired = true; };
+  window.addEventListener('beforeprint', mark);
+  try { mql = window.matchMedia('print'); if (mql.addEventListener) mql.addEventListener('change', onMql); } catch (_) { mql = null; }
+  try { window.print(); } catch (_) { /* swallowed below */ }
+  setTimeout(() => {
+    window.removeEventListener('beforeprint', mark);
+    if (mql && mql.removeEventListener) mql.removeEventListener('change', onMql);
+    if (!fired && onBlocked) onBlocked();
+  }, 700);
+}
+
+// Route 3 — read it right here, with every escape hatch on the bar.
+function openPrintPreview(c, doc, body, html) {
+  const name = `${(c.shortName || c.name || 'memo').replace(/[^\w.-]+/g, '-')}-${doc}.html`;
+  const overlay = h(`
+    <div class="modal-overlay pv-overlay" role="dialog" aria-modal="true" aria-label="Document preview">
+      <div class="pv">
+        <div class="pv-bar">
+          <div class="pv-title">${esc(doc === 'report' ? 'Full report' : 'Memo')} · ${esc(c.shortName || c.name)}</div>
+          <div class="pv-actions">
+            <button class="pv-btn primary" type="button" data-pv="print">${icon('download', 'w-4 h-4')}<span>Print / Save as PDF</span></button>
+            <button class="pv-btn" type="button" data-pv="tab">Open in a new tab</button>
+            <button class="pv-btn" type="button" data-pv="download">Download</button>
+            <button class="pv-btn" type="button" data-pv="close" aria-label="Close">${icon('x', 'w-4 h-4')}</button>
+          </div>
+        </div>
+        <div class="pv-page"><div class="pv-sheet">${body}</div></div>
+      </div>
+    </div>`);
+
+  const close = () => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  const act = {
+    close,
+    print: () => printSelf(() => toast(`Your browser blocked printing here — try “Open in a new tab”, or press ${PRINT_KEY()}`)),
+    tab: () => { if (!openPrintWindow(html)) toast('Your browser blocked the new tab — allow pop-ups for this page'); },
+    download: () => {
+      try {
+        const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        toast('Saved — open the file and print it to PDF');
+      } catch (_) { toast('Download blocked here — try “Open in a new tab”'); }
+    },
+  };
+  overlay.querySelectorAll('[data-pv]').forEach(b => b.addEventListener('click', () => act[b.dataset.pv]()));
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  $('#modal-root').appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('show'));
+}
+
 function exportPdf(kind) {
   const c = companyById(ui.companyId);
   if (!c) { toast('Open a company first, then export it'); return; }
-  const root = $('#print-root');
   const doc = kind === 'report' ? 'report' : 'memo';
+  const body = doc === 'report' ? renderFullReport(c) : renderMemoExact(c);
+
+  // Keep #print-root loaded either way: it's what a plain Ctrl+P prints.
+  const root = $('#print-root');
   root.setAttribute('data-doc', doc);
-  root.innerHTML = doc === 'report' ? renderFullReport(c) : renderMemoExact(c);
-  try {
-    window.print();
-  } catch (err) {
-    const key = /Mac|iP(hone|ad)/.test(navigator.platform || '') ? '⌘P' : 'Ctrl+P';
-    toast(`Press ${key} to save it as a PDF`);
+  root.innerHTML = body;
+
+  const html = exportDocHtml(c, doc, body);
+  const preview = () => openPrintPreview(c, doc, body, html);
+  if (isEmbedded()) {
+    if (openPrintWindow(html)) return;      // best route when the app sits in an iframe
+    printSelf(preview);
+  } else {
+    printSelf(preview);                     // standalone: the native dialog is the nicest path
   }
 }
 

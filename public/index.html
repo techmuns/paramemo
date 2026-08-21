@@ -760,13 +760,45 @@
       font-size: 12.5px; font-weight: 600; color: var(--muted); background: #F4F6FB; border: 1px solid var(--border); transition: color .15s, border-color .15s, background .15s; }
     .gen-bg:hover { color: var(--navy); border-color: var(--border-strong); background: #EEF2FB; }
 
+    /* ---- Export preview (fallback when the browser blocks print in an iframe) ---- */
+    .pv-overlay { padding: 0; }
+    .pv { display: flex; flex-direction: column; width: 100%; max-width: 210mm; height: 100%; max-height: 100vh; background: #EEF1F6; }
+    @media (min-width: 800px) { .pv-overlay { padding: 20px; } .pv { max-height: calc(100vh - 40px); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-lg); } }
+    .pv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+    .pv-title { font-family: 'Sora', sans-serif; font-weight: 600; font-size: 14px; color: var(--ink); min-width: 0; }
+    .pv-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pv-btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px; border-radius: 9px;
+      font-size: 13px; font-weight: 600; color: var(--ink); background: #F2F5FB; border: 1px solid var(--border); transition: background .15s, border-color .15s; }
+    .pv-btn:hover { background: #E9EEF8; border-color: var(--border-strong); }
+    .pv-btn.primary { color: #fff; background: var(--navy); border-color: var(--navy); }
+    .pv-btn.primary:hover { filter: brightness(1.08); }
+    .pv-page { flex: 1 1 auto; overflow: auto; padding: 20px; -webkit-overflow-scrolling: touch; }
+    .pv-sheet { background: #fff; max-width: 190mm; margin: 0 auto; padding: 16mm 14mm; border-radius: 6px; box-shadow: var(--shadow-md); }
+    @media print {
+      /* When the preview is open, a plain Ctrl+P should print the sheet — not the app
+         behind it, and not the (now stale) #print-root. Override wins because it
+         also carries !important, and the default block below is guarded by :not(). */
+      body:has(.pv-overlay) #modal-root { display: block !important; }
+      body:has(.pv-overlay) #print-root { display: none !important; }
+      body:has(.pv-overlay) .pv-overlay { position: static; display: block; background: #fff; }
+      body:has(.pv-overlay) .pv-bar { display: none !important; }
+      body:has(.pv-overlay) .pv,
+      body:has(.pv-overlay) .pv-page,
+      body:has(.pv-overlay) .pv-sheet { max-width: none; height: auto; max-height: none; overflow: visible;
+        box-shadow: none; border: 0; border-radius: 0; padding: 0; margin: 0; background: #fff; }
+    }
+
     /* ---- The print memo (Export PDF) ---- */
     .print-only { display: none; }
     @media print {
-      header, main, #toast-root, #modal-root { display: none !important; }
-      #print-root { display: block !important; }
+      header, main, #toast-root { display: none !important; }
       html, body { background: #fff !important; }
       @page { margin: 13mm 14mm; }
+      /* Default (no preview open): print #print-root, hide the empty modal root.
+         Guarded by :not(:has(.pv-overlay)) so an open preview uses the block above. */
+      body:not(:has(.pv-overlay)) #print-root { display: block !important; }
+      body:not(:has(.pv-overlay)) #modal-root { display: none !important; }
     }
     /* On-screen preview support (headless test / debugging) mirrors the print look. */
     #print-root.preview { display: block; background: #fff; }
