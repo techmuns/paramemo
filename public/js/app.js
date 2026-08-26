@@ -1010,12 +1010,16 @@ function memoReturns(c) {
   if (!c.returns) return '';
   const v = returnsInputs(c), out = computeReturns(c, v);
   const cr = n => (n == null || isNaN(n)) ? '—' : fmtCr(Math.round(n));
+  const hc = Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : '';
+  const exitLine = out.peMode
+    ? ['Exit P/E', `${v.exitX}× on ${cr(out.exitPat)} profit${hc}`]
+    : ['Exit EV/EBITDA', `${v.exitX}× on ${cr(out.exitEbitda)}${hc}`];
   const rows = [
     ['Our cheque (primary)', cr(out.investment)],
     ['Enter → exit', `${v.entryYear} → ${v.exitYear} (${out.years} yr${out.years === 1 ? '' : 's'})`],
     ['Entry EV/EBITDA', `${v.entryX}× on ${cr(out.entryEbitda)}`],
     ['Our stake', (out.stakePct * 100).toFixed(1) + '%'],
-    ['Exit EV/EBITDA', `${v.exitX}× on ${cr(out.exitEbitda)}${Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : ''}`],
+    exitLine,
     ['Our proceeds', cr(out.proceeds)],
     ['Money multiple (MoIC)', out.moneyBack.toFixed(1) + '×'],
     ['Annual return (IRR)', Math.round(out.yearlyReturn) + '%'],
@@ -1114,13 +1118,17 @@ function frReturns(c) {
   const v = returnsInputs(c);
   const out = computeReturns(c, v);
   const cr = n => n == null ? '—' : fmtCr(Math.round(n));
+  const hc = Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : '';
+  const exitLine = out.peMode
+    ? [`Exit profit × P/E${hc}`, `${cr(out.exitPat)} × ${v.exitX}× = ${cr(out.exitEquity)} equity`]
+    : [`Exit EBITDA × multiple${hc}`, `${cr(out.exitEbitda)} × ${v.exitX}× = ${cr(out.exitEV)} EV`];
   const rows = [
     [`Our cheque (primary)`, cr(out.investment)],
     [`Enter in / exit in`, `${esc(v.entryYear)} → ${esc(v.exitYear)} (${out.years} yr${out.years === 1 ? '' : 's'})`],
     [`Entry EBITDA × multiple`, `${cr(out.entryEbitda)} × ${v.entryX}× = ${cr(out.entryEV)} EV`],
     [`Pre-money / post-money equity`, `${cr(out.preMoney)} / ${cr(out.postMoney)}`],
     [`Our stake`, (out.stakePct * 100).toFixed(1) + '%'],
-    [`Exit EBITDA × multiple${Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : ''}`, `${cr(out.exitEbitda)} × ${v.exitX}× = ${cr(out.exitEV)} EV`],
+    exitLine,
     [`Our proceeds`, cr(out.proceeds)],
     [`Money multiple (MoIC)`, (out.moneyBack).toFixed(1) + '×'],
     [`Annual return (IRR)`, Math.round(out.yearlyReturn) + '%'],
@@ -2502,35 +2510,48 @@ function returnsInputs(c) {
     entryYear, exitYear,
     entryX: Number(d.entryX) > 0 ? Number(d.entryX) : 12,
     exitX:  Number(d.exitX)  > 0 ? Number(d.exitX)  : 12,
+    exitBasis: d.exitBasis === 'pe' ? 'pe' : 'ebitda',
     underdeliverPct: Number(d.underdeliverPct) >= 0 ? Number(d.underdeliverPct) : 0,
   };
 }
 
-// Pure calc — enterprise value, the net-debt bridge to equity, stake, exit, MoIC, IRR.
+// Pure calc — entry EV → net-debt bridge → stake, then exit priced on EV/EBITDA OR P/E → MoIC, IRR.
+// Entry is always EV/EBITDA (the standard PE entry). Exit can be priced on the projected EBITDA
+// (bridge net debt to equity) or on the projected profit via a P/E (already an equity multiple).
 function computeReturns(c, v) {
   const entryEbitda   = ebitdaAt(c, v.entryYear);
-  const rawExitEbitda = ebitdaAt(c, v.exitYear);
   const investment    = Number(v.investmentCr) || 0;
   const haircut       = Math.max(0, Math.min(100, Number(v.underdeliverPct) || 0)) / 100;
-  const exitEbitda    = rawExitEbitda == null ? null : rawExitEbitda * (1 - haircut);
   const entryNetDebt  = netDebtAt(c, v.entryYear) || 0;
   const exitNetDebt   = netDebtAt(c, v.exitYear)  || 0;
+  const peMode        = v.exitBasis === 'pe';
 
   const entryEV  = (entryEbitda || 0) * v.entryX;
   const preMoney = entryEV - entryNetDebt;                       // pre-money equity value
   const postMoney = preMoney + investment;                       // post-money (after our primary cheque)
   const stakePct = postMoney > 0 ? Math.min(1, investment / postMoney) : 0;
 
-  const exitEV     = (exitEbitda || 0) * v.exitX;
-  const exitEquity = exitEV - exitNetDebt;
-  const proceeds   = Math.max(0, stakePct * exitEquity);
+  // Exit earnings from management's projection (with the under-delivery haircut applied).
+  const rawExitEbitda = ebitdaAt(c, v.exitYear);
+  const rawExitPat    = finAt(c, 'pat', v.exitYear);
+  const exitEbitda    = rawExitEbitda == null ? null : rawExitEbitda * (1 - haircut);
+  const exitPat       = rawExitPat == null ? null : rawExitPat * (1 - haircut);
+  let exitEV, exitEquity;
+  if (peMode) {                                                  // P/E is an equity multiple — no net-debt bridge
+    exitEquity = (exitPat || 0) * v.exitX;
+    exitEV = exitEquity + exitNetDebt;                           // implied EV, for reference only
+  } else {
+    exitEV = (exitEbitda || 0) * v.exitX;
+    exitEquity = exitEV - exitNetDebt;
+  }
+  const proceeds = Math.max(0, stakePct * exitEquity);
 
   const years = Math.max(1, (fyToNum(v.exitYear) - fyToNum(v.entryYear)) || 1);
   const moneyBack = investment > 0 ? proceeds / investment : 0;
   const yearlyReturn = moneyBack > 0 ? (Math.pow(moneyBack, 1 / years) - 1) * 100 : -100;
 
   return {
-    entryEbitda, exitEbitda, rawExitEbitda, entryNetDebt, exitNetDebt,
+    entryEbitda, exitEbitda, exitPat, entryNetDebt, exitNetDebt, peMode,
     entryEV, preMoney, postMoney, stakePct, exitEV, exitEquity,
     investment, proceeds, moneyBack, yearlyReturn, years,
   };
@@ -2541,6 +2562,7 @@ function readReturns(root) {
     investmentCr: Number(g('investmentCr')),
     entryYear: g('entryYear'), exitYear: g('exitYear'),
     entryX: Number(g('entryX')), exitX: Number(g('exitX')),
+    exitBasis: g('exitBasis') === 'pe' ? 'pe' : 'ebitda',
     underdeliverPct: Number(g('underdeliverPct')),
   };
 }
@@ -2548,9 +2570,11 @@ function readReturns(root) {
 // Sliders (numeric) + the two year dropdowns. `d` = current inputs.
 const RETURN_SLIDERS = [
   { key: 'entryX',          label: 'Entry price — EV/EBITDA multiple',   min: 4, max: 25, step: 0.5, suffix: '×' },
-  { key: 'exitX',           label: 'Exit price — EV/EBITDA multiple',    min: 4, max: 25, step: 0.5, suffix: '×' },
-  { key: 'underdeliverPct', label: 'If management under-delivers EBITDA', min: 0, max: 40, step: 5,   suffix: '%' },
+  { key: 'exitX',           label: 'Exit price — EV/EBITDA multiple',    min: 4, max: 40, step: 0.5, suffix: '×' },
+  { key: 'underdeliverPct', label: 'If management under-delivers',       min: 0, max: 40, step: 5,   suffix: '%' },
 ];
+// The exit-multiple slider's label depends on the exit basis (EV/EBITDA vs P/E).
+const exitSliderLabel = basis => basis === 'pe' ? 'Exit price — P/E (× profit)' : 'Exit price — EV/EBITDA multiple';
 
 function renderReturns(c) {
   const d = returnsInputs(c);
@@ -2599,16 +2623,24 @@ function renderReturns(c) {
           <select class="ret-dd" data-ret="exitYear" aria-label="Exit year">${yearOpts(d.exitYear)}</select></label>
       </div>
       <p class="text-[11.5px] text-ink-hint mt-2" data-out="holdNote">—</p>
+      <label class="ret-sel mt-3"><span>Exit priced on</span>
+        <select class="ret-dd" data-ret="exitBasis" aria-label="Exit basis">
+          <option value="ebitda"${d.exitBasis !== 'pe' ? ' selected' : ''}>EV / EBITDA (× EBITDA)</option>
+          <option value="pe"${d.exitBasis === 'pe' ? ' selected' : ''}>P / E (× profit)</option>
+        </select></label>
     </div>`));
   // Numeric sliders
-  RETURN_SLIDERS.forEach(s => inputs.appendChild(h(`
-    <div class="slider-row">
-      <div class="slider-head">
-        <span class="slider-label">${esc(s.label)}</span>
-        <span class="slider-val tnum" data-val="${s.key}">${d[s.key]}${esc(s.suffix)}</span>
-      </div>
-      <input type="range" class="range" data-ret="${s.key}" data-slider="${s.key}" data-suffix="${esc(s.suffix)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${d[s.key]}" aria-label="${esc(s.label)}">
-    </div>`)));
+  RETURN_SLIDERS.forEach(s => {
+    const label = s.key === 'exitX' ? exitSliderLabel(d.exitBasis) : s.label;
+    inputs.appendChild(h(`
+      <div class="slider-row">
+        <div class="slider-head">
+          <span class="slider-label" data-slabel="${s.key}">${esc(label)}</span>
+          <span class="slider-val tnum" data-val="${s.key}">${d[s.key]}${esc(s.suffix)}</span>
+        </div>
+        <input type="range" class="range" data-ret="${s.key}" data-slider="${s.key}" data-suffix="${esc(s.suffix)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${d[s.key]}" aria-label="${esc(label)}">
+      </div>`));
+  });
   grid.appendChild(inputs);
 
   // Entry → exit bridge + supporting chart.
@@ -2665,7 +2697,13 @@ function returnsBridgeHTML(c, v, out) {
       ])}
     </tbody></table>
     <table class="ret-bridge-tbl mt-2"><tbody>
-      ${rows([
+      ${rows(out.peMode ? [
+        [`Exit profit / PAT (${esc(v.exitYear)})${hc}`, cr(out.exitPat)],
+        [`× Exit P/E`, v.exitX + '×'],
+        [`Exit equity value`, cr(out.exitEquity), 'sub'],
+        [`× Our stake`, (out.stakePct * 100).toFixed(1) + '%'],
+        [`Our proceeds`, cr(out.proceeds), 'tot hl'],
+      ] : [
         [`Exit EBITDA (${esc(v.exitYear)})${hc}`, cr(out.exitEbitda)],
         [`× Exit multiple`, v.exitX + '×'],
         [`Enterprise value`, cr(out.exitEV)],
@@ -2681,7 +2719,7 @@ function returnsBridgeHTML(c, v, out) {
 function returnsSensiHTML(c, v) {
   const axis = base => [-2, -1, 0, 1, 2].map(s => Math.max(2, Math.round((base + s) * 2) / 2));
   const cols = axis(v.entryX), rows = axis(v.exitX);
-  const head = `<tr><th class="cnr">Exit ╲ Entry</th>${cols.map(x => `<th class="num">${x}×</th>`).join('')}</tr>`;
+  const head = `<tr><th class="cnr">${v.exitBasis === 'pe' ? 'Exit P/E' : 'Exit'} ╲ Entry</th>${cols.map(x => `<th class="num">${x}×</th>`).join('')}</tr>`;
   const body = rows.map(rx => {
     const cells = cols.map(cx => {
       const out = computeReturns(c, { ...v, entryX: cx, exitX: rx });
@@ -2830,6 +2868,8 @@ function maybeAddPeerLive(card, c) {
 
 function recomputeReturns(c, root) {
   const v = readReturns(root);
+  const exLabel = root.querySelector('[data-slabel="exitX"]');   // exit-multiple label depends on the basis
+  if (exLabel) exLabel.textContent = exitSliderLabel(v.exitBasis);
   // Sync each slider's value label (the cheque shows as ₹ cr; others as value + suffix).
   root.querySelectorAll('[data-slider]').forEach(inp => {
     const lab = root.querySelector(`[data-val="${inp.dataset.slider}"]`);

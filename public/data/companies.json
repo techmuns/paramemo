@@ -1969,7 +1969,8 @@
         "exitYear": "FY28E",
         "defaults": {
           "entryX": 18,
-          "exitX": 14,
+          "exitX": 22,
+          "exitBasis": "pe",
           "years": 2,
           "underdeliverPct": 0
         }

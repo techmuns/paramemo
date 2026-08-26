@@ -224,7 +224,7 @@ async function handleGenerate(request, env, ctx) {
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected.\n' +
     '• entryYear = a recent year with MEANINGFUL POSITIVE EBITDA to enter on (the latest actual, or the nearest forward year if the latest actual EBITDA is negligible/negative). startYear = entryYear and startEbitdaCr = that year\'s EBITDA in ₹ cr (positive, matching financials).\n' +
     '• exitYear = the LAST projected year in the model (the end of management\'s forecast horizon) — this is where the exit EBITDA comes from, so the model uses management\'s OWN projection for the exit, not a growth guess. Both entryYear and exitYear MUST be values that appear verbatim in financials.years.\n' +
-    '• defaults = standard PE assumptions, illustrative not extracted: entryX / exitX = entry & exit EV/EBITDA multiples (typically 10–16×, sector-appropriate); growthPct = a plausible EBITDA growth % anchored to the model (kept for reference); years = hold period; underdeliverPct = 0 (the default management-case haircut; the partner raises it to stress-test).\n\n' +
+    '• defaults = standard PE assumptions, illustrative not extracted: entryX = entry EV/EBITDA multiple (typically 10–16×, sector-appropriate); exitBasis = "ebitda" by default, or "pe" when the deal is naturally valued on earnings (consumer/retail/financials — e.g. the peers block benchmarks on P/E); exitX = the exit multiple on that basis (an EV/EBITDA multiple like ~10–16×, or a P/E like ~15–30× when exitBasis is "pe"); growthPct = a plausible EBITDA growth % anchored to the model (kept for reference); years = hold period; underdeliverPct = 0 (the default management-case haircut; the partner raises it to stress-test).\n\n' +
     'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
     'financials you output (same years, same actual-vs-forecast split).';
 
@@ -549,7 +549,8 @@ function coerceReturns(o) {
     exitX:  num(din.exitX)  > 0 ? din.exitX  : 13,
     growthPct: num(din.growthPct) != null ? din.growthPct : 18,
     years:  num(din.years) > 0 ? Math.round(din.years) : 5,
-    underdeliverPct: num(din.underdeliverPct) >= 0 ? din.underdeliverPct : 0,   // management-case haircut on exit EBITDA
+    underdeliverPct: num(din.underdeliverPct) >= 0 ? din.underdeliverPct : 0,   // management-case haircut on exit earnings
+    exitBasis: din.exitBasis === 'pe' ? 'pe' : 'ebitda',   // price the exit on EV/EBITDA (default) or P/E
   };
 
   // start year + starting EBITDA: prefer the model; else pick a year with meaningful positive EBITDA
