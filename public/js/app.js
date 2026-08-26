@@ -1130,10 +1130,15 @@ function frReturns(c) {
     [`Our stake`, (out.stakePct * 100).toFixed(1) + '%'],
     exitLine,
     [`Our proceeds`, cr(out.proceeds)],
-    [`Money multiple (MoIC)`, (out.moneyBack).toFixed(1) + '×'],
-    [`Annual return (IRR)`, Math.round(out.yearlyReturn) + '%'],
   ].map(([k, val]) => `<tr><td>${esc(k)}</td><td class="num">${esc(val)}</td></tr>`).join('');
-  return `<table class="fr-facts">${rows}</table>`;
+  const tiles = `
+    <div class="fr-ret-tiles">
+      <div class="fr-ret-tile hero"><span class="k">Money multiple</span><span class="v">${out.moneyBack > 0 ? out.moneyBack.toFixed(1) + '×' : '—'}</span></div>
+      <div class="fr-ret-tile hero"><span class="k">Annual return (IRR)</span><span class="v">${out.yearlyReturn > -100 ? Math.round(out.yearlyReturn) + '%' : '—'}</span></div>
+      <div class="fr-ret-tile"><span class="k">Hold</span><span class="v">${out.years} yr${out.years === 1 ? '' : 's'}<small> ${esc(v.entryYear)}→${esc(v.exitYear)}</small></span></div>
+      <div class="fr-ret-tile"><span class="k">Our stake</span><span class="v">${(out.stakePct * 100).toFixed(1)}%<small> for ${cr(out.investment)}</small></span></div>
+    </div>`;
+  return `${tiles}<div class="fr-cap">How the money multiple is built (entry priced on EV/EBITDA, exit on ${out.peMode ? 'P/E × projected profit' : 'EV/EBITDA × projected EBITDA'}):</div><table class="fr-facts">${rows}</table>`;
 }
 // Peer comps for the FULL REPORT only (never the memo/Word-replica). Small 3-col
 // table, target highlighted, peer-median line. Empty string when no peers.
@@ -1256,7 +1261,7 @@ function renderFullReport(c) {
         const compsSec = hasComps(c) ? sec(8, 'Peers & comparables', frComps(c))
           : (hasPeers(c) ? sec(8, 'Peers & comparables', frPeerComps(c)) : '');
         const retSec = c.returns ? sec(compsShown ? 9 : 8, 'Illustrative returns',
-          `<div class="fr-cap">Base case from management’s own projections — entry EV bridged to equity via net debt, exit on the projected EBITDA. Illustrative, not a recommendation.</div>${frReturns(c)}`) : '';
+          `<div class="fr-cap">Base case built on management’s own projections — illustrative, not a recommendation.</div>${frReturns(c)}`) : '';
         return compsSec + retSec;
       })()}
 

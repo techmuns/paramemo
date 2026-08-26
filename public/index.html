@@ -970,6 +970,15 @@
     .fr-person { margin-bottom: 6px; } .fr-person b { font-size: 10.5px; } .fr-person span { display: block; font-size: 9.5px; color: #6B7280; } .fr-person .nt { color: #9CA3AF; }
     .fr-facts { width: 100%; border-collapse: collapse; }
     .fr-facts td { padding: 4px 2px; font-size: 10px; border-bottom: 1px solid #EEF1F6; } .fr-facts td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; } .fr-facts td:first-child { color: #6B7280; }
+    /* Full-report returns headline tiles */
+    .fr-ret-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 2px 0 10px; break-inside: avoid; }
+    .fr-ret-tile { border: 1px solid #E7EAF1; border-radius: 8px; padding: 8px 10px; background: #F7F9FC; }
+    .fr-ret-tile.hero { background: linear-gradient(135deg, rgba(12,48,120,.06), rgba(12,48,120,.02)); border-color: #D6DEEF; }
+    .fr-ret-tile .k { display: block; font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: #6B7280; }
+    .fr-ret-tile .v { display: block; font-family: 'Sora', sans-serif; font-weight: 700; font-size: 16px; color: #0C3078; margin-top: 2px; }
+    .fr-ret-tile.hero .v { font-size: 19px; }
+    .fr-ret-tile .v small { font-weight: 500; font-size: 8.5px; color: #9CA3AF; font-family: 'Inter', sans-serif; }
+    .fr-ret-facts { }
     .fr-fitline { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 11px; }
     .fr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .fr-point { margin-bottom: 7px; } .fr-point b { font-size: 10.5px; } .fr-point span { display: block; font-size: 9.5px; color: #4b5563; } .fr-point .mit { color: #6B7280; font-style: italic; }
