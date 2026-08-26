@@ -734,27 +734,18 @@ function initHeader() {
   brand.addEventListener('click', goHome);
   brand.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 
-  // Export dropdown: Full report (comprehensive) or Memo (Paragon's exact format).
+  // Export → the Full report (comprehensive, every tab in one document). This is now a single
+  // one-click action. The Memo replica (renderMemoExact) is kept in the code but no longer offered
+  // in the UI — to bring it back, restore the two-item dropdown menu here and re-wire openEx/closeEx.
   const exportBtn = $('#export-btn');
   exportBtn.classList.remove('is-disabled');
   exportBtn.removeAttribute('data-tip');
   exportBtn.removeAttribute('aria-disabled');
+  exportBtn.removeAttribute('aria-haspopup');
   const exMenu = $('#export-menu');
-  exMenu.innerHTML = `
-    <button class="dd-item ex-item" role="menuitem" type="button" data-export="report">
-      <span class="ex-ic">${icon('fileText', 'w-4 h-4')}</span>
-      <span class="min-w-0"><span class="ex-t">Full report</span><span class="ex-s">Comprehensive, detailed — every tab in one document</span></span>
-    </button>
-    <button class="dd-item ex-item" role="menuitem" type="button" data-export="memo">
-      <span class="ex-ic">${icon('clipboard', 'w-4 h-4')}</span>
-      <span class="min-w-0"><span class="ex-t">Memo</span><span class="ex-s">Paragon's one-page screening-memo format</span></span>
-    </button>`;
-  const openEx = () => { exMenu.classList.remove('hidden'); exportBtn.setAttribute('aria-expanded', 'true'); $('#export-chev').style.transform = 'rotate(180deg)'; };
-  const closeEx = () => { exMenu.classList.add('hidden'); exportBtn.setAttribute('aria-expanded', 'false'); $('#export-chev').style.transform = ''; };
-  exportBtn.addEventListener('click', e => { e.stopPropagation(); exMenu.classList.contains('hidden') ? openEx() : closeEx(); });
-  exMenu.querySelectorAll('[data-export]').forEach(b => b.addEventListener('click', () => { closeEx(); exportPdf(b.dataset.export); }));
-  document.addEventListener('click', e => { if (!e.target.closest('#export-dd')) closeEx(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEx(); });
+  if (exMenu) { exMenu.innerHTML = ''; exMenu.classList.add('hidden'); }   // no dropdown any more
+  const exChev = $('#export-chev'); if (exChev) exChev.style.display = 'none';   // single action → drop the caret
+  exportBtn.addEventListener('click', e => { e.stopPropagation(); exportPdf('report'); });
 }
 
 /* ---- Export ---------------------------------------------------------------
