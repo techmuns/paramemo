@@ -2675,8 +2675,7 @@ function renderReturns(c) {
 
   wrap.appendChild(h('<p class="text-[12px] text-ink-hint">Exit EBITDA is management’s own projection from the Financials tab; the bridge subtracts net debt to get to equity. Illustrative — not a full valuation.</p>'));
 
-  const comps = renderPeerComps(c);   // "How this deal compares" — only if the IM gave peers
-  if (comps) wrap.appendChild(comps);
+  // Peers/comparables live on their own Comps tab now — not duplicated here.
 
   wrap.querySelectorAll('[data-ret]').forEach(inp => {
     const ev = inp.tagName === 'SELECT' ? 'change' : 'input';
@@ -2755,43 +2754,42 @@ function renderPeerComps(c) {
   const p = c.peers;
   if (!p || !Array.isArray(p.rows) || !p.rows.length) return null;
   const unit = p.unit || '';
-  const fmtVal = v => v == null ? '—' : (unit === '%' ? v + '%' : v + (unit || ''));
   const peerVals = p.rows.map(r => r.value).filter(v => v != null && !isNaN(v));
-  const median = peerMedian(peerVals);
-  const maxV = Math.max(1, ...[p.self && p.self.value, ...peerVals].filter(v => v != null).map(Math.abs));
+  const hasNumbers = peerVals.length > 0 || (p.self && p.self.value != null);   // a real comparable metric?
   const tag = listed => `<span class="peer-tag ${listed ? 'lst' : 'prv'}">${listed ? 'Listed' : 'Private'}</span>`;
-  const bar = v => v == null ? '' : `<div class="peer-bar"><span style="width:${Math.max(5, Math.round(Math.abs(v) / maxV * 100))}%"></span></div>`;
 
-  const selfRow = (p.self && p.self.name) ? `<tr class="peer-self">
-      <td>${esc(p.self.name)} <span class="peer-you">the deal</span></td>
-      <td>${tag(!!p.self.listed)}</td>
-      <td class="num">${fmtVal(p.self.value)}</td><td class="barcell">${bar(p.self.value)}</td></tr>` : '';
-  const rows = p.rows.map(r => `<tr>
-      <td>${esc(r.name)}${r.note ? `<span class="peer-note">${esc(r.note)}</span>` : ''}</td>
-      <td>${tag(!!r.listed)}${r.ticker ? ` <span class="peer-tick">${esc(r.ticker)}</span>` : ''}</td>
-      <td class="num">${fmtVal(r.value)}</td><td class="barcell">${bar(r.value)}</td></tr>`).join('');
-  const medRow = median != null ? `<tr class="peer-med"><td>Peer median</td><td></td><td class="num">${fmtVal(median)}</td><td></td></tr>` : '';
-
-  let vline = '';
-  if (median != null && (p.metric === 'P/E' || p.metric === 'EV/EBITDA')) {
-    vline = `Peer median ${esc(p.metric)} ≈ ${fmtVal(median)}.`;
-    if (p.metric === 'EV/EBITDA' && c.returns && c.returns.defaults) vline += ` Your entry assumption is ${c.returns.defaults.entryX}× EBITDA — ${c.returns.defaults.entryX <= median ? 'at or below' : 'above'} the peer median.`;
+  let tableHtml, vline = '', footHint;
+  if (hasNumbers) {
+    const fmtVal = v => v == null ? '—' : (unit === '%' ? v + '%' : v + (unit || ''));
+    const median = peerMedian(peerVals);
+    const maxV = Math.max(1, ...[p.self && p.self.value, ...peerVals].filter(v => v != null).map(Math.abs));
+    const bar = v => v == null ? '' : `<div class="peer-bar"><span style="width:${Math.max(5, Math.round(Math.abs(v) / maxV * 100))}%"></span></div>`;
+    const selfRow = (p.self && p.self.name) ? `<tr class="peer-self"><td>${esc(p.self.name)} <span class="peer-you">the deal</span></td><td>${tag(!!p.self.listed)}</td><td class="num">${fmtVal(p.self.value)}</td><td class="barcell">${bar(p.self.value)}</td></tr>` : '';
+    const rows = p.rows.map(r => `<tr><td>${esc(r.name)}${r.note ? `<span class="peer-note">${esc(r.note)}</span>` : ''}</td><td>${tag(!!r.listed)}${r.ticker ? ` <span class="peer-tick">${esc(r.ticker)}</span>` : ''}</td><td class="num">${fmtVal(r.value)}</td><td class="barcell">${bar(r.value)}</td></tr>`).join('');
+    const medRow = median != null ? `<tr class="peer-med"><td>Peer median</td><td></td><td class="num">${fmtVal(median)}</td><td></td></tr>` : '';
+    const metricHdr = esc(p.metric || '') + (unit === 'x' ? ' (×)' : unit === '%' ? ' (%)' : '');
+    if (median != null && (p.metric === 'P/E' || p.metric === 'EV/EBITDA')) {
+      vline = `Peer median ${esc(p.metric)} ≈ ${fmtVal(median)}.`;
+      if (p.metric === 'EV/EBITDA' && c.returns && c.returns.defaults) vline += ` Your entry assumption is ${c.returns.defaults.entryX}× EBITDA — ${c.returns.defaults.entryX <= median ? 'at or below' : 'above'} the peer median.`;
+    }
+    tableHtml = `<table class="peer-tbl"><thead><tr><th>Company</th><th>Type</th><th class="num">${metricHdr}</th><th class="barhd"></th></tr></thead><tbody>${selfRow}${rows}${medRow}</tbody></table>`;
+    footHint = "Indicative — drawn from the IM's benchmarking; blank where the documents give no figure.";
+  } else {
+    // No comparable numbers in the documents — show names + positioning, not an empty metric column.
+    const selfRow = (p.self && p.self.name) ? `<tr class="peer-self"><td>${esc(p.self.name)} <span class="peer-you">the deal</span></td><td>${tag(!!p.self.listed)}</td><td class="peer-pos">—</td></tr>` : '';
+    const rows = p.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${tag(!!r.listed)}${r.ticker ? ` <span class="peer-tick">${esc(r.ticker)}</span>` : ''}</td><td class="peer-pos">${r.note ? esc(r.note) : '—'}</td></tr>`).join('');
+    tableHtml = `<table class="peer-tbl"><thead><tr><th>Company</th><th>Type</th><th>Positioning</th></tr></thead><tbody>${selfRow}${rows}</tbody></table>`;
+    footHint = 'Peers and positioning named in the documents. The documents give no comparable financials for these peers; listed names can still pull live below.';
   }
-  const metricHdr = esc(p.metric) + (unit === 'x' ? ' (×)' : unit === '%' ? ' (%)' : '');
 
   const card = h(`
     <div class="surface-card p-5">
       <div class="section-title"><span class="sec-ico">${icon('scale', 'w-4 h-4')}</span>How this deal compares</div>
       ${p.note ? `<p class="text-[12.5px] text-ink-muted mb-3 leading-relaxed">${esc(p.note)}</p>` : ''}
-      <div class="peer-scroll">
-        <table class="peer-tbl">
-          <thead><tr><th>Company</th><th>Type</th><th class="num">${metricHdr}</th><th class="barhd"></th></tr></thead>
-          <tbody>${selfRow}${rows}${medRow}</tbody>
-        </table>
-      </div>
+      <div class="peer-scroll">${tableHtml}</div>
       ${vline ? `<p class="text-[12.5px] text-ink-muted mt-3">${vline}</p>` : ''}
       <div data-peer-live class="mt-3"></div>
-      <p class="text-[11px] text-ink-hint mt-2">Indicative — drawn from the IM's benchmarking; blank where the documents give no figure.</p>
+      <p class="text-[11px] text-ink-hint mt-2">${footHint}</p>
     </div>`);
   maybeAddPeerLive(card, c);
   return card;
