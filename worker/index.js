@@ -17,6 +17,14 @@ class ApiError extends Error {
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8' } });
 
+// Resolve a secret/var tolerantly: exact name first, then a case-insensitive match on the env keys
+// (Cloudflare binding names are case-sensitive, so "Munshot_Token" would otherwise miss "MUNSHOT_TOKEN").
+function pickSecret(env, name) {
+  if (env && env[name] != null && String(env[name]).trim()) return String(env[name]).trim();
+  if (env) { const lower = name.toLowerCase(); for (const k of Object.keys(env)) if (k.toLowerCase() === lower && env[k] != null && String(env[k]).trim()) return String(env[k]).trim(); }
+  return '';
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -52,7 +60,7 @@ async function handleCompanies(env) {
   // a best-effort direct screener.in fetch otherwise), so the "listed peers · live"
   // panel is offered wherever a deal has listed tickers. `peerLiveProxy` tells the UI
   // whether the reliable proxy path is configured.
-  const peerLiveProxy = !!(env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim());
+  const peerLiveProxy = !!pickSecret(env, 'SCRAPEDO_API_KEY');
   const peerLiveEnabled = true;
   if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy });   // KV not bound yet → no uploads
   const index = await readIndex(env);
@@ -72,7 +80,7 @@ async function handlePeerMultiple(request, env) {
   const ticker = (new URL(request.url).searchParams.get('ticker') || '').trim().toUpperCase();
   if (!/^[A-Z0-9&.-]{1,20}$/.test(ticker)) return json({});
 
-  const key = env.SCRAPEDO_API_KEY && env.SCRAPEDO_API_KEY.trim();
+  const key = pickSecret(env, 'SCRAPEDO_API_KEY');
   const target = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
   const fetchUrl = key
     ? `https://api.scrape.do/?token=${encodeURIComponent(key)}&url=${encodeURIComponent(target)}`
@@ -83,7 +91,7 @@ async function handlePeerMultiple(request, env) {
       signal: AbortSignal.timeout(12000),
       headers: key ? {} : { 'user-agent': 'Mozilla/5.0 (compatible; ParagonScreening/1.0)', 'accept': 'text/html' },
     });
-    if (!res.ok) return json({ ticker, ok: false });
+    if (!res.ok) return json({ ticker, ok: false, via: key ? 'scrape.do' : 'direct', status: res.status, detail: (await res.text().catch(() => '')).slice(0, 160) });
     const html = await res.text();
 
     // screener.in renders each top ratio as a "<span class=name>LABEL</span> … <span class=number>N</span>" pair.
@@ -103,8 +111,8 @@ async function handlePeerMultiple(request, env) {
     if (roce != null) out.roce = roce;
     if (roe != null) out.roe = roe;
     return json(out);
-  } catch (_) {
-    return json({ ticker, ok: false });
+  } catch (e) {
+    return json({ ticker, ok: false, via: key ? 'scrape.do' : 'direct', error: (e && e.message) || 'fetch failed' });
   }
 }
 
@@ -647,15 +655,15 @@ function govDdgUrl(href) { const m = href.match(/[?&]uddg=([^&]+)/); if (m) { tr
 // Web/news search — Munshot (Brave-backed) when MUNSHOT_TOKEN is set, else a keyless
 // best-effort (often blocked from servers, in which case it returns []). [{title,url,snippet}]
 async function govSearch(query, env, kind = 'web') {
-  const token = env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim();
+  const token = pickSecret(env, 'MUNSHOT_TOKEN');
   if (token) {
     const url = kind === 'news'
-      ? (env.MUNSHOT_NEWS_URL || 'https://fastapi.muns.io/tools/news-search')
-      : (env.MUNSHOT_SEARCH_URL || 'https://fastapi.muns.io/tools/web-search');
+      ? (pickSecret(env, 'MUNSHOT_NEWS_URL') || 'https://fastapi.muns.io/tools/news-search')
+      : (pickSecret(env, 'MUNSHOT_SEARCH_URL') || 'https://fastapi.muns.io/tools/web-search');
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', accept: 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ query, country: env.MUNSHOT_COUNTRY || 'IN' }),
+      body: JSON.stringify({ query, country: pickSecret(env, 'MUNSHOT_COUNTRY') || 'IN' }),
       signal: AbortSignal.timeout(9000),
     });
     if (!res.ok) throw new Error(`search ${res.status}`);
@@ -689,7 +697,7 @@ function govParseRows(data) {
 
 // Court cases via Munshot site:indiankanoon.org (token) or public best-effort. [{title,url}]
 async function govCourt(entity, env) {
-  if (env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim()) {
+  if (pickSecret(env, 'MUNSHOT_TOKEN')) {
     const rows = await govSearch(`site:indiankanoon.org "${entity}"`, env, 'web').catch(() => []);
     return rows.filter(r => /indiankanoon\.org\/doc\//.test(r.url || '')).slice(0, 5);
   }
@@ -720,7 +728,7 @@ async function runGovernance(company, env) {
 
   // Without a search token the server-side sweep isn't reliable (keyless engines are blocked from
   // datacenter IPs), so mark both checks honestly as "to be run" rather than risk a false "clear".
-  if (!(env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim())) {
+  if (!(pickSecret(env, 'MUNSHOT_TOKEN'))) {
     upsertIntegrity(company.integrity, ['google'], { area: 'Google Search', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable web search.' });
     upsertIntegrity(company.integrity, ['legal', 'court', 'mca', 'kanoon'], { area: 'Legal / Court cases', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable court-case search.' });
     return;
