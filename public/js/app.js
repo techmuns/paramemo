@@ -1317,7 +1317,7 @@ function printChecklist(c) {
 function printIntegrity(c) {
   return (c.integrity || []).map(it => {
     const st = INTEG_STATUS[it.status] || INTEG_STATUS.pending;
-    const mk = it.status === 'clear' ? '✓' : it.status === 'flag' ? '⚠' : '○';
+    const mk = it.status === 'clear' ? '✓' : (it.status === 'flag' || it.status === 'risk') ? '⚠' : '○';
     return `<div class="pm-check"><span class="mk" style="color:${st.color}">${mk}</span><span><b>${esc(it.area)}</b><span class="nt">${esc(it.finding)}</span></span></div>`;
   }).join('');
 }
@@ -2152,9 +2152,10 @@ function renderFit(c) {
 
 /* ---- 7e. Integrity tab ("any red flags?") ---- */
 const INTEG_STATUS = {
-  clear:   { color: '#10B981', icon: 'check',  label: 'Clear'   },
-  flag:    { color: '#F59E0B', icon: 'alert',  label: 'Flag'    },
-  pending: { color: '#9CA3AF', icon: 'circle', label: 'Pending' },
+  clear:   { color: '#10B981', icon: 'check',  label: 'Clear'    },
+  flag:    { color: '#F59E0B', icon: 'alert',  label: 'Flag'     },
+  risk:    { color: '#E11D48', icon: 'alert',  label: 'Red flag' },
+  pending: { color: '#9CA3AF', icon: 'circle', label: 'Pending'  },
 };
 function integrityIcon(area) {
   const a = String(area).toLowerCase();
@@ -2169,11 +2170,13 @@ function integrityIcon(area) {
 function renderIntegrity(c) {
   const items = c.integrity || [];
   const clear = items.filter(x => x.status === 'clear').length;
-  const toCheck = items.length - clear;
+  const risk = items.filter(x => x.status === 'risk').length;
+  const toCheck = items.length - clear - risk;
   const wrap = h('<div class="space-y-5"></div>');
 
   wrap.appendChild(h(`
     <div class="surface-card px-5 py-3.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+      ${risk ? `<span class="inline-flex items-center gap-2"><span class="dot-sm" style="background:#E11D48"></span><b class="text-ink font-semibold">${risk} red flag${risk === 1 ? '' : 's'}</b></span><span class="text-ink-hint">·</span>` : ''}
       <span class="inline-flex items-center gap-2"><span class="dot-sm" style="background:${POS}"></span><b class="text-ink font-semibold">${clear} clear</b></span>
       <span class="text-ink-hint">·</span>
       <span class="inline-flex items-center gap-2"><span class="dot-sm" style="background:#F59E0B"></span><b class="text-ink font-semibold">${toCheck} to check</b></span>
@@ -2183,12 +2186,17 @@ function renderIntegrity(c) {
   const card = h('<div class="surface-card p-2.5"></div>');
   items.forEach(it => {
     const st = INTEG_STATUS[it.status] || INTEG_STATUS.pending;
+    const links = Array.isArray(it.links) ? it.links.filter(l => l && l.url).slice(0, 4) : [];
+    const linksHtml = links.length
+      ? `<div class="integ-links">${links.map(l => `<a class="integ-link" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer"><span>${esc(l.label || l.url)}</span></a>`).join('')}</div>`
+      : '';
     card.appendChild(h(`
       <div class="integ-row">
         <span class="integ-area-ico">${icon(integrityIcon(it.area), 'w-4 h-4')}</span>
         <div class="integ-body">
           <div class="integ-area">${esc(it.area)}</div>
           <div class="integ-find">${esc(it.finding)}</div>
+          ${linksHtml}
         </div>
         <span class="integ-badge" style="color:${st.color};background:${tint(st.color, .12)}">${icon(st.icon, 'w-3.5 h-3.5', 2.6)}${st.label}</span>
       </div>`));

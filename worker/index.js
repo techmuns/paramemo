@@ -276,6 +276,9 @@ async function generateCompany({ system, user, imPages, basics, env }) {
   company.generatedBy = ans.model;                          // which Bedrock model actually answered
   company.generatedAt = new Date().toISOString().slice(0, 10);
 
+  // Governance sweep (web + court cases) fills the Integrity checks. Best-effort: never block the memo.
+  try { await runGovernance(company, env); } catch (e) { console.error('governance sweep skipped:', e && e.message); }
+
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
@@ -624,6 +627,130 @@ function coerceComps(k) {
     if (tx.rows.length) out.transactions = tx;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/* ------------------------------------------------------------------ *
+ * GOVERNANCE SWEEP — the pre-meeting red-flag checks that fill the Integrity tab.
+ * A Worker-safe subset of the GCheck research agent: a web/news sweep (adverse press +
+ * red-flag keywords) and a court-case lookup (Indian Kanoon), run on the company and its
+ * promoters. PrivateCircle/CIBIL need a browser login (impossible in a Worker) and stay on
+ * the uploaded-Private-Circle-report path. Best-effort: any failure leaves the model's
+ * integrity finding untouched, and the memo never blocks on this.
+ * ------------------------------------------------------------------ */
+const GOV_KEYWORDS = ['lawsuit', 'legal', 'court', 'criminal', 'civil', 'cbi', 'eow', 'fraud', 'default', 'defaulter', 'wilful', 'police'];
+const GOV_HARD_RED = ['fraud', 'wilful', 'defaulter', 'cbi', 'criminal', 'eow'];   // serious → red, else amber
+const SEV_TO_STATUS = { red: 'risk', amber: 'flag', clear: 'clear', info: 'pending' };
+const govMatched = text => { const t = String(text || '').toLowerCase(); return GOV_KEYWORDS.filter(k => t.includes(k)); };
+const govStripTags = s => String(s).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+function govDdgUrl(href) { const m = href.match(/[?&]uddg=([^&]+)/); if (m) { try { return decodeURIComponent(m[1]); } catch { return href; } } return href.startsWith('//') ? 'https:' + href : href; }
+
+// Web/news search — Munshot (Brave-backed) when MUNSHOT_TOKEN is set, else a keyless
+// best-effort (often blocked from servers, in which case it returns []). [{title,url,snippet}]
+async function govSearch(query, env, kind = 'web') {
+  const token = env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim();
+  if (token) {
+    const url = kind === 'news'
+      ? (env.MUNSHOT_NEWS_URL || 'https://fastapi.muns.io/tools/news-search')
+      : (env.MUNSHOT_SEARCH_URL || 'https://fastapi.muns.io/tools/web-search');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ query, country: env.MUNSHOT_COUNTRY || 'IN' }),
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!res.ok) throw new Error(`search ${res.status}`);
+    return govParseRows(await res.json());
+  }
+  const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+    headers: { 'user-agent': 'Mozilla/5.0 (compatible; ParagonScreening/1.0)', accept: 'text/html' },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!res.ok) throw new Error(`ddg ${res.status}`);
+  const html = await res.text();
+  const out = []; const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g; let m;
+  while ((m = re.exec(html)) && out.length < 8) out.push({ title: govStripTags(m[2]), url: govDdgUrl(m[1]) });
+  return out;
+}
+function govParseRows(data) {
+  let rows = [];
+  if (Array.isArray(data)) rows = data;
+  else if (isObj(data)) {
+    if (data.data !== undefined) return govParseRows(data.data);
+    if (isObj(data.web) && Array.isArray(data.web.results)) rows = data.web.results;
+    else if (Array.isArray(data.results)) rows = data.results;
+    else if (Array.isArray(data.web_results)) rows = data.web_results;
+  }
+  return rows.map(r => {
+    const o = isObj(r) ? r : {};
+    const snip = o.description || o.snippet || o.text || o.desc;
+    return { title: govStripTags(String(o.title || o.name || '')), url: (o.url || o.link || o.href) ? String(o.url || o.link || o.href) : undefined, snippet: snip ? govStripTags(String(snip)) : undefined };
+  }).filter(r => r.title || r.url);
+}
+
+// Court cases via Munshot site:indiankanoon.org (token) or public best-effort. [{title,url}]
+async function govCourt(entity, env) {
+  if (env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim()) {
+    const rows = await govSearch(`site:indiankanoon.org "${entity}"`, env, 'web').catch(() => []);
+    return rows.filter(r => /indiankanoon\.org\/doc\//.test(r.url || '')).slice(0, 5);
+  }
+  try {
+    const res = await fetch(`https://indiankanoon.org/search/?formInput=${encodeURIComponent(entity)}`, {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; ParagonScreening/1.0)' }, signal: AbortSignal.timeout(9000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text(); const out = []; const re = /<div class="result_title">\s*<a href="(\/doc\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/g; let m;
+    while ((m = re.exec(html)) && out.length < 5) out.push({ title: govStripTags(m[2]), url: 'https://indiankanoon.org' + m[1] });
+    return out;
+  } catch { return []; }
+}
+
+// Replace the first integrity row whose area name matches a keyword, else append.
+function upsertIntegrity(arr, keys, item) {
+  const i = arr.findIndex(x => x && typeof x.area === 'string' && keys.some(k => x.area.toLowerCase().includes(k)));
+  if (i >= 0) arr[i] = { ...arr[i], ...item }; else arr.push(item);
+}
+
+// Run the sweep on the company + up to 2 promoters and merge findings into company.integrity.
+async function runGovernance(company, env) {
+  const promoters = (isObj(company.snapshot) && Array.isArray(company.snapshot.promoters) ? company.snapshot.promoters : [])
+    .map(p => isObj(p) ? p.name : null);
+  const entities = [company.name, ...promoters].map(s => String(s || '').trim()).filter(Boolean).slice(0, 3);
+  if (!entities.length) return;
+  const kwClause = '(' + GOV_KEYWORDS.join(' OR ') + ')';
+
+  // Web sweep — one keyword query per entity (concurrent, best-effort).
+  const web = await Promise.allSettled(entities.map(e => govSearch(`"${e}" ${kwClause}`, env)));
+  const flagged = [];
+  web.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    for (const hit of r.value.slice(0, 8)) {
+      const matched = govMatched(`${hit.title} ${hit.snippet || ''}`);
+      if (matched.length) flagged.push({ entity: entities[i], title: hit.title, url: hit.url, matched });
+    }
+  });
+  const webRan = web.some(r => r.status === 'fulfilled');
+
+  // Court cases — company + promoters.
+  const court = await Promise.allSettled(entities.map(e => govCourt(e, env)));
+  const cases = [];
+  court.forEach((r, i) => { if (r.status === 'fulfilled') for (const c of r.value) cases.push({ entity: entities[i], title: c.title, url: c.url }); });
+  const courtRan = court.some(r => r.status === 'fulfilled');
+
+  if (!Array.isArray(company.integrity)) company.integrity = [];
+  const allMatched = [...new Set(flagged.flatMap(f => f.matched))];
+  const webSev = flagged.some(f => f.matched.some(k => GOV_HARD_RED.includes(k))) ? 'red' : flagged.length ? 'amber' : 'clear';
+
+  upsertIntegrity(company.integrity, ['google'], webRan
+    ? { area: 'Google Search', status: SEV_TO_STATUS[webSev],
+        finding: flagged.length ? `${flagged.length} concerning result(s) — matched: ${allMatched.join(', ')}.` : 'No adverse coverage or red-flag keywords found.',
+        links: flagged.slice(0, 4).map(f => ({ label: f.title, url: f.url })).filter(l => l.url) }
+    : { area: 'Google Search', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable web search.' });
+
+  upsertIntegrity(company.integrity, ['legal', 'court', 'mca', 'kanoon'], courtRan
+    ? { area: 'Legal / Court cases', status: cases.length ? 'flag' : 'clear',
+        finding: cases.length ? `${cases.length} litigation record(s) surfaced on Indian Kanoon — review before the meeting.` : 'No litigation records surfaced on Indian Kanoon.',
+        links: cases.slice(0, 4).map(c => ({ label: c.title, url: c.url })).filter(l => l.url) }
+    : { area: 'Legal / Court cases', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable court-case search.' });
 }
 
 function slugify(s) {

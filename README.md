@@ -118,6 +118,19 @@ a [scrape.do](https://scrape.do) token for reliable results:
 npx wrangler secret put SCRAPEDO_API_KEY   # optional — reliable live peer data
 ```
 
+**Optional governance sweep** — when a memo is generated, the **Integrity** tab's
+*Google Search* and *Court cases* checks are filled by a live red-flag sweep over
+the company and its promoters (adverse press + keywords like fraud / CBI / wilful
+default, and Indian Kanoon litigation). It runs best-effort and never blocks the
+memo; set a **Munshot search token** so it works reliably from the server (without
+it, the keyless fallback is usually blocked and those two checks say "to be run").
+*Private Circle / CIBIL / Rating* are filled separately from an uploaded Private
+Circle report — those portals need a browser login and aren't swept server-side.
+
+```bash
+npx wrangler secret put MUNSHOT_TOKEN      # optional — reliable governance web/court search
+```
+
 ### 4 · Deploy
 
 ```bash
