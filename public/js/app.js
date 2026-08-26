@@ -487,6 +487,8 @@ async function runJob(job, payload) {
       const nm = xf.name || 'document';
       try {
         if (/pdf$/i.test(nm) || (xf.type || '').includes('pdf')) imText += `\n\n===== Additional document: ${nm} =====\n` + await extractPdfText(xf, 40000);
+        else if (/\.eml$/i.test(nm) || (xf.type || '').includes('rfc822')) imText += `\n\n===== Additional email: ${nm} =====\n` + await extractEmlText(xf, 40000);
+        else if (/\.msg$/i.test(nm) || (xf.type || '').includes('outlook')) imText += `\n\n===== Additional email: ${nm} =====\n` + await extractMsgText(xf, 40000);
         else if (/\.docx$/i.test(nm) || /wordprocessingml/.test(xf.type || '')) imText += `\n\n===== Additional Word document: ${nm} =====\n` + await extractDocxText(xf);
         else if (/\.(xlsx|xls)$/i.test(nm)) { const r = await parseExcel(xf); imText += `\n\n===== Additional spreadsheet: ${nm} =====\n` + (r.excelText || ''); }
         else if (/\.(txt|md|csv|json)$/i.test(nm) || (xf.type || '').startsWith('text')) imText += `\n\n===== Additional notes: ${nm} =====\n` + (await xf.text()).slice(0, 40000);
@@ -505,10 +507,12 @@ async function runJob(job, payload) {
 
     let notesText = '';
     if (payload.files.notes) {
-      const n = payload.files.notes;
+      const n = payload.files.notes, nn = n.name || '', nt = n.type || '';
       try {
-        notesText = /pdf$/i.test(n.name) || (n.type || '').includes('pdf')
-          ? await extractPdfText(n, 20000) : (await n.text()).slice(0, 20000);
+        if (/\.eml$/i.test(nn) || nt.includes('rfc822'))          notesText = await extractEmlText(n, 20000);
+        else if (/\.msg$/i.test(nn) || nt.includes('outlook'))    notesText = await extractMsgText(n, 20000);
+        else if (/pdf$/i.test(nn) || nt.includes('pdf'))          notesText = await extractPdfText(n, 20000);
+        else                                                      notesText = (await n.text()).slice(0, 20000);
       } catch { notesText = ''; }   // banker notes are optional — never fail the memo over them
     }
 
@@ -3184,6 +3188,101 @@ async function extractDocxText(file, cap = 60000) {
       .replace(/\n{3,}/g, '\n\n').trim().slice(0, cap);
   } catch (_) { return ''; }
 }
+
+/* ---- Email → plain text (so banker notes can be dropped as-is, no converting) --------------
+ * .eml is parsed here in pure JS (headers + body, multipart, quoted-printable / base64, html→text).
+ * .msg is Outlook's OLE/compound format — read via SheetJS's bundled CFB reader (already loaded for
+ * Excel), pulling the subject/sender/body property streams. Both are best-effort: any failure
+ * returns '' so a stray email never blocks the memo. */
+function emlHeaders(block) {
+  const out = {}; let key = null;
+  for (const line of block.split('\n')) {
+    if (/^\s/.test(line) && key) { out[key] += ' ' + line.trim(); continue; }   // folded continuation
+    const m = line.match(/^([!-9;-~]+):\s?(.*)$/);
+    if (m) { key = m[1].toLowerCase(); out[key] = m[2]; }
+  }
+  return out;
+}
+function qpDecode(s) {
+  s = s.replace(/=\r?\n/g, '');
+  const bytes = [];
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '=' && /^[0-9A-Fa-f]{2}$/.test(s.substr(i + 1, 2))) { bytes.push(parseInt(s.substr(i + 1, 2), 16)); i += 2; }
+    else bytes.push(s.charCodeAt(i) & 0xff);
+  }
+  try { return new TextDecoder('utf-8').decode(new Uint8Array(bytes)); } catch { return s; }
+}
+function b64ToUtf8(s) {
+  try { const bin = atob(s.replace(/\s+/g, '')); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new TextDecoder('utf-8').decode(u); }
+  catch { return ''; }
+}
+function htmlToText(html) {
+  return String(html).replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function decodeMimeWords(s) {
+  return String(s).replace(/=\?[^?]+\?([BbQq])\?([^?]*)\?=/g, (_, enc, txt) =>
+    /b/i.test(enc) ? b64ToUtf8(txt) : txt.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))).trim();
+}
+function emlDecodeBody(body, cte, ctype) {
+  const e = (cte || '').toLowerCase();
+  let b = e.includes('quoted-printable') ? qpDecode(body) : e.includes('base64') ? b64ToUtf8(body) : body;
+  return /text\/html/i.test(ctype) ? htmlToText(b) : b.trim();
+}
+function emlMultipart(body, boundary, depth) {
+  if (depth > 4) return '';
+  const parts = body.split(new RegExp('--' + boundary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:--)?[ \\t]*\\n')).slice(1);
+  let plain = '', html = '';
+  for (const part of parts) {
+    const sep = part.indexOf('\n\n');
+    if (sep < 0) continue;
+    const h = emlHeaders(part.slice(0, sep));
+    const pct = h['content-type'] || '';
+    if (/multipart\//i.test(pct)) { const bm = pct.match(/boundary="?([^";]+)"?/i); if (bm) { const inner = emlMultipart(part.slice(sep + 2), bm[1], depth + 1); if (inner) return inner; } continue; }
+    if (/attachment/i.test(h['content-disposition'] || '')) continue;
+    const decoded = emlDecodeBody(part.slice(sep + 2), h['content-transfer-encoding'], pct);
+    if (/text\/plain/i.test(pct) && !plain) plain = decoded;
+    else if (/text\/html/i.test(pct) && !html) html = decoded;
+  }
+  return plain || html;
+}
+async function extractEmlText(file, cap = 40000) {
+  try {
+    const text = (await file.text()).replace(/\r\n/g, '\n');
+    const sep = text.indexOf('\n\n');
+    const headers = emlHeaders(sep >= 0 ? text.slice(0, sep) : text);
+    const body = sep >= 0 ? text.slice(sep + 2) : '';
+    const ctype = headers['content-type'] || '';
+    const bm = ctype.match(/boundary="?([^";]+)"?/i);
+    const plain = (/multipart\//i.test(ctype) && bm) ? emlMultipart(body, bm[1], 0) : emlDecodeBody(body, headers['content-transfer-encoding'], ctype);
+    const head = [];
+    for (const k of ['subject', 'from', 'to', 'date']) if (headers[k]) head.push(k[0].toUpperCase() + k.slice(1) + ': ' + decodeMimeWords(headers[k]));
+    return (head.join('\n') + (head.length ? '\n\n' : '') + plain).replace(/\n{3,}/g, '\n\n').trim().slice(0, cap);
+  } catch (_) { return ''; }
+}
+async function extractMsgText(file, cap = 40000) {
+  try {
+    if (!window.XLSX || !window.XLSX.CFB) return '';                 // SheetJS (loaded for Excel) bundles the CFB reader
+    const cfb = window.XLSX.CFB.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+    const streamEndingWith = suffix => {
+      const e = (cfb.FileIndex || []).find(fi => fi && typeof fi.name === 'string' && fi.name.toLowerCase().endsWith(suffix.toLowerCase()));
+      return e && e.content ? new Uint8Array(e.content) : null;
+    };
+    const u16 = b => b ? new TextDecoder('utf-16le').decode(b).replace(/ +$/, '').trim() : '';
+    const a8  = b => b ? new TextDecoder('windows-1252').decode(b).replace(/ +$/, '').trim() : '';
+    // MAPI property tags: body 0x1000, subject 0x0037, sender name 0x0C1A; suffix 001F=unicode, 001E=ascii, 0102=binary.
+    let body = u16(streamEndingWith('__substg1.0_1000001F')) || a8(streamEndingWith('__substg1.0_1000001E'));
+    if (!body) { const html = a8(streamEndingWith('__substg1.0_10130102')); if (html) body = htmlToText(html); }
+    const subject = u16(streamEndingWith('__substg1.0_0037001F')) || a8(streamEndingWith('__substg1.0_0037001E'));
+    const from = u16(streamEndingWith('__substg1.0_0C1A001F')) || a8(streamEndingWith('__substg1.0_0C1A001E'));
+    const head = [];
+    if (subject) head.push('Subject: ' + subject);
+    if (from) head.push('From: ' + from);
+    return (head.join('\n') + (head.length ? '\n\n' : '') + body).replace(/\n{3,}/g, '\n\n').trim().slice(0, cap);
+  } catch (_) { return ''; }
+}
 // ---- Vision: render document pages to JPEGs the model can read (logos, org charts, tables) ----
 // Each page is rendered near Claude's vision sweet spot (~1540px long edge → ~1.15MP after the
 // API's own downscale). Bedrock caps images per request, so a long doc — or several docs — is
@@ -3340,8 +3439,8 @@ function openAddDealModal() {
   const inputs = h(`<div style="display:none">
     <input type="file" data-file="im" accept="application/pdf,.pdf">
     <input type="file" data-file="excel" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-    <input type="file" data-file="notes" accept="application/pdf,.pdf,.txt,.md,text/plain">
-    <input type="file" data-file="extra" multiple accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xlsx,.xls,.txt,.md,.csv,.json,text/plain,image/*">
+    <input type="file" data-file="notes" accept="application/pdf,.pdf,.txt,.md,text/plain,.eml,.msg,message/rfc822,application/vnd.ms-outlook">
+    <input type="file" data-file="extra" multiple accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.xlsx,.xls,.txt,.md,.csv,.json,text/plain,image/*,.eml,.msg,message/rfc822,application/vnd.ms-outlook">
   </div>`);
   overlay.appendChild(inputs);
   const fileInput = k => inputs.querySelector(`[data-file="${k}"]`);
@@ -3371,7 +3470,7 @@ function openAddDealModal() {
         <span class="uz-ico">${icon(n ? 'check' : 'plus', 'w-4 h-4', n ? 3 : 2)}</span>
         <span class="uz-body">
           <span class="uz-title">Other documents <span class="text-ink-hint font-normal">(optional)</span></span>
-          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Extra IMs, term sheets, decks, images — and a Private Circle export (fills the Integrity checks)'}</span>
+          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Extra IMs, term sheets, decks, emails, images — and a Private Circle export (fills the Integrity checks)'}</span>
         </span>
       </button>${chips}`;
   }
@@ -3382,7 +3481,7 @@ function openAddDealModal() {
       <div class="space-y-2.5">
         ${dropzone('im', 'Information Memorandum · PDF', 'Click to choose the IM (PDF)', true)}
         ${dropzone('excel', 'Financial model · Excel', 'Click to choose the model (.xlsx)', true)}
-        ${dropzone('notes', 'Banker notes', 'Click to add notes (PDF or text)', false)}
+        ${dropzone('notes', 'Banker notes', 'Click to add notes — PDF, email (.eml/.msg) or text', false)}
         ${extraZone()}
       </div>
       <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
