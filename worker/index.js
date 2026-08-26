@@ -187,7 +187,7 @@ async function handleGenerate(request, env, ctx) {
     '• financials.rows — populate each metric the model contains, as an array aligned to financials.years (null where blank): ' +
     'revenue, growthPct (YoY revenue growth %), grossMarginPct, ebitda, ebitdaPct, pat, patPct, capex, operatingCashflow (post working-capital), fcf (operating cash flow less capex), roePct, rocePct, nwcDays (net working-capital days), cash, netWorth, debt. ' +
     'All percentages are plain numbers (27 means 27%), not fractions. Negative values are allowed (losses, cash outflows).\n' +
-    '• BALANCE SHEET — if the model has a balance sheet, DO fill it in: cash, netWorth (total shareholders\' equity / net worth) and debt (short-term borrowings + long-term borrowings, added together) for every year, and compute roePct (PAT ÷ net worth × 100) and rocePct where the inputs exist. Do not leave these blank when a balance sheet is present in the model.\n' +
+    '• BALANCE SHEET — if the model has a balance sheet (often on a separate sheet named "BS" / "Balance Sheet"), DO fill it in: cash (cash & bank balances), netWorth (total shareholders\' equity / net worth) and debt (short-term borrowings + long-term borrowings, added together) for every year, and compute roePct (PAT ÷ net worth × 100) and rocePct where the inputs exist. These drive NET DEBT on the Returns tab, so do NOT leave cash or debt blank when a balance sheet is present. If the balance sheet is presented MONTHLY or QUARTERLY (many repeated period columns), take each fiscal year\'s YEAR-END (last period of the year) figure for cash, debt and net worth — never a mid-year column.\n' +
     '• financials.cagrCols — one or two period labels spanning the model (e.g. "FY19–24","FY24–28"); financials.cagr — { revenue:[…], ebitda:[…], pat:[…] } as FRACTIONS (0.66 = 66% CAGR), one per cagr column, null where the base year is zero/negative (shown as NM).\n' +
     '• financials.segments — { unit:"₹ cr", note:"one line on how the mix shifts", rows:[ { name, values:[… ONE value per year aligned to financials.years, null for years before the segment existed ], cagr:[…] } ] } — the revenue split by business segment/product over time, exactly as the model breaks it out. Self-check: in each year the segment values should add up to roughly that year\'s total revenue; if a year\'s segments sum to a different year\'s revenue, you have shifted the row — re-align it to the correct year columns.\n' +
     '• financials.capacity — include ONLY if the model has capacity/volume data: { unit, rows:[ { name, values:[…], utilPct:[…] } ] }.\n' +
@@ -197,7 +197,7 @@ async function handleGenerate(request, env, ctx) {
     '• rows = [ { name, listed:true|false, ticker:"<NSE code>"|null, value:<number|null>, note:"short" } ] — list the named competitors, flag listed vs private, give the NSE ticker for listed Indian names if you know it, and fill value ONLY where the documents provide a figure (else null — NEVER invent a multiple).\n' +
     '• self = { name:"<the target>", value:<number|null>, listed:false } — the company\'s own value on that metric. note = one plain line on how it stacks up.\n\n' +
     'COMPS (build "comps" whenever the IM, banker notes or a Private Circle export names peers or past deals — otherwise OMIT "comps"). Three optional sub-blocks; include each only when you have real names/numbers, and NEVER invent a figure:\n' +
-    '• comps.peerBenchmark = { asOf, note, self:{ name, listed:false, revenueCr, revenueGrowthPct, ebitdaPct, patPct }, rows:[ { name, listed, ticker|null, revenueCr, revenueGrowthPct, ebitdaPct, patPct, note } ] } — the OPERATING metrics of the named peers (latest year); null any figure the documents don\'t give.\n' +
+    '• comps.peerBenchmark = { asOf, note, self:{ name, listed:false, revenueCr, revenueGrowthPct, ebitdaPct, patPct }, rows:[ { name, listed, ticker|null, revenueCr, revenueGrowthPct, ebitdaPct, patPct, note } ] } — the OPERATING metrics of the named peers (latest year); null any figure the documents don\'t give. ALWAYS build peerBenchmark whenever the IM or notes name ANY competitors/peers — even if you only have their NAMES and a one-line qualitative note (leave every numeric field null). The Comps tab renders this block, so it must not be empty when peers are named; put the notes/positioning in each row\'s "note".\n' +
     '• comps.trading = { asOf, source, note, rows:[ { name, ticker|null, listed, marketCapCr, evCr, revenueCr, ebitdaPct, evEbitda, evRevenue, note } ] } — LISTED peers\' trading multiples. Give the NSE ticker for listed Indian names; leave marketCapCr/evCr null (they refresh live from Screener) and fill evEbitda/evRevenue only where a figure is provided.\n' +
     '• comps.transactions = { source, note, rows:[ { date:"YYYY" or "YYYY-MM", target, buyer, seller|null, dealType, stakePct, dealValue:"<as quoted, e.g. ₹340 cr or $34 mn>", evEbitda, evRevenue, note } ] } — past M&A / PE deals in the space and the multiples paid; null any multiple not disclosed.\n' +
     '• All money in ₹ crore except transaction dealValue (keep it as quoted). Percentages are plain numbers (18 = 18%). A peer, deal, multiple, market cap or margin counts as "in the documents" ONLY if it is in the IM, the banker notes or the Private Circle export — otherwise leave it null / omit the row.\n\n' +
@@ -716,6 +716,15 @@ async function runGovernance(company, env) {
     .map(p => isObj(p) ? p.name : null);
   const entities = [company.name, ...promoters].map(s => String(s || '').trim()).filter(Boolean).slice(0, 3);
   if (!entities.length) return;
+  if (!Array.isArray(company.integrity)) company.integrity = [];
+
+  // Without a search token the server-side sweep isn't reliable (keyless engines are blocked from
+  // datacenter IPs), so mark both checks honestly as "to be run" rather than risk a false "clear".
+  if (!(env.MUNSHOT_TOKEN && env.MUNSHOT_TOKEN.trim())) {
+    upsertIntegrity(company.integrity, ['google'], { area: 'Google Search', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable web search.' });
+    upsertIntegrity(company.integrity, ['legal', 'court', 'mca', 'kanoon'], { area: 'Legal / Court cases', status: 'pending', finding: 'To be run — set the MUNSHOT_TOKEN secret for a reliable court-case search.' });
+    return;
+  }
   const kwClause = '(' + GOV_KEYWORDS.join(' OR ') + ')';
 
   // Web sweep — one keyword query per entity (concurrent, best-effort).
@@ -736,7 +745,6 @@ async function runGovernance(company, env) {
   court.forEach((r, i) => { if (r.status === 'fulfilled') for (const c of r.value) cases.push({ entity: entities[i], title: c.title, url: c.url }); });
   const courtRan = court.some(r => r.status === 'fulfilled');
 
-  if (!Array.isArray(company.integrity)) company.integrity = [];
   const allMatched = [...new Set(flagged.flatMap(f => f.matched))];
   const webSev = flagged.some(f => f.matched.some(k => GOV_HARD_RED.includes(k))) ? 'red' : flagged.length ? 'amber' : 'clear';
 

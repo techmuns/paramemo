@@ -2315,6 +2315,9 @@ function renderComps(c) {
   if (hasRows(k.peerBenchmark && k.peerBenchmark.rows)) { wrap.appendChild(renderPeerBenchmark(c, k.peerBenchmark)); any = true; }
   if (hasRows(k.trading && k.trading.rows))              { wrap.appendChild(renderTradingComps(c, k.trading));    any = true; }
   if (hasRows(k.transactions && k.transactions.rows))    { wrap.appendChild(renderTransactionComps(c, k.transactions)); any = true; }
+  // Fallback: no rich comps block, but the memo still named peers (the simpler `peers` block) —
+  // show them here so the tab reflects the peers that were found, rather than reading "empty".
+  if (!any && hasPeers(c)) { const pc = renderPeerComps(c); if (pc) { wrap.appendChild(pc); any = true; } }
   if (!any) {
     wrap.appendChild(h(`
       <div class="coming">
@@ -3383,12 +3386,20 @@ function _canvasToB64(c, quality) {
 // Back-compat single-file wrapper (IM-only path + tests).
 async function renderPdfPageImages(file, opts) { return renderAllDocImages([file], opts); }
 // Excel → CSV of the best financial sheet(s) via SheetJS (capped ~40k chars).
-async function parseExcel(file, cap = 40000) {
+async function parseExcel(file, cap = 100000) {
   const buf = await file.arrayBuffer();
   const wb = window.XLSX.read(buf, { type: 'array' });
   const sheetNames = wb.SheetNames.slice();
-  let chosen = sheetNames.filter(n => /summary|consol|p&l|pnl|income|financial|charts/i.test(n));
-  if (!chosen.length) {                                  // else the largest data sheet
+  const colsOf = n => { const ref = wb.Sheets[n] && wb.Sheets[n]['!ref']; const r = ref ? window.XLSX.utils.decode_range(ref) : null; return r ? r.e.c + 1 : 0; };
+  const pick = re => sheetNames.filter(n => re.test(n));
+  // The Returns tab needs cash & debt (→ net debt), so the BALANCE SHEET must reach the model too —
+  // not just the P&L/summary. Lead with the cleanest (fewest-column = usually annual) P&L view, then
+  // the balance sheet, then cash flow, so the balance-sheet lines survive the size cap.
+  const pnl = pick(/summary|consol|p&l|pnl|profit|income|key\s*metric|dashboard|financ/i).sort((a, b) => colsOf(a) - colsOf(b));
+  const bs  = pick(/balance|\bb\/?s\b|net\s*worth/i);
+  const cfs = pick(/cash\s*flow|\bcfs\b|cash\s*statement/i);
+  let chosen = [...new Set([...pnl.slice(0, 1), ...bs.slice(0, 1), ...cfs.slice(0, 1), ...pnl.slice(1)])];
+  if (!chosen.length) {                                  // nothing named like a statement → the largest data sheet
     let best = null, bestSize = -1;
     sheetNames.forEach(n => {
       const ref = wb.Sheets[n] && wb.Sheets[n]['!ref'];
