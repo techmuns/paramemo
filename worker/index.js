@@ -196,6 +196,11 @@ async function handleGenerate(request, env, ctx) {
     '• peers = { metric, unit, note, self, rows }. Choose the ONE metric the IM benchmarks on: "EV/EBITDA" or "P/E" (unit "x") or "EBITDA margin" (unit "%").\n' +
     '• rows = [ { name, listed:true|false, ticker:"<NSE code>"|null, value:<number|null>, note:"short" } ] — list the named competitors, flag listed vs private, give the NSE ticker for listed Indian names if you know it, and fill value ONLY where the documents provide a figure (else null — NEVER invent a multiple).\n' +
     '• self = { name:"<the target>", value:<number|null>, listed:false } — the company\'s own value on that metric. note = one plain line on how it stacks up.\n\n' +
+    'COMPS (build "comps" whenever the IM, banker notes or a Private Circle export names peers or past deals — otherwise OMIT "comps"). Three optional sub-blocks; include each only when you have real names/numbers, and NEVER invent a figure:\n' +
+    '• comps.peerBenchmark = { asOf, note, self:{ name, listed:false, revenueCr, revenueGrowthPct, ebitdaPct, patPct }, rows:[ { name, listed, ticker|null, revenueCr, revenueGrowthPct, ebitdaPct, patPct, note } ] } — the OPERATING metrics of the named peers (latest year); null any figure the documents don\'t give.\n' +
+    '• comps.trading = { asOf, source, note, rows:[ { name, ticker|null, listed, marketCapCr, evCr, revenueCr, ebitdaPct, evEbitda, evRevenue, note } ] } — LISTED peers\' trading multiples. Give the NSE ticker for listed Indian names; leave marketCapCr/evCr null (they refresh live from Screener) and fill evEbitda/evRevenue only where a figure is provided.\n' +
+    '• comps.transactions = { source, note, rows:[ { date:"YYYY" or "YYYY-MM", target, buyer, seller|null, dealType, stakePct, dealValue:"<as quoted, e.g. ₹340 cr or $34 mn>", evEbitda, evRevenue, note } ] } — past M&A / PE deals in the space and the multiples paid; null any multiple not disclosed.\n' +
+    '• All money in ₹ crore except transaction dealValue (keep it as quoted). Percentages are plain numbers (18 = 18%). A peer, deal, multiple, market cap or margin counts as "in the documents" ONLY if it is in the IM, the banker notes or the Private Circle export — otherwise leave it null / omit the row.\n\n' +
     'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
     'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
     '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
@@ -208,17 +213,18 @@ async function handleGenerate(request, env, ctx) {
     'market leadership, low customer concentration. In group "Promoter": deep sector experience (>10 years), strong skin in the game (promoter stake > ~25%), ' +
     'raised institutional capital before, backed by known investors. Mark "tbd" when the documents don\'t settle it. Adapt to the sector but keep these core checks.\n' +
     '• integrity — the governance / diligence scan; each { area, status:"clear"|"flag"|"pending", finding }. ALWAYS include these five: ' +
-    '"Google Search", "Private Circle", "CIBIL", "Rating", "Legal Search". These are EXTERNAL checks usually NOT in the IM — mark them ' +
-    '"pending" with finding "To be run" UNLESS the documents give a real result (e.g. a disclosed credit rating, or a lawsuit). Never fabricate a clean result.\n' +
+    '"Google Search", "Private Circle", "CIBIL", "Rating", "Legal Search". These are EXTERNAL checks usually NOT in the IM itself — BUT if the partner attached a PRIVATE CIRCLE export or any governance / diligence / credit-rating document (look for it among the additional documents and the page images), READ IT and FILL each check from it rather than defaulting to pending: promoter/director background, shareholding and related parties (Private Circle); any default or credit history (CIBIL); the credit rating and outlook if stated (Rating); and any litigation, charges or MCA flags (Legal Search). Set status "clear" when that source shows a clean result, "flag" when it shows something to diligence, and only ' +
+    '"pending" with finding "To be run" when NO attached source covers it. You MAY add extra rows (e.g. "Charges / MCA", "Directorships", "Related-party transactions") when the Private Circle export provides them. Never fabricate a clean result, a rating, or a finding that is not in the documents.\n' +
     '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
     'PEOPLE & OWNERSHIP: read the team / leadership / board slides in the PAGE IMAGES and list each promoter/manager with their EXACT name and title as shown (in the images or the text) — do not merge, ' +
     'rename, or swap roles between people, and do NOT supply names from general knowledge. If neither the images nor the text name any people, return an empty promoters/management list or a single "To be confirmed" entry — never invent a plausible name or title. Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
-    'RETURNS (ALWAYS include — this is the ONE illustrative block: a base-case returns sketch that is explicitly assumptions, not extracted facts, so here you MUST fill numbers rather than leave nulls):\n' +
-    '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number> } }. Every field is REQUIRED; all are numbers except startYear. Never null, never omit.\n' +
+    'RETURNS (ALWAYS include — this is the ONE illustrative block: the entry/exit assumptions for a base-case returns model. The app computes the money multiple and IRR itself by pulling EBITDA and net debt for entryYear/exitYear straight from the financials you output, so pick sensible YEARS and MULTIPLES rather than pre-computing proceeds):\n' +
+    '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", entryYear:"<FYxx>", exitYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number>, underdeliverPct:<number> } }. Every field is REQUIRED; numbers except the year strings. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected.\n' +
-    '• startYear = a recent year that has MEANINGFUL POSITIVE EBITDA (the latest actual year, or the nearest forward year if the latest actual EBITDA is negligible or negative). startEbitdaCr = that year\'s EBITDA in ₹ cr, a positive number matching financials.\n' +
-    '• defaults = standard PE assumptions, illustrative not extracted: entryX / exitX = entry & exit EV/EBITDA multiples (typically 10–16×, sector-appropriate), growthPct = a plausible EBITDA growth % over the hold anchored to the model\'s trajectory, years = hold period (4–6).\n\n' +
+    '• entryYear = a recent year with MEANINGFUL POSITIVE EBITDA to enter on (the latest actual, or the nearest forward year if the latest actual EBITDA is negligible/negative). startYear = entryYear and startEbitdaCr = that year\'s EBITDA in ₹ cr (positive, matching financials).\n' +
+    '• exitYear = the LAST projected year in the model (the end of management\'s forecast horizon) — this is where the exit EBITDA comes from, so the model uses management\'s OWN projection for the exit, not a growth guess. Both entryYear and exitYear MUST be values that appear verbatim in financials.years.\n' +
+    '• defaults = standard PE assumptions, illustrative not extracted: entryX / exitX = entry & exit EV/EBITDA multiples (typically 10–16×, sector-appropriate); growthPct = a plausible EBITDA growth % anchored to the model (kept for reference); years = hold period; underdeliverPct = 0 (the default management-case haircut; the partner raises it to stress-test).\n\n' +
     'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
     'financials you output (same years, same actual-vs-forecast split).';
 
@@ -517,6 +523,8 @@ function normalizeCompany(o, id, basics = {}) {
   if (!isObj(o.origination)) o.origination = { date: '', banker: basics.banker || 'TBD' };
   if (!o.origination.date) o.origination.date = new Date().toISOString().slice(0, 10);
   o.returns = coerceReturns(o);   // guarantee a valid illustrative-returns block (the Returns tab depends on it)
+  const comps = coerceComps(o.comps);   // optional comps block — keep only when it carries real rows
+  if (comps) o.comps = comps; else delete o.comps;
   o._uploaded = true;  // marker (UI can badge uploaded deals if desired)
   return o;
 }
@@ -541,6 +549,7 @@ function coerceReturns(o) {
     exitX:  num(din.exitX)  > 0 ? din.exitX  : 13,
     growthPct: num(din.growthPct) != null ? din.growthPct : 18,
     years:  num(din.years) > 0 ? Math.round(din.years) : 5,
+    underdeliverPct: num(din.underdeliverPct) >= 0 ? din.underdeliverPct : 0,   // management-case haircut on exit EBITDA
   };
 
   // start year + starting EBITDA: prefer the model; else pick a year with meaningful positive EBITDA
@@ -572,12 +581,48 @@ function coerceReturns(o) {
     const txn = isObj(o.transaction) ? num(o.transaction.amountCr) : null;
     investmentCr = (txn > 0) ? txn : roundNice(Math.max(50, defaults.entryX * startEbitdaCr * 0.2));
   }
-  return { investmentCr, startEbitdaCr, startYear, defaults };
+
+  // entry/exit years drive the returns bridge on the client (EBITDA + net debt come from the model
+  // by year). entry = the start year; exit = the last projected year with meaningful positive EBITDA.
+  const entryYear = (typeof r.entryYear === 'string' && years.includes(r.entryYear)) ? r.entryYear : startYear;
+  let exitYear = (typeof r.exitYear === 'string' && years.includes(r.exitYear)) ? r.exitYear : '';
+  if (!exitYear) { for (let i = years.length - 1; i >= 0; i--) if (posEbitda(i)) { exitYear = years[i]; break; } }
+  if (!exitYear || (num(exitYear) != null && fyN(exitYear) <= fyN(entryYear))) exitYear = years[years.length - 1] || entryYear;
+
+  return { investmentCr, startEbitdaCr, startYear, entryYear, exitYear, defaults };
 }
+// FY label → 2-digit number (for ordering entry vs exit). "FY26E" → 26, "FY2026" → 26.
+function fyN(y) { const m = String(y == null ? '' : y).match(/(\d{2,4})/); if (!m) return null; let n = parseInt(m[1], 10); return n >= 1900 ? n - 2000 : n; }
 function roundNice(n) {                                  // clean round figures for an illustrative cheque
   if (!(n > 0)) return 50;
   const step = n < 500 ? 25 : 50;
   return Math.round(n / step) * step;
+}
+
+// The optional comps block (peer benchmarking · trading · transactions). Purely additive: coerce the
+// numeric fields to numbers and drop empty sub-blocks so the UI's "any rows?" checks stay simple.
+// dealValue stays a string (IMs quote deals in mixed units). Returns undefined when there's nothing.
+function coerceComps(k) {
+  if (!isObj(k)) return undefined;
+  const numRow = (r, keys) => { for (const key of keys) if (r[key] != null) r[key] = num(r[key]); return r; };
+  const out = {};
+  if (isObj(k.peerBenchmark) && Array.isArray(k.peerBenchmark.rows)) {
+    const pb = k.peerBenchmark, f = ['revenueCr', 'revenueGrowthPct', 'ebitdaPct', 'patPct'];
+    pb.rows = pb.rows.filter(isObj).map(r => numRow(r, f));
+    if (isObj(pb.self)) numRow(pb.self, f);
+    if (pb.rows.length) out.peerBenchmark = pb;
+  }
+  if (isObj(k.trading) && Array.isArray(k.trading.rows)) {
+    const tr = k.trading;
+    tr.rows = tr.rows.filter(isObj).map(r => numRow(r, ['marketCapCr', 'evCr', 'revenueCr', 'ebitdaPct', 'evEbitda', 'evRevenue']));
+    if (tr.rows.length) out.trading = tr;
+  }
+  if (isObj(k.transactions) && Array.isArray(k.transactions.rows)) {
+    const tx = k.transactions;
+    tx.rows = tx.rows.filter(isObj).map(r => numRow(r, ['stakePct', 'evEbitda', 'evRevenue']));
+    if (tx.rows.length) out.transactions = tx;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function slugify(s) {

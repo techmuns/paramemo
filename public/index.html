@@ -638,6 +638,35 @@
     .result-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
     .slider-row { padding: 13px 0; border-bottom: 1px dashed var(--border); }
     .slider-row:last-child { border-bottom: none; padding-bottom: 2px; }
+    /* Returns: entry/exit year dropdowns */
+    .ret-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .ret-sel { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .ret-sel > span { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--hint); }
+    .ret-dd { width: 100%; height: 36px; padding: 0 9px; border: 1px solid var(--border); border-radius: 9px; background: #fff;
+      font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+    .ret-dd:focus { outline: none; border-color: var(--navy); box-shadow: var(--ring-navy); }
+    /* Returns: entry → exit bridge */
+    .ret-bridge-tbl { width: 100%; border-collapse: collapse; }
+    .ret-bridge-tbl td { padding: 6px 2px; font-size: 12.5px; border-bottom: 1px solid #F0F2F7; color: var(--ink); }
+    .ret-bridge-tbl td:first-child { color: var(--muted); }
+    .ret-bridge-tbl td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    .ret-bridge-tbl tr.sub td { border-top: 1px solid var(--border-strong); font-weight: 600; }
+    .ret-bridge-tbl tr.sub td:first-child { color: var(--ink); }
+    .ret-bridge-tbl tr.tot td { border-top: 1.5px solid var(--border-strong); font-weight: 700; color: var(--ink); }
+    .ret-bridge-tbl tr.tot td:first-child { color: var(--ink); }
+    .ret-bridge-tbl tr.hl td.num { color: var(--navy); }
+    .ret-bridge-tbl tr.tot.hl td.num { color: #047857; }
+    .ret-haircut { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #B45309; background: rgba(245,158,11,.14); }
+    /* Returns: sensitivity grid */
+    .sens-tbl { border-collapse: collapse; width: 100%; min-width: 440px; }
+    .sens-tbl th, .sens-tbl td { padding: 8px 10px; font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+    .sens-tbl thead th { font-family: 'Sora', sans-serif; font-weight: 600; color: var(--muted); background: #F4F6FB; border-bottom: 1px solid var(--border); }
+    .sens-tbl th.cnr { text-align: left; font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; color: var(--hint); }
+    .sens-tbl tbody th { font-family: 'Sora', sans-serif; font-weight: 600; color: var(--muted); background: #F4F6FB; border-right: 1px solid var(--border); }
+    .sens-tbl td.sens { font-weight: 600; color: var(--ink); border: 1px solid #fff; }
+    .sens-tbl td.g0 { background: rgba(244,63,94,.10); } .sens-tbl td.g1 { background: rgba(245,158,11,.13); }
+    .sens-tbl td.g2 { background: rgba(16,185,129,.12); } .sens-tbl td.g3 { background: rgba(16,185,129,.24); }
+    .sens-tbl td.here { outline: 2px solid var(--navy); outline-offset: -2px; box-shadow: inset 0 0 0 2px rgba(12,48,120,.15); }
     /* Peer valuation comps (Returns tab) */
     .peer-scroll { overflow-x: auto; }
     .peer-tbl { width: 100%; border-collapse: collapse; min-width: 460px; }
@@ -664,6 +693,17 @@
     .peer-live-tag { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #10B981; background: rgba(16,185,129,.12); padding: 1px 6px; border-radius: 999px; }
     .peer-live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px dashed var(--border); }
     .peer-live-title { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+    /* Comps tab — wider tables (benchmarking / trading / transactions) */
+    .comps-tbl { width: 100%; border-collapse: collapse; min-width: 620px; }
+    .comps-tbl th, .comps-tbl td { padding: 9px 10px; font-size: 12.5px; text-align: left; border-bottom: 1px solid #EEF1F6; vertical-align: top; }
+    .comps-tbl thead th { font-family: 'Sora', sans-serif; font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: #F4F6FB; white-space: nowrap; }
+    .comps-tbl td.num, .comps-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); white-space: nowrap; }
+    .comps-tbl td:first-child { font-weight: 600; color: var(--ink); }
+    .comps-tbl td.nowrap { white-space: nowrap; font-weight: 500; color: var(--muted); }
+    .comps-tbl tbody tr:hover td { background: #F7F9FD; }
+    .comps-tbl tr.peer-self td { background: rgba(12,48,120,.045); }
+    .comps-tbl tr.peer-med td { border-top: 1.5px solid var(--border-strong); font-weight: 700; color: var(--muted); background: #F9FAFC; }
+    .comps-tbl tr.peer-med td.num { color: var(--navy); }
     .peer-live-tbl { min-width: 360px; }
     .peer-live-tbl thead th { background: #F1F4FA; }
     .peer-live-na { color: var(--hint); }
@@ -940,6 +980,7 @@
     table.fr-peer-tbl th, table.fr-peer-tbl td { border-bottom: 1px solid #EEF1F6; padding: 4px 6px; text-align: left; }
     table.fr-peer-tbl thead th { font-family: 'Sora',sans-serif; font-size: 8.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #6B7280; }
     table.fr-peer-tbl td.num, table.fr-peer-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+    table.fr-peer-tbl td.nowrap { white-space: nowrap; }
     .fr-peer-tag { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 8.5px; font-weight: 700; }
     .fr-peer-tag.lst { color: #2E6FD6; background: rgba(46,111,214,.1); } .fr-peer-tag.prv { color: #6B7280; background: rgba(107,114,128,.1); }
     .fr-peer-tick { font-size: 8.5px; font-weight: 600; color: #9CA3AF; margin-left: 5px; }

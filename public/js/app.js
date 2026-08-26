@@ -583,11 +583,12 @@ const TABS = [
   { key: 'integrity',  label: 'Integrity',  icon: 'shield'     },
   { key: 'questions',  label: 'Questions',  icon: 'help'       },
   { key: 'thesis',     label: 'Thesis',     icon: 'lightbulb'  },
+  { key: 'comps',      label: 'Comps',      icon: 'scale'      },
   { key: 'returns',    label: 'Returns',    icon: 'trendingUp' },
 ];
-// All seven tabs are built as of Phases 4–5, so none carry a "coming soon" dot.
+// All tabs are built; none carry a "coming soon" dot.
 // (renderComingSoon remains as a harmless fallback for any unknown tab key.)
-const LIVE_TABS = ['snapshot', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'returns'];
+const LIVE_TABS = ['snapshot', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
 const TAB_KEYS = TABS.map(t => t.key);
 const TAB_META = Object.fromEntries(TABS.map(t => [t.key, t]));
 
@@ -1004,6 +1005,48 @@ function memoIssues(c) {
     `<tr><td class="lft">${x.issue ? esc(x.issue) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td><td class="lft">${x.mitigant ? '- ' + esc(x.mitigant) : ''}</td></tr>`).join('');
   return `<table class="mx-tbl mx-chk"><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
+// Comps + returns for the Paragon MEMO replica (mx-tbl style).
+function memoReturns(c) {
+  if (!c.returns) return '';
+  const v = returnsInputs(c), out = computeReturns(c, v);
+  const cr = n => (n == null || isNaN(n)) ? '—' : fmtCr(Math.round(n));
+  const rows = [
+    ['Our cheque (primary)', cr(out.investment)],
+    ['Enter → exit', `${v.entryYear} → ${v.exitYear} (${out.years} yr${out.years === 1 ? '' : 's'})`],
+    ['Entry EV/EBITDA', `${v.entryX}× on ${cr(out.entryEbitda)}`],
+    ['Our stake', (out.stakePct * 100).toFixed(1) + '%'],
+    ['Exit EV/EBITDA', `${v.exitX}× on ${cr(out.exitEbitda)}${Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : ''}`],
+    ['Our proceeds', cr(out.proceeds)],
+    ['Money multiple (MoIC)', out.moneyBack.toFixed(1) + '×'],
+    ['Annual return (IRR)', Math.round(out.yearlyReturn) + '%'],
+  ].map(([k, val]) => `<tr><td class="lft">${esc(k)}</td><td class="lft">${esc(val)}</td></tr>`).join('');
+  return `<table class="mx-tbl mx-chk"><thead><tr><th class="lft">Returns — base case (management projections)</th><th class="lft">Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function memoComps(c) {
+  if (!hasComps(c)) return '';
+  const k = compsData(c);
+  const cr = v => (v == null || isNaN(v)) ? '—' : fmtCr(v);
+  const pct = v => (v == null || isNaN(v)) ? '—' : v + '%';
+  const mult = v => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10) + '×';
+  let out = '';
+  const pb = k.peerBenchmark;
+  if (pb && hasRows(pb.rows)) {
+    const self = (pb.self && pb.self.name) ? `<tr class="tot"><td class="lft">${esc(pb.self.name)} (the deal)</td><td>${cr(pb.self.revenueCr)}</td><td>${pct(pb.self.revenueGrowthPct)}</td><td>${pct(pb.self.ebitdaPct)}</td><td>${pct(pb.self.patPct)}</td></tr>` : '';
+    const rows = pb.rows.map(r => `<tr><td class="lft">${esc(r.name)}</td><td>${cr(r.revenueCr)}</td><td>${pct(r.revenueGrowthPct)}</td><td>${pct(r.ebitdaPct)}</td><td>${pct(r.patPct)}</td></tr>`).join('');
+    out += `<div class="mx-h3">Peer benchmarking — operating metrics</div><table class="mx-tbl"><thead><tr><th class="lft">Company</th><th>Revenue</th><th>Growth</th><th>EBITDA %</th><th>PAT %</th></tr></thead><tbody>${self}${rows}</tbody></table>`;
+  }
+  const tr = k.trading;
+  if (tr && hasRows(tr.rows)) {
+    const rows = tr.rows.map(r => `<tr><td class="lft">${esc(r.name)}${r.ticker ? ` (${esc(r.ticker)})` : ''}</td><td>${cr(r.marketCapCr)}</td><td>${cr(r.revenueCr)}</td><td>${pct(r.ebitdaPct)}</td><td>${mult(r.evEbitda)}</td><td>${mult(r.evRevenue)}</td></tr>`).join('');
+    out += `<div class="mx-h3">Trading comps — listed peers</div><table class="mx-tbl"><thead><tr><th class="lft">Company</th><th>Mkt cap</th><th>Revenue</th><th>EBITDA %</th><th>EV/EBITDA</th><th>EV/Rev</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  const tx = k.transactions;
+  if (tx && hasRows(tx.rows)) {
+    const rows = tx.rows.map(r => `<tr><td>${esc(r.date || '—')}</td><td class="lft">${esc(r.target || '—')}</td><td class="lft">${esc(r.buyer || '—')}</td><td>${r.stakePct != null ? r.stakePct + '%' : '—'}</td><td>${esc(r.dealValue || '—')}</td><td>${mult(r.evEbitda)}</td><td>${mult(r.evRevenue)}</td></tr>`).join('');
+    out += `<div class="mx-h3">Transaction comps — past deals</div><table class="mx-tbl"><thead><tr><th>Date</th><th class="lft">Target</th><th class="lft">Buyer</th><th>Stake</th><th>Deal value</th><th>EV/EBITDA</th><th>EV/Rev</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  return out;
+}
 function renderMemoExact(c) {
   const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
   const memoDate = c.generatedAt ? fmtDate(c.generatedAt) : (fmtDate(o.date) || '');
@@ -1055,25 +1098,33 @@ function renderMemoExact(c) {
         ${memoIssues(c)}
       </div>
 
+      ${(hasComps(c) || c.returns) ? `
+      <div class="mx-grp">
+        ${hasComps(c) ? `<div class="mx-h2">Peers &amp; Comparables</div>${memoComps(c)}` : ''}
+        ${c.returns ? `<div class="mx-h2">Illustrative Returns</div>${memoReturns(c)}` : ''}
+      </div>` : ''}
+
       <div class="mx-foot">Private &amp; Confidential</div>
     </div>`;
 }
 
 /* ======================= FULL REPORT — comprehensive branded document ======= */
 function frReturns(c) {
-  if (!c.returns || !c.returns.defaults) return '';
-  const d = c.returns.defaults;
-  const out = computeReturns(c, d);
+  if (!c.returns) return '';
+  const v = returnsInputs(c);
+  const out = computeReturns(c, v);
+  const cr = n => n == null ? '—' : fmtCr(Math.round(n));
   const rows = [
-    ['Investment', fmtCr(c.returns.investmentCr)],
-    ['Entry EBITDA multiple', d.entryX + '×'],
-    ['Exit EBITDA multiple', d.exitX + '×'],
-    ['EBITDA growth (assumed)', d.growthPct + '% p.a.'],
-    ['Hold period', d.years + ' years'],
-    ['Projected proceeds', fmtCr(Math.round(out.proceeds))],
-    ['Money multiple (MoIC)', (out.moneyBack).toFixed(1) + '×'],
-    ['Annualised return (approx.)', Math.round(out.yearlyReturn) + '%'],
-  ].map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join('');
+    [`Our cheque (primary)`, cr(out.investment)],
+    [`Enter in / exit in`, `${esc(v.entryYear)} → ${esc(v.exitYear)} (${out.years} yr${out.years === 1 ? '' : 's'})`],
+    [`Entry EBITDA × multiple`, `${cr(out.entryEbitda)} × ${v.entryX}× = ${cr(out.entryEV)} EV`],
+    [`Pre-money / post-money equity`, `${cr(out.preMoney)} / ${cr(out.postMoney)}`],
+    [`Our stake`, (out.stakePct * 100).toFixed(1) + '%'],
+    [`Exit EBITDA × multiple${Number(v.underdeliverPct) > 0 ? ` (−${v.underdeliverPct}%)` : ''}`, `${cr(out.exitEbitda)} × ${v.exitX}× = ${cr(out.exitEV)} EV`],
+    [`Our proceeds`, cr(out.proceeds)],
+    [`Money multiple (MoIC)`, (out.moneyBack).toFixed(1) + '×'],
+    [`Annual return (IRR)`, Math.round(out.yearlyReturn) + '%'],
+  ].map(([k, val]) => `<tr><td>${esc(k)}</td><td class="num">${esc(val)}</td></tr>`).join('');
   return `<table class="fr-facts">${rows}</table>`;
 }
 // Peer comps for the FULL REPORT only (never the memo/Word-replica). Small 3-col
@@ -1092,6 +1143,36 @@ function frPeerComps(c) {
   const medRow = median != null ? `<tr class="fr-peer-med"><td>Peer median</td><td></td><td class="num">${fmtVal(median)}</td></tr>` : '';
   return `${p.note ? `<p class="fr-cap">${esc(p.note)}</p>` : ''}
     <table class="fr-peer-tbl"><thead><tr><th>Company</th><th>Type</th><th class="num">${metricHdr}</th></tr></thead><tbody>${selfRow}${rows}${medRow}</tbody></table>`;
+}
+// Comps for the FULL REPORT — peer benchmarking + trading + transaction tables (print style).
+function frComps(c) {
+  if (!hasComps(c)) return '';
+  const k = compsData(c);
+  const cr = v => (v == null || isNaN(v)) ? '—' : fmtCr(v);
+  const pct = v => (v == null || isNaN(v)) ? '—' : v + '%';
+  const mult = v => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10) + '×';
+  let out = '';
+  const pb = k.peerBenchmark;
+  if (pb && hasRows(pb.rows)) {
+    const self = (pb.self && pb.self.name) ? `<tr class="fr-peer-self"><td>${esc(pb.self.name)} <span class="fr-peer-you">the deal</span></td><td class="num">${cr(pb.self.revenueCr)}</td><td class="num">${pct(pb.self.revenueGrowthPct)}</td><td class="num">${pct(pb.self.ebitdaPct)}</td><td class="num">${pct(pb.self.patPct)}</td></tr>` : '';
+    const rows = pb.rows.map(r => `<tr><td>${esc(r.name)}${r.ticker ? ` <span class="fr-peer-tick">${esc(r.ticker)}</span>` : ''}</td><td class="num">${cr(r.revenueCr)}</td><td class="num">${pct(r.revenueGrowthPct)}</td><td class="num">${pct(r.ebitdaPct)}</td><td class="num">${pct(r.patPct)}</td></tr>`).join('');
+    out += `<h3>Peer benchmarking — operating metrics</h3>${pb.note ? `<p class="fr-cap">${esc(pb.note)}</p>` : ''}<table class="fr-peer-tbl"><thead><tr><th>Company</th><th class="num">Revenue</th><th class="num">Growth</th><th class="num">EBITDA %</th><th class="num">PAT %</th></tr></thead><tbody>${self}${rows}</tbody></table>`;
+  }
+  const tr = k.trading;
+  if (tr && hasRows(tr.rows)) {
+    const medE = peerMedian(tr.rows.map(r => r.evEbitda)), medR = peerMedian(tr.rows.map(r => r.evRevenue));
+    const rows = tr.rows.map(r => `<tr><td>${esc(r.name)}${r.ticker ? ` <span class="fr-peer-tick">${esc(r.ticker)}</span>` : ''}</td><td class="num">${cr(r.marketCapCr)}</td><td class="num">${cr(r.revenueCr)}</td><td class="num">${pct(r.ebitdaPct)}</td><td class="num">${mult(r.evEbitda)}</td><td class="num">${mult(r.evRevenue)}</td></tr>`).join('');
+    const med = (medE != null || medR != null) ? `<tr class="fr-peer-med"><td>Peer median</td><td></td><td></td><td></td><td class="num">${mult(medE)}</td><td class="num">${mult(medR)}</td></tr>` : '';
+    out += `<h3 style="margin-top:10px">Trading comps — listed peers</h3>${tr.note ? `<p class="fr-cap">${esc(tr.note)}</p>` : ''}<table class="fr-peer-tbl"><thead><tr><th>Company</th><th class="num">Mkt cap</th><th class="num">Revenue</th><th class="num">EBITDA %</th><th class="num">EV/EBITDA</th><th class="num">EV/Rev</th></tr></thead><tbody>${rows}${med}</tbody></table>`;
+  }
+  const tx = k.transactions;
+  if (tx && hasRows(tx.rows)) {
+    const medE = peerMedian(tx.rows.map(r => r.evEbitda)), medR = peerMedian(tx.rows.map(r => r.evRevenue));
+    const rows = tx.rows.map(r => `<tr><td class="nowrap">${esc(r.date || '—')}</td><td>${esc(r.target || '—')}</td><td>${esc(r.buyer || '—')}</td><td class="num">${r.stakePct != null ? r.stakePct + '%' : '—'}</td><td class="num">${esc(r.dealValue || '—')}</td><td class="num">${mult(r.evEbitda)}</td><td class="num">${mult(r.evRevenue)}</td></tr>`).join('');
+    const med = (medE != null || medR != null) ? `<tr class="fr-peer-med"><td></td><td>Deal median</td><td></td><td></td><td></td><td class="num">${mult(medE)}</td><td class="num">${mult(medR)}</td></tr>` : '';
+    out += `<h3 style="margin-top:10px">Transaction comps — past deals</h3>${tx.note ? `<p class="fr-cap">${esc(tx.note)}</p>` : ''}<table class="fr-peer-tbl"><thead><tr><th>Date</th><th>Target</th><th>Buyer</th><th class="num">Stake</th><th class="num">Deal value</th><th class="num">EV/EBITDA</th><th class="num">EV/Rev</th></tr></thead><tbody>${rows}${med}</tbody></table>`;
+  }
+  return out;
 }
 function renderFullReport(c) {
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
@@ -1162,9 +1243,14 @@ function renderFullReport(c) {
         </div>
       `)}
 
-      ${(c.returns && c.returns.defaults)
-        ? sec(8, 'Illustrative returns', `<div class="fr-cap">Base-case sketch from the current assumptions — not a recommendation.</div>${frReturns(c)}${hasPeers(c) ? `<h3 style="margin-top:14px">How this deal compares</h3>${frPeerComps(c)}` : ''}`)
-        : (hasPeers(c) ? sec(8, 'How this deal compares', frPeerComps(c)) : '')}
+      ${(() => {
+        const compsShown = hasComps(c) || hasPeers(c);
+        const compsSec = hasComps(c) ? sec(8, 'Peers & comparables', frComps(c))
+          : (hasPeers(c) ? sec(8, 'Peers & comparables', frPeerComps(c)) : '');
+        const retSec = c.returns ? sec(compsShown ? 9 : 8, 'Illustrative returns',
+          `<div class="fr-cap">Base case from management’s own projections — entry EV bridged to equity via net debt, exit on the projected EBITDA. Illustrative, not a recommendation.</div>${frReturns(c)}`) : '';
+        return compsSec + retSec;
+      })()}
 
       <div class="fr-foot">Paragon Partners · Screening Report · Private &amp; Confidential</div>
     </div>`;
@@ -1617,6 +1703,7 @@ function renderTabPanel(c, tab) {
   else if (tab === 'integrity')  node = renderIntegrity(c);
   else if (tab === 'questions')  node = renderQuestions(c);
   else if (tab === 'thesis')     node = renderThesis(c);
+  else if (tab === 'comps')      node = renderComps(c);
   else if (tab === 'returns')    node = renderReturns(c);
   else                           node = renderComingSoon(tab);
   panel.appendChild(node);
@@ -1983,6 +2070,7 @@ const SOON_DESC = {
   integrity: 'Promoter background, governance flags and the diligence checklist that must clear before we proceed.',
   questions: 'The sharp questions for the banker and management, gathered in one place for the meeting.',
   thesis:    'Why this could be a great investment — the value-creation story and the risks that could break it.',
+  comps:     'How the deal stacks up against peers — operating metrics, listed trading multiples and past M&A transactions.',
   returns:   'Entry assumptions and a base / bull / bear return range, with what needs to be true to hit them.',
 };
 function renderComingSoon(tab) {
@@ -2189,82 +2277,422 @@ function renderThesis(c) {
   return grid;
 }
 
-/* ---- 7h. Returns tab (plain-language "what could we make?") ---- */
-const RETURN_SLIDERS = [
-  { key: 'entryX',    label: 'What we pay — entry price (× profit)',    min: 4, max: 25, step: 1, suffix: '×'   },
-  { key: 'growthPct', label: 'How fast profit grows (% per year)',      min: 0, max: 60, step: 1, suffix: '%'   },
-  { key: 'exitX',     label: 'What we sell for — exit price (× profit)', min: 4, max: 25, step: 1, suffix: '×'  },
-  { key: 'years',     label: 'Years we hold',                           min: 2, max: 8,  step: 1, suffix: ' yrs' },
-];
+/* ---- 7g-2. Comps tab — peer benchmarking · trading comps · transaction comps ----
+ * The peer LIST comes from the IM / banker notes; the NUMBERS come from the IM, a
+ * Private Circle export (unlisted), or live from Screener (listed). Modelled on the
+ * firm's own trading & transaction comps workbook. Any section with no rows is hidden. */
+const hasRows = x => Array.isArray(x) && x.length > 0;
+function compsData(c) { return (c.comps && typeof c.comps === 'object') ? c.comps : {}; }
+function hasComps(c) {
+  const k = compsData(c);
+  return hasRows(k.peerBenchmark && k.peerBenchmark.rows) || hasRows(k.trading && k.trading.rows) || hasRows(k.transactions && k.transactions.rows);
+}
+const cVal  = (v, suf) => (v == null || isNaN(v)) ? '—' : (v + (suf || ''));
+const cMult = v => (v == null || isNaN(v)) ? '—' : (Math.round(v * 10) / 10) + '×';
+const cCr   = v => (v == null || isNaN(v)) ? '—' : fmtCr(v);
+const cTag  = l => `<span class="peer-tag ${l ? 'lst' : 'prv'}">${l ? 'Listed' : 'Private'}</span>`;
 
-// Pure calculation (plain JS, per the spec).
+function renderComps(c) {
+  const k = compsData(c);
+  const wrap = h('<div class="space-y-5"></div>');
+  let any = false;
+  if (hasRows(k.peerBenchmark && k.peerBenchmark.rows)) { wrap.appendChild(renderPeerBenchmark(c, k.peerBenchmark)); any = true; }
+  if (hasRows(k.trading && k.trading.rows))              { wrap.appendChild(renderTradingComps(c, k.trading));    any = true; }
+  if (hasRows(k.transactions && k.transactions.rows))    { wrap.appendChild(renderTransactionComps(c, k.transactions)); any = true; }
+  if (!any) {
+    wrap.appendChild(h(`
+      <div class="coming">
+        <div class="cs-ico">${icon('scale', 'w-6 h-6')}</div>
+        <div class="text-[15px] font-semibold text-ink">No comparables in the documents yet</div>
+        <p class="text-[13px] text-ink-muted mt-1 max-w-md">Peer benchmarking, trading comps and transaction comps appear here when the IM names peers — or when you add a Private Circle export (unlisted multiples) or the deal has listed peers to pull live from Screener.</p>
+      </div>`));
+  }
+  return wrap;
+}
+
+// 1) Peer benchmarking — operating metrics (revenue, growth, margins) of the named peers.
+function renderPeerBenchmark(c, pb) {
+  const rows = pb.rows || [];
+  const self = pb.self;
+  const line = r => `<tr class="${r._self ? 'peer-self' : ''}">
+      <td>${esc(r.name)}${r._self ? ' <span class="peer-you">the deal</span>' : ''}${r.note && !r._self ? `<span class="peer-note">${esc(r.note)}</span>` : ''}</td>
+      <td>${cTag(!!r.listed)}${r.ticker ? ` <span class="peer-tick">${esc(r.ticker)}</span>` : ''}</td>
+      <td class="num">${cCr(r.revenueCr)}</td>
+      <td class="num">${cVal(r.revenueGrowthPct, '%')}</td>
+      <td class="num">${cVal(r.ebitdaPct, '%')}</td>
+      <td class="num">${cVal(r.patPct, '%')}</td></tr>`;
+  const selfRow = (self && self.name) ? line({ ...self, _self: true }) : '';
+  const body = selfRow + rows.map(line).join('');
+  const card = h(`
+    <div class="surface-card p-5">
+      <div class="section-title"><span class="sec-ico">${icon('barChart', 'w-4 h-4')}</span>Peer benchmarking · operating metrics</div>
+      ${pb.note ? `<p class="text-[12.5px] text-ink-muted mb-3 leading-relaxed">${esc(pb.note)}</p>` : ''}
+      <div class="peer-scroll"><table class="comps-tbl">
+        <thead><tr><th>Company</th><th>Type</th><th class="num">Revenue</th><th class="num">Rev growth</th><th class="num">EBITDA %</th><th class="num">PAT %</th></tr></thead>
+        <tbody>${body}</tbody></table></div>
+      <p class="text-[11px] text-ink-hint mt-2">${esc(pb.asOf ? 'As of ' + pb.asOf + '. ' : '')}From the IM / banker notes; blank where the documents give no figure.</p>
+    </div>`);
+  return card;
+}
+
+// 2) Trading comps — listed peers' valuation multiples, with a live Screener pull.
+function renderTradingComps(c, tr) {
+  const rows = tr.rows || [];
+  const medEbitda = peerMedian(rows.map(r => r.evEbitda));
+  const medRev = peerMedian(rows.map(r => r.evRevenue));
+  const line = r => `<tr>
+      <td>${esc(r.name)}${r.ticker ? ` <span class="peer-tick">${esc(r.ticker)}</span>` : ''}${r.note ? `<span class="peer-note">${esc(r.note)}</span>` : ''}</td>
+      <td class="num">${cCr(r.marketCapCr)}</td>
+      <td class="num">${cCr(r.evCr)}</td>
+      <td class="num">${cCr(r.revenueCr)}</td>
+      <td class="num">${cVal(r.ebitdaPct, '%')}</td>
+      <td class="num">${cMult(r.evEbitda)}</td>
+      <td class="num">${cMult(r.evRevenue)}</td></tr>`;
+  const medRow = (medEbitda != null || medRev != null)
+    ? `<tr class="peer-med"><td>Peer median</td><td></td><td></td><td></td><td></td><td class="num">${cMult(medEbitda)}</td><td class="num">${cMult(medRev)}</td></tr>` : '';
+  const card = h(`
+    <div class="surface-card p-5">
+      <div class="section-title"><span class="sec-ico">${icon('scale', 'w-4 h-4')}</span>Trading comps · listed peers</div>
+      ${tr.note ? `<p class="text-[12.5px] text-ink-muted mb-3 leading-relaxed">${esc(tr.note)}</p>` : ''}
+      <div class="peer-scroll"><table class="comps-tbl">
+        <thead><tr><th>Company</th><th class="num">Mkt cap</th><th class="num">EV</th><th class="num">Revenue</th><th class="num">EBITDA %</th><th class="num">EV/EBITDA</th><th class="num">EV/Revenue</th></tr></thead>
+        <tbody>${rows.map(line).join('')}${medRow}</tbody></table></div>
+      <div data-comps-live class="mt-3"></div>
+      <p class="text-[11px] text-ink-hint mt-2">${esc(tr.asOf ? 'As of ' + tr.asOf + '. ' : '')}${esc(tr.source ? tr.source + '. ' : '')}EV/EBITDA & EV/Revenue from the IM / Private Circle; blank where not given.</p>
+    </div>`);
+  attachCompsLive(card, c, rows);
+  return card;
+}
+
+// 3) Transaction comps — past M&A deals in the space and the multiples paid.
+function renderTransactionComps(c, tx) {
+  const rows = tx.rows || [];
+  const medEbitda = peerMedian(rows.map(r => r.evEbitda));
+  const medRev = peerMedian(rows.map(r => r.evRevenue));
+  const line = r => `<tr>
+      <td class="nowrap">${esc(r.date || '—')}</td>
+      <td>${esc(r.target || '—')}${r.note ? `<span class="peer-note">${esc(r.note)}</span>` : ''}</td>
+      <td>${esc(r.buyer || '—')}</td>
+      <td class="num">${cVal(r.stakePct, '%')}</td>
+      <td class="num">${esc(r.dealValue || '—')}</td>
+      <td class="num">${cMult(r.evEbitda)}</td>
+      <td class="num">${cMult(r.evRevenue)}</td></tr>`;
+  const medRow = (medEbitda != null || medRev != null)
+    ? `<tr class="peer-med"><td></td><td>Deal median</td><td></td><td></td><td></td><td class="num">${cMult(medEbitda)}</td><td class="num">${cMult(medRev)}</td></tr>` : '';
+  return h(`
+    <div class="surface-card p-5">
+      <div class="section-title"><span class="sec-ico">${icon('briefcase', 'w-4 h-4')}</span>Transaction comps · past deals</div>
+      ${tx.note ? `<p class="text-[12.5px] text-ink-muted mb-3 leading-relaxed">${esc(tx.note)}</p>` : ''}
+      <div class="peer-scroll"><table class="comps-tbl">
+        <thead><tr><th>Date</th><th>Target</th><th>Buyer</th><th class="num">Stake</th><th class="num">Deal value</th><th class="num">EV/EBITDA</th><th class="num">EV/Revenue</th></tr></thead>
+        <tbody>${rows.map(line).join('')}${medRow}</tbody></table></div>
+      <p class="text-[11px] text-ink-hint mt-2">${esc(tx.source ? tx.source + '. ' : '')}From the IM / Private Circle; blank where a multiple was not disclosed.</p>
+    </div>`);
+}
+
+// Live Screener pull for the trading-comps listed rows (market cap, P/E, ROE). Purely additive:
+// fills the Mkt-cap column and shows a small live sub-table. Cached on c._peerLive so it persists.
+function attachCompsLive(card, c, rows) {
+  const listed = (rows || []).filter(r => r && r.listed && r.ticker);
+  const box = card.querySelector('[data-comps-live]');
+  if (!state.peerLiveEnabled || !listed.length || !box) return;
+
+  const liveTable = live => {
+    const cell = v => v == null ? '<span class="peer-live-na">—</span>' : v;
+    const body = listed.map(r => {
+      const d = (live.byTicker || {})[r.ticker] || {};
+      return `<tr><td>${esc(r.name)} <span class="peer-tick">${esc(r.ticker)}</span></td>
+        <td class="num">${cell(d.marketCapCr != null ? fmtCr(d.marketCapCr) : null)}</td>
+        <td class="num">${cell(d.pe != null ? d.pe.toFixed(1) + '×' : null)}</td>
+        <td class="num">${cell(d.roe != null ? d.roe + '%' : null)}</td></tr>`;
+    }).join('');
+    const got = listed.some(r => { const d = (live.byTicker || {})[r.ticker]; return d && (d.pe != null || d.marketCapCr != null); });
+    const foot = got
+      ? `Live from Screener.in${live.ts ? ' · ' + esc(live.ts) : ''}${state.peerLiveProxy ? '' : ' · direct (best-effort)'}.`
+      : `Screener returned no figures right now.${state.peerLiveProxy ? ' Try Refresh in a moment.' : ' Set the SCRAPEDO_API_KEY secret for reliable results.'}`;
+    return `<div class="peer-scroll mt-2"><table class="peer-tbl peer-live-tbl">
+        <thead><tr><th>Listed peer</th><th class="num">Market cap</th><th class="num">P/E</th><th class="num">ROE</th></tr></thead>
+        <tbody>${body}</tbody></table></div><p class="peer-live-hint">${foot}</p>`;
+  };
+  const renderPanel = () => {
+    const live = c._peerLive;
+    box.innerHTML = `
+      <div class="peer-live-head">
+        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live from Screener</span>
+        <button class="peer-live-btn" type="button" data-live-fetch>${icon('refreshCw', 'w-3.5 h-3.5')}<span>${live ? 'Refresh' : 'Fetch live market data'}</span><span class="peer-live-tag">live</span></button>
+      </div>
+      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current market cap, P/E and ROE straight from Screener.in.</p>`}</div>`;
+    box.querySelector('[data-live-fetch]').addEventListener('click', fetchLive);
+  };
+  const fetchLive = async e => {
+    const btn = e.currentTarget; btn.disabled = true;
+    const span = btn.querySelector('span'); span.textContent = 'Fetching…';
+    const byTicker = (c._peerLive && c._peerLive.byTicker) || {};
+    await Promise.all(listed.map(async r => {
+      try {
+        const res = await fetch(apiUrl('peer-multiple') + '?ticker=' + encodeURIComponent(r.ticker));
+        const d = await res.json().catch(() => ({}));
+        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), roce: _num(d.roce), roe: _num(d.roe) };
+      } catch (_) { byTicker[r.ticker] = byTicker[r.ticker] || {}; }
+    }));
+    c._peerLive = { ts: nowLabel(), byTicker };
+    // Backfill the trading table's blank Mkt-cap cells from the live data, then re-render the tab.
+    let filled = false;
+    listed.forEach(r => { const mc = byTicker[r.ticker] && byTicker[r.ticker].marketCapCr; if (mc != null && r.marketCapCr == null) { r.marketCapCr = Math.round(mc); filled = true; } });
+    if (filled) { renderTabPanel(c, 'comps'); return; }
+    renderPanel();
+  };
+  renderPanel();
+}
+
+/* ---- 7h. Returns tab — the real PE returns model (JRG/Bloom methodology) ------
+ * Not a toy any more: we enter at a multiple of a REAL model year's EBITDA, bridge
+ * enterprise value to equity via net debt, size our stake off post-money, and exit
+ * on MANAGEMENT'S OWN PROJECTED EBITDA (from the Financials tab) — with a knob to
+ * haircut that projection ("management under-delivers by X%"). Outputs MoIC + IRR
+ * and a full entry→exit bridge, plus an entry×exit sensitivity grid. ---------- */
+
+// FY label → 2-digit number for spacing the holding period. "FY26"/"FY2026"/"FY26E" → 26.
+function fyToNum(y) {
+  const m = String(y == null ? '' : y).match(/(\d{2,4})/);
+  if (!m) return null;
+  let n = parseInt(m[1], 10);
+  if (n >= 1900) n -= 2000;                 // FY2026 → 26
+  return n;
+}
+// Value of a financials row at a given year label (null when absent / non-numeric).
+function finAt(c, rowKey, year) {
+  const f = c.financials || {}, yrs = f.years || [], rows = f.rows || {};
+  const i = yrs.indexOf(year);
+  if (i < 0 || !Array.isArray(rows[rowKey])) return null;
+  const v = rows[rowKey][i];
+  return (typeof v === 'number' && isFinite(v)) ? v : null;
+}
+const ebitdaAt = (c, year) => finAt(c, 'ebitda', year);
+// Net debt at a year = total debt − cash (null when the model carries neither).
+function netDebtAt(c, year) {
+  const d = finAt(c, 'debt', year), cash = finAt(c, 'cash', year);
+  if (d == null && cash == null) return null;
+  return (d || 0) - (cash || 0);
+}
+// The inputs the controls hold — falls back to sensible, model-derived defaults so
+// every deal (seed or upload) gets a coherent returns model with zero setup.
+function returnsInputs(c) {
+  const r = c.returns || {}, d = r.defaults || {};
+  const f = c.financials || {}, yrs = Array.isArray(f.years) ? f.years : [];
+  const posY = y => { const e = ebitdaAt(c, y); return typeof e === 'number' && e > 0; };
+  const inYrs = y => y && yrs.includes(y);
+
+  // Entry year: prefer a stated one; else the latest actual with real EBITDA; else the first positive year.
+  let entryYear = [r.entryYear, r.startYear].find(y => inYrs(y) && posY(y)) || '';
+  if (!entryYear) {
+    const ai = yrs.indexOf(f.actualsThrough);
+    if (ai >= 0 && posY(yrs[ai])) entryYear = yrs[ai];
+    else { for (let i = Math.max(ai, 0); i < yrs.length; i++) if (posY(yrs[i])) { entryYear = yrs[i]; break; } }
+    if (!entryYear) entryYear = yrs.find(posY) || f.actualsThrough || yrs[0] || '';
+  }
+  // Exit year: prefer a stated one; else the last projected year with real EBITDA (the model horizon).
+  let exitYear = inYrs(r.exitYear) ? r.exitYear : '';
+  if (!exitYear) { for (let i = yrs.length - 1; i >= 0; i--) if (posY(yrs[i])) { exitYear = yrs[i]; break; } }
+  if (!exitYear || fyToNum(exitYear) <= fyToNum(entryYear)) exitYear = yrs[yrs.length - 1] || entryYear;
+
+  const invDefault = Number(r.investmentCr) > 0 ? Number(r.investmentCr) : Math.round((ebitdaAt(c, entryYear) || 50) * 2);
+  return {
+    investmentCr: invDefault,
+    entryYear, exitYear,
+    entryX: Number(d.entryX) > 0 ? Number(d.entryX) : 12,
+    exitX:  Number(d.exitX)  > 0 ? Number(d.exitX)  : 12,
+    underdeliverPct: Number(d.underdeliverPct) >= 0 ? Number(d.underdeliverPct) : 0,
+  };
+}
+
+// Pure calc — enterprise value, the net-debt bridge to equity, stake, exit, MoIC, IRR.
 function computeReturns(c, v) {
-  const { investmentCr, startEbitdaCr } = c.returns;
-  const entryValue = v.entryX * startEbitdaCr;
-  const stake = Math.min(1, investmentCr / entryValue);
-  const exitProfit = startEbitdaCr * Math.pow(1 + v.growthPct / 100, v.years);
-  const exitValue = v.exitX * exitProfit;
-  const proceeds = stake * exitValue;
-  const moneyBack = proceeds / investmentCr;
-  const yearlyReturn = (Math.pow(Math.max(moneyBack, 0), 1 / v.years) - 1) * 100;
-  return { proceeds, moneyBack, yearlyReturn };
+  const entryEbitda   = ebitdaAt(c, v.entryYear);
+  const rawExitEbitda = ebitdaAt(c, v.exitYear);
+  const investment    = Number(v.investmentCr) || 0;
+  const haircut       = Math.max(0, Math.min(100, Number(v.underdeliverPct) || 0)) / 100;
+  const exitEbitda    = rawExitEbitda == null ? null : rawExitEbitda * (1 - haircut);
+  const entryNetDebt  = netDebtAt(c, v.entryYear) || 0;
+  const exitNetDebt   = netDebtAt(c, v.exitYear)  || 0;
+
+  const entryEV  = (entryEbitda || 0) * v.entryX;
+  const preMoney = entryEV - entryNetDebt;                       // pre-money equity value
+  const postMoney = preMoney + investment;                       // post-money (after our primary cheque)
+  const stakePct = postMoney > 0 ? Math.min(1, investment / postMoney) : 0;
+
+  const exitEV     = (exitEbitda || 0) * v.exitX;
+  const exitEquity = exitEV - exitNetDebt;
+  const proceeds   = Math.max(0, stakePct * exitEquity);
+
+  const years = Math.max(1, (fyToNum(v.exitYear) - fyToNum(v.entryYear)) || 1);
+  const moneyBack = investment > 0 ? proceeds / investment : 0;
+  const yearlyReturn = moneyBack > 0 ? (Math.pow(moneyBack, 1 / years) - 1) * 100 : -100;
+
+  return {
+    entryEbitda, exitEbitda, rawExitEbitda, entryNetDebt, exitNetDebt,
+    entryEV, preMoney, postMoney, stakePct, exitEV, exitEquity,
+    investment, proceeds, moneyBack, yearlyReturn, years,
+  };
 }
 function readReturns(root) {
-  const g = k => Number(root.querySelector(`[data-slider="${k}"]`).value);
-  return { entryX: g('entryX'), growthPct: g('growthPct'), exitX: g('exitX'), years: g('years') };
+  const g = k => { const el = root.querySelector(`[data-ret="${k}"]`); return el ? el.value : null; };
+  return {
+    investmentCr: Number(g('investmentCr')),
+    entryYear: g('entryYear'), exitYear: g('exitYear'),
+    entryX: Number(g('entryX')), exitX: Number(g('exitX')),
+    underdeliverPct: Number(g('underdeliverPct')),
+  };
 }
 
+// Sliders (numeric) + the two year dropdowns. `d` = current inputs.
+const RETURN_SLIDERS = [
+  { key: 'entryX',          label: 'Entry price — EV/EBITDA multiple',   min: 4, max: 25, step: 0.5, suffix: '×' },
+  { key: 'exitX',           label: 'Exit price — EV/EBITDA multiple',    min: 4, max: 25, step: 0.5, suffix: '×' },
+  { key: 'underdeliverPct', label: 'If management under-delivers EBITDA', min: 0, max: 40, step: 5,   suffix: '%' },
+];
+
 function renderReturns(c) {
-  const r = c.returns, d = r.defaults;
+  const d = returnsInputs(c);
+  const f = c.financials || {}, yrs = Array.isArray(f.years) ? f.years : [];
   const wrap = h('<div class="space-y-5"></div>');
 
-  wrap.appendChild(h(`<div class="text-[13px] text-ink-muted">Investment: <b class="text-ink font-semibold tnum">${fmtCr(r.investmentCr)}</b> · Starting yearly profit (EBITDA): <b class="text-ink font-semibold tnum">${fmtCr(r.startEbitdaCr)}</b> (${esc(r.startYear)})</div>`));
+  const chequeMax = Math.max(500, roundNiceUI((Number(d.investmentCr) || 100) * 3));
+  const yearOpts = (sel) => yrs.map(y => {
+    const e = ebitdaAt(c, y);
+    return `<option value="${esc(y)}"${y === sel ? ' selected' : ''}>${esc(y)}${e != null ? ` · EBITDA ${fmtCr(e)}` : ''}</option>`;
+  }).join('');
 
   // Two big answers.
   wrap.appendChild(h(`
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="result-card">
-        <div class="result-kick">Money back</div>
+        <div class="result-kick">Money multiple (MoIC)</div>
         <div class="result-num tnum" data-out="moneyBack">—</div>
-        <div class="result-sub">on ${fmtCr(r.investmentCr)} invested</div>
+        <div class="result-sub" data-out="moneySub">on the cheque invested</div>
       </div>
       <div class="result-card">
-        <div class="result-kick">Yearly return</div>
+        <div class="result-kick">Annual return (IRR)</div>
         <div class="result-num tnum" data-out="yearly">—</div>
-        <div class="result-sub">compounded, per year</div>
+        <div class="result-sub" data-out="yearlySub">compounded, per year</div>
       </div>
     </div>`));
 
-  // Sliders + supporting chart.
+  // Assumptions (cheque + years + multiples + haircut) and the entry→exit bridge, side by side.
   const grid = h('<div class="grid gap-5 lg:grid-cols-2 items-start"></div>');
-  const sliders = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico">${icon('sliders', 'w-4 h-4')}</span>Your assumptions</div></div>`);
-  RETURN_SLIDERS.forEach(s => sliders.appendChild(h(`
+
+  const inputs = h(`<div class="surface-card p-5"><div class="section-title"><span class="sec-ico">${icon('sliders', 'w-4 h-4')}</span>Your assumptions</div></div>`);
+  // Cheque size
+  inputs.appendChild(h(`
+    <div class="slider-row">
+      <div class="slider-head"><span class="slider-label">Our cheque (primary)</span>
+        <span class="slider-val tnum" data-val="investmentCr">${fmtCr(d.investmentCr)}</span></div>
+      <input type="range" class="range" data-ret="investmentCr" data-slider="investmentCr" data-kind="cr" min="25" max="${chequeMax}" step="25" value="${d.investmentCr}" aria-label="Our cheque">
+    </div>`));
+  // Entry & exit year dropdowns
+  inputs.appendChild(h(`
+    <div class="slider-row">
+      <div class="ret-selects">
+        <label class="ret-sel"><span>Enter in</span>
+          <select class="ret-dd" data-ret="entryYear" aria-label="Entry year">${yearOpts(d.entryYear)}</select></label>
+        <label class="ret-sel"><span>Exit in</span>
+          <select class="ret-dd" data-ret="exitYear" aria-label="Exit year">${yearOpts(d.exitYear)}</select></label>
+      </div>
+      <p class="text-[11.5px] text-ink-hint mt-2" data-out="holdNote">—</p>
+    </div>`));
+  // Numeric sliders
+  RETURN_SLIDERS.forEach(s => inputs.appendChild(h(`
     <div class="slider-row">
       <div class="slider-head">
         <span class="slider-label">${esc(s.label)}</span>
         <span class="slider-val tnum" data-val="${s.key}">${d[s.key]}${esc(s.suffix)}</span>
       </div>
-      <input type="range" class="range" data-slider="${s.key}" data-suffix="${esc(s.suffix)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${d[s.key]}" aria-label="${esc(s.label)}">
+      <input type="range" class="range" data-ret="${s.key}" data-slider="${s.key}" data-suffix="${esc(s.suffix)}" min="${s.min}" max="${s.max}" step="${s.step}" value="${d[s.key]}" aria-label="${esc(s.label)}">
     </div>`)));
-  grid.appendChild(sliders);
+  grid.appendChild(inputs);
 
-  const chart = h(`
+  // Entry → exit bridge + supporting chart.
+  const bridge = h(`
     <div class="surface-card p-5">
-      <div class="section-title"><span class="sec-ico">${icon('coins', 'w-4 h-4')}</span>Invested vs. potential return</div>
-      <div class="text-[12.5px] text-ink-muted mb-2" data-out="chartCap">—</div>
-      <div class="chart-box" style="height:200px"><canvas data-chart="returns"></canvas></div>
+      <div class="section-title"><span class="sec-ico">${icon('scale', 'w-4 h-4')}</span>Entry → exit bridge</div>
+      <div class="ret-bridge" data-out="bridge"></div>
+      <div class="text-[12.5px] text-ink-muted mt-3 mb-1" data-out="chartCap">—</div>
+      <div class="chart-box" style="height:170px"><canvas data-chart="returns"></canvas></div>
     </div>`);
-  grid.appendChild(chart);
+  grid.appendChild(bridge);
   wrap.appendChild(grid);
 
-  wrap.appendChild(h('<p class="text-[12px] text-ink-hint">Quick estimate — move the sliders to test assumptions. Not a full valuation.</p>'));
+  // Sensitivity grid (entry × exit multiple → MoIC), like the Excel returns sheet.
+  wrap.appendChild(h(`
+    <div class="surface-card p-5">
+      <div class="section-title"><span class="sec-ico">${icon('gauge', 'w-4 h-4')}</span>Sensitivity — money multiple (MoIC)</div>
+      <p class="text-[12px] text-ink-muted mb-3">How the money multiple moves with the entry and exit EV/EBITDA multiples. Your current pick is highlighted.</p>
+      <div class="peer-scroll"><div data-out="sensi"></div></div>
+    </div>`));
+
+  wrap.appendChild(h('<p class="text-[12px] text-ink-hint">Exit EBITDA is management’s own projection from the Financials tab; the bridge subtracts net debt to get to equity. Illustrative — not a full valuation.</p>'));
 
   const comps = renderPeerComps(c);   // "How this deal compares" — only if the IM gave peers
   if (comps) wrap.appendChild(comps);
 
-  wrap.querySelectorAll('[data-slider]').forEach(inp => inp.addEventListener('input', () => recomputeReturns(c, wrap)));
+  wrap.querySelectorAll('[data-ret]').forEach(inp => {
+    const ev = inp.tagName === 'SELECT' ? 'change' : 'input';
+    inp.addEventListener(ev, () => recomputeReturns(c, wrap));
+  });
   requestAnimationFrame(() => recomputeReturns(c, wrap));   // set numbers (chart syncs once built)
   return wrap;
+}
+
+// Round a number up to a clean slider ceiling (25s below 500, else 50s).
+function roundNiceUI(n) { const step = n < 500 ? 25 : 50; return Math.max(step, Math.ceil(n / step) * step); }
+
+// The entry→exit bridge, rendered as two stacked mini-tables.
+function returnsBridgeHTML(c, v, out) {
+  const cr = n => n == null ? '—' : fmtCr(Math.round(n));
+  const rows = list => list.map(([k, val, cls]) => `<tr class="${cls || ''}"><td>${esc(k)}</td><td class="num">${val}</td></tr>`).join('');
+  const hc = Number(v.underdeliverPct) > 0 ? ` <span class="ret-haircut">-${v.underdeliverPct}%</span>` : '';
+  return `
+    <table class="ret-bridge-tbl"><tbody>
+      ${rows([
+        [`Entry EBITDA (${esc(v.entryYear)})`, cr(out.entryEbitda)],
+        [`× Entry multiple`, v.entryX + '×'],
+        [`Enterprise value`, cr(out.entryEV)],
+        [`− Net debt`, cr(out.entryNetDebt)],
+        [`Pre-money equity`, cr(out.preMoney), 'sub'],
+        [`+ Our cheque`, cr(out.investment)],
+        [`Post-money equity`, cr(out.postMoney), 'tot'],
+        [`Our stake`, (out.stakePct * 100).toFixed(1) + '%', 'hl'],
+      ])}
+    </tbody></table>
+    <table class="ret-bridge-tbl mt-2"><tbody>
+      ${rows([
+        [`Exit EBITDA (${esc(v.exitYear)})${hc}`, cr(out.exitEbitda)],
+        [`× Exit multiple`, v.exitX + '×'],
+        [`Enterprise value`, cr(out.exitEV)],
+        [`− Net debt`, cr(out.exitNetDebt)],
+        [`Exit equity value`, cr(out.exitEquity), 'sub'],
+        [`× Our stake`, (out.stakePct * 100).toFixed(1) + '%'],
+        [`Our proceeds`, cr(out.proceeds), 'tot hl'],
+      ])}
+    </tbody></table>`;
+}
+
+// 5×5 sensitivity grid: columns = entry multiple, rows = exit multiple, cell = MoIC.
+function returnsSensiHTML(c, v) {
+  const axis = base => [-2, -1, 0, 1, 2].map(s => Math.max(2, Math.round((base + s) * 2) / 2));
+  const cols = axis(v.entryX), rows = axis(v.exitX);
+  const head = `<tr><th class="cnr">Exit ╲ Entry</th>${cols.map(x => `<th class="num">${x}×</th>`).join('')}</tr>`;
+  const body = rows.map(rx => {
+    const cells = cols.map(cx => {
+      const out = computeReturns(c, { ...v, entryX: cx, exitX: rx });
+      const m = out.moneyBack, irr = out.yearlyReturn;
+      const cls = irr >= 25 ? 'g3' : irr >= 18 ? 'g2' : irr >= 10 ? 'g1' : 'g0';
+      const here = (cx === v.entryX && rx === v.exitX) ? ' here' : '';
+      return `<td class="num sens ${cls}${here}">${m > 0 ? m.toFixed(1) + '×' : '—'}</td>`;
+    }).join('');
+    return `<tr><th class="num">${rx}×</th>${cells}</tr>`;
+  }).join('');
+  return `<table class="sens-tbl"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 // Peer valuation sanity-check — reads the optional c.peers block. Table-first.
@@ -2402,23 +2830,35 @@ function maybeAddPeerLive(card, c) {
 
 function recomputeReturns(c, root) {
   const v = readReturns(root);
+  // Sync each slider's value label (the cheque shows as ₹ cr; others as value + suffix).
   root.querySelectorAll('[data-slider]').forEach(inp => {
     const lab = root.querySelector(`[data-val="${inp.dataset.slider}"]`);
-    if (lab) lab.textContent = inp.value + inp.dataset.suffix;
+    if (!lab) return;
+    lab.textContent = inp.dataset.kind === 'cr' ? fmtCr(Number(inp.value)) : inp.value + (inp.dataset.suffix || '');
   });
   const out = computeReturns(c, v);
 
-  root.querySelector('[data-out="moneyBack"]').textContent = out.moneyBack.toFixed(1) + '×';
+  root.querySelector('[data-out="moneyBack"]').textContent = out.moneyBack > 0 ? out.moneyBack.toFixed(1) + '×' : '—';
+  const mSub = root.querySelector('[data-out="moneySub"]'); if (mSub) mSub.textContent = `on ${fmtCr(out.investment)} invested`;
   const yInt = Math.round(out.yearlyReturn);
   const yEl = root.querySelector('[data-out="yearly"]');
-  yEl.textContent = yInt + '%';
+  yEl.textContent = (yInt > -100 ? yInt : '—') + (yInt > -100 ? '%' : '');
   yEl.style.color = yInt >= 20 ? POS : yInt >= 10 ? '#B45309' : '#E11D48';
+  const ySub = root.querySelector('[data-out="yearlySub"]'); if (ySub) ySub.textContent = `over ${out.years} year${out.years === 1 ? '' : 's'}, compounded`;
+
+  const hold = root.querySelector('[data-out="holdNote"]');
+  if (hold) hold.textContent = `Holding ${out.years} year${out.years === 1 ? '' : 's'} — ${esc(v.entryYear)} to ${esc(v.exitYear)}.`;
+
+  const bridge = root.querySelector('[data-out="bridge"]');
+  if (bridge) bridge.innerHTML = returnsBridgeHTML(c, v, out);
+  const sensi = root.querySelector('[data-out="sensi"]');
+  if (sensi) sensi.innerHTML = returnsSensiHTML(c, v);
 
   const cap = root.querySelector('[data-out="chartCap"]');
-  if (cap) cap.innerHTML = `Invested <b class="text-ink tnum">${fmtCr(c.returns.investmentCr)}</b> → could return <b class="text-ink tnum">${fmtCr(Math.round(out.proceeds))}</b>`;
+  if (cap) cap.innerHTML = `Invested <b class="text-ink tnum">${fmtCr(out.investment)}</b> → could return <b class="text-ink tnum">${fmtCr(Math.round(out.proceeds))}</b>`;
 
   if (_returnsChart) {
-    _returnsChart.data.datasets[0].data = [c.returns.investmentCr, Math.round(out.proceeds)];
+    _returnsChart.data.datasets[0].data = [out.investment, Math.round(out.proceeds)];
     _returnsChart.data.datasets[0].backgroundColor = [BRAND.navy, out.moneyBack >= 1 ? POS : NEG];
     _returnsChart.update();
   }
@@ -2503,7 +2943,7 @@ function initPanelCharts(c) {
 // panel is present, else the company's defaults.
 function buildReturnsChart(canvas, c) {
   const panel = $('#tab-panel');
-  const v = (panel && panel.querySelector('[data-slider]')) ? readReturns(panel) : c.returns.defaults;
+  const v = (panel && panel.querySelector('[data-ret]')) ? readReturns(panel) : returnsInputs(c);
   const out = computeReturns(c, v);
   const opts = cartesianBase(false);
   opts.plugins.legend = { display: false };
@@ -2515,7 +2955,7 @@ function buildReturnsChart(canvas, c) {
   _returnsChart = new Chart(canvas.getContext('2d'), {
     type: 'bar',
     data: { labels: ['Invested', 'Could return'], datasets: [{
-      data: [c.returns.investmentCr, Math.round(out.proceeds)],
+      data: [out.investment, Math.round(out.proceeds)],
       backgroundColor: [BRAND.navy, out.moneyBack >= 1 ? POS : NEG],
       borderRadius: 6, borderSkipped: false, maxBarThickness: 84,
     }]},
@@ -2887,7 +3327,7 @@ function openAddDealModal() {
         <span class="uz-ico">${icon(n ? 'check' : 'plus', 'w-4 h-4', n ? 3 : 2)}</span>
         <span class="uz-body">
           <span class="uz-title">Other documents <span class="text-ink-hint font-normal">(optional)</span></span>
-          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Extra IMs, term sheets, Word docs, decks, images, notes'}</span>
+          <span class="uz-sub">${n ? `${n} added — click to add more` : 'Extra IMs, term sheets, decks, images — and a Private Circle export (fills the Integrity checks)'}</span>
         </span>
       </button>${chips}`;
   }

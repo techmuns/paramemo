@@ -585,11 +585,13 @@
         "investmentCr": 200,
         "startEbitdaCr": 198,
         "startYear": "FY25",
+        "entryYear": "FY25",
+        "exitYear": "FY27E",
         "defaults": {
           "entryX": 12,
           "exitX": 14,
-          "growthPct": 18,
-          "years": 5
+          "years": 2,
+          "underdeliverPct": 0
         }
       },
       "peers": {
@@ -624,6 +626,36 @@
             "note": "Nylon / industrial yarns"
           }
         ]
+      },
+      "comps": {
+        "peerBenchmark": {
+          "asOf": "FY25",
+          "note": "Kusumgar's ~25% EBITDA margin sits at the top of the technical-textile pack; the listed names are broader players.",
+          "self": { "name": "Kusumgar", "listed": false, "revenueCr": 798, "revenueGrowthPct": 65, "ebitdaPct": 25, "patPct": 15 },
+          "rows": [
+            { "name": "Garware Technical Fibres", "listed": true, "ticker": "GARFIBRES", "revenueCr": 1450, "revenueGrowthPct": 12, "ebitdaPct": 18, "patPct": 12, "note": "Ropes, nets, technical textiles" },
+            { "name": "SRF", "listed": true, "ticker": "SRF", "revenueCr": 14700, "revenueGrowthPct": 10, "ebitdaPct": 22, "patPct": 12, "note": "Diversified; technical-textiles segment" },
+            { "name": "Century Enka", "listed": true, "ticker": "CENTENKA", "revenueCr": 1650, "revenueGrowthPct": 6, "ebitdaPct": 9, "patPct": 5, "note": "Nylon / industrial yarns" }
+          ]
+        },
+        "trading": {
+          "asOf": "FY25",
+          "source": "Illustrative sample — listed market cap & P/E pull live from Screener",
+          "note": "EV/EBITDA and EV/Revenue would come from the IM; market cap and P/E for listed names pull live below.",
+          "rows": [
+            { "name": "Garware Technical Fibres", "ticker": "GARFIBRES", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 1450, "ebitdaPct": 18, "evEbitda": 22, "evRevenue": 4.0 },
+            { "name": "SRF", "ticker": "SRF", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 14700, "ebitdaPct": 22, "evEbitda": 18, "evRevenue": 3.5 },
+            { "name": "Century Enka", "ticker": "CENTENKA", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 1650, "ebitdaPct": 9, "evEbitda": 9, "evRevenue": 0.8 }
+          ]
+        },
+        "transactions": {
+          "source": "Illustrative sample — real deals populate from the IM / Private Circle",
+          "note": "Recent control and growth deals in technical / industrial textiles.",
+          "rows": [
+            { "date": "2022", "target": "Technical-fabric maker (South India)", "buyer": "Strategic acquirer", "stakePct": 100, "dealValue": "₹210 cr", "evEbitda": 11, "evRevenue": 1.6, "note": "Illustrative control deal" },
+            { "date": "2021", "target": "Industrial-textiles platform", "buyer": "Growth PE fund", "stakePct": 26, "dealValue": "₹340 cr", "evEbitda": 13, "evRevenue": 2.4, "note": "Illustrative minority round" }
+          ]
+        }
       }
     },
     {
@@ -960,10 +992,10 @@
             55,
             6,
             122,
-            2911,
-            5237,
-            4043,
-            7127
+            220,
+            150,
+            120,
+            480
           ],
           "netWorth": [
             39.9,
@@ -1411,13 +1443,15 @@
       ],
       "returns": {
         "investmentCr": 425,
-        "startEbitdaCr": 312,
-        "startYear": "FY25E",
+        "startEbitdaCr": 96,
+        "startYear": "FY25",
+        "entryYear": "FY25",
+        "exitYear": "FY28",
         "defaults": {
           "entryX": 12,
           "exitX": 12,
-          "growthPct": 25,
-          "years": 4
+          "years": 3,
+          "underdeliverPct": 0
         }
       },
       "peers": {
@@ -1459,6 +1493,35 @@
             "note": "Sub-scale e-waste peer"
           }
         ]
+      },
+      "comps": {
+        "peerBenchmark": {
+          "asOf": "FY24",
+          "note": "Most e-waste recyclers earn single-digit/low-teens EBITDA margins; Attero is the scale leader but its FY24 margin is still thin.",
+          "self": { "name": "Attero", "listed": false, "revenueCr": 446, "revenueGrowthPct": 54, "ebitdaPct": 8, "patPct": 3 },
+          "rows": [
+            { "name": "Gravita India", "listed": true, "ticker": "GRAVITA", "revenueCr": 3200, "revenueGrowthPct": 25, "ebitdaPct": 9, "patPct": 6, "note": "Lead / aluminium / plastic recycler" },
+            { "name": "Eco Recycling (Ecoreco)", "listed": true, "ticker": "ECORECO", "revenueCr": 75, "revenueGrowthPct": 30, "ebitdaPct": 20, "patPct": 14, "note": "Small listed e-waste recycler" },
+            { "name": "TES-AMM", "listed": false, "ticker": null, "revenueCr": null, "revenueGrowthPct": null, "ebitdaPct": 15, "patPct": null, "note": "Higher EBITDA; strong supply-chain integration" }
+          ]
+        },
+        "trading": {
+          "asOf": "FY24",
+          "source": "Illustrative sample — listed market cap & P/E pull live from Screener",
+          "note": "EV/EBITDA and EV/Revenue would come from the IM; market cap and P/E for listed names pull live below.",
+          "rows": [
+            { "name": "Gravita India", "ticker": "GRAVITA", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 3200, "ebitdaPct": 9, "evEbitda": 20, "evRevenue": 1.8 },
+            { "name": "Eco Recycling (Ecoreco)", "ticker": "ECORECO", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 75, "ebitdaPct": 20, "evEbitda": 18, "evRevenue": 3.5 }
+          ]
+        },
+        "transactions": {
+          "source": "Illustrative sample — real deals populate from the IM / Private Circle",
+          "note": "Recent deals in recycling and circular-economy assets.",
+          "rows": [
+            { "date": "2023", "target": "E-waste recycling platform", "buyer": "Global recycler (strategic)", "stakePct": 100, "dealValue": "$60 mn", "evEbitda": 12, "evRevenue": 2.0, "note": "Illustrative control deal" },
+            { "date": "2022", "target": "Battery-recycling / black-mass startup", "buyer": "Growth PE fund", "stakePct": 30, "dealValue": "$40 mn", "evEbitda": null, "evRevenue": 3.0, "note": "Illustrative minority round" }
+          ]
+        }
       }
     },
     {
@@ -1902,11 +1965,13 @@
         "investmentCr": 400,
         "startEbitdaCr": 64,
         "startYear": "FY26E",
+        "entryYear": "FY26E",
+        "exitYear": "FY28E",
         "defaults": {
           "entryX": 18,
           "exitX": 14,
-          "growthPct": 35,
-          "years": 5
+          "years": 2,
+          "underdeliverPct": 0
         }
       },
       "peers": {
@@ -1955,6 +2020,38 @@
             "note": "Private value-fashion peer"
           }
         ]
+      },
+      "comps": {
+        "peerBenchmark": {
+          "asOf": "FY24",
+          "note": "Listed value-fashion peers run mid-teens EBITDA margins; Style Union is earlier-stage and still loss-making, but growing far faster.",
+          "self": { "name": "Style Union", "listed": false, "revenueCr": 345, "revenueGrowthPct": 90, "ebitdaPct": -4, "patPct": -7 },
+          "rows": [
+            { "name": "Trent (Zudio)", "listed": true, "ticker": "TRENT", "revenueCr": 12000, "revenueGrowthPct": 40, "ebitdaPct": 15, "patPct": 9, "note": "Zudio-led value fashion; market leader" },
+            { "name": "V-Mart Retail", "listed": true, "ticker": "VMART", "revenueCr": 2800, "revenueGrowthPct": 15, "ebitdaPct": 12, "patPct": 2, "note": "Value retail, tier 2/3 towns" },
+            { "name": "V2 Retail", "listed": true, "ticker": "V2RETAIL", "revenueCr": 1200, "revenueGrowthPct": 25, "ebitdaPct": 13, "patPct": 5, "note": "Value fashion" },
+            { "name": "Shoppers Stop (Intune)", "listed": true, "ticker": "SHOPERSTOP", "revenueCr": 4500, "revenueGrowthPct": 8, "ebitdaPct": 14, "patPct": 2, "note": "Intune value format" }
+          ]
+        },
+        "trading": {
+          "asOf": "FY24",
+          "source": "Illustrative sample — listed market cap & P/E pull live from Screener",
+          "note": "EV/EBITDA and EV/Revenue would come from the IM; market cap and P/E for listed names pull live below.",
+          "rows": [
+            { "name": "Trent (Zudio)", "ticker": "TRENT", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 12000, "ebitdaPct": 15, "evEbitda": 55, "evRevenue": 8.0 },
+            { "name": "V-Mart Retail", "ticker": "VMART", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 2800, "ebitdaPct": 12, "evEbitda": 22, "evRevenue": 1.6 },
+            { "name": "V2 Retail", "ticker": "V2RETAIL", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 1200, "ebitdaPct": 13, "evEbitda": 20, "evRevenue": 1.5 },
+            { "name": "Shoppers Stop (Intune)", "ticker": "SHOPERSTOP", "listed": true, "marketCapCr": null, "evCr": null, "revenueCr": 4500, "ebitdaPct": 14, "evEbitda": 12, "evRevenue": 1.1 }
+          ]
+        },
+        "transactions": {
+          "source": "Illustrative sample — real deals populate from the IM / Private Circle",
+          "note": "Recent growth and control deals in value / fast-fashion retail.",
+          "rows": [
+            { "date": "2023", "target": "Value-fashion chain (South India)", "buyer": "Growth PE fund", "stakePct": 20, "dealValue": "₹400 cr", "evEbitda": null, "evRevenue": 2.5, "note": "Illustrative minority round" },
+            { "date": "2022", "target": "Regional apparel retailer", "buyer": "Strategic acquirer", "stakePct": 100, "dealValue": "₹650 cr", "evEbitda": 14, "evRevenue": 1.8, "note": "Illustrative control deal" }
+          ]
+        }
       }
     }
   ]
