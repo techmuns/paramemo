@@ -569,9 +569,10 @@ async function runJob(job, payload) {
     // The core memo is in — now fill in the visual Deep Dive as a SEPARATE, lighter pass so the
     // deal lands fast and no single build is long enough to be killed. Best-effort and additive.
     const stored = companyById(data.company.id);
-    if (stored) stored._deepDivePending = true;
+    const ddInputs = { imText, imPages: imPages.slice(0, 6), excelText, sheetNames, notesText, basics: payload.basics };
+    if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; }   // cache inputs so the Deep Dive can be retried this session
     emitJobs();
-    startDeepDive(data.company.id, { imText, imPages, excelText, sheetNames, notesText, basics: payload.basics });
+    startDeepDive(data.company.id, ddInputs);
   } catch (err) {
     clearTimeout(writeTO);
     if (job._cancelled) return;   // cancelled mid-build — no error to show
@@ -582,6 +583,16 @@ async function runJob(job, payload) {
     job.finishedAt = Date.now();
     emitJobs();
   }
+}
+
+// Re-run the Deep Dive pass for a deal (this session), reusing the inputs cached at build time.
+function retryDeepDive(id) {
+  const c = companyById(id);
+  if (!c) return;
+  if (!c._ddInputs) { toast('Re-upload this deal to rebuild its deep dive'); return; }
+  c._deepDivePending = true; c._deepDiveFailed = false;
+  if (ui.companyId === id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');
+  startDeepDive(id, c._ddInputs);
 }
 
 // Second pass: build the visual Deep Dive for a freshly-created deal and merge it in. Runs in the
@@ -2949,12 +2960,15 @@ function renderDeepDive(c) {
         <p class="text-[13px] text-ink-muted mt-1 max-w-md">The core memo is ready — we're now unpacking the whole IM into visual sections. This usually takes another minute; it'll appear here on its own, and it's saved so you can come back to it.</p></div>`));
       return wrap;
     }
-    const failed = c._deepDiveFailed;
-    wrap.appendChild(h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
+    const failed = c._deepDiveFailed, canRetry = !!c._ddInputs;
+    const card = h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
       <div class="text-[15px] font-semibold text-ink">${failed ? 'The deep dive didn’t finish' : 'The IM deep-dive appears here'}</div>
       <p class="text-[13px] text-ink-muted mt-1 max-w-md">${failed
-        ? 'The core memo is complete, but the visual IM unpacking couldn’t be built this time. Re-upload the deal to try the deep dive again — the rest of the memo is unaffected.'
-        : 'Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.'}</p></div>`));
+        ? ('The core memo is complete and ready to show — the visual IM unpacking just couldn’t be built this time.' + (canRetry ? ' Try again below.' : ' Re-upload the deal to try the deep dive again — the rest of the memo is unaffected.'))
+        : 'Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.'}</p>
+      ${canRetry ? `<button class="hdr-btn dd-retry-btn" type="button" style="margin-top:14px;color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('refreshCw', 'w-4 h-4')} Try the deep dive again</button>` : ''}</div>`);
+    if (canRetry) card.querySelector('.dd-retry-btn').addEventListener('click', () => retryDeepDive(c.id));
+    wrap.appendChild(card);
     return wrap;
   }
   const dd = c.deepDive;
