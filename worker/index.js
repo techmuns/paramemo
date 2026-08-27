@@ -631,7 +631,7 @@ async function handleDeepDive(request, env, ctx) {
     '=== INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none)') + '\n' +
     '=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n' +
     (notesText.trim() ? '=== BANKER NOTES ===\n' + notesText + '\n' : '') +
-    'SCOPE: produce 4–6 well-chosen sections covering the most important parts of the IM (not more), each with a few focused blocks — complete but concise, so it builds quickly and reliably. ' +
+    'SCOPE: produce 6–9 well-chosen sections covering the most important parts of the IM, each with a few focused blocks — thorough but tight. Be sure to ALSO capture, whenever the IM contains them (these are high-value and easily missed): the FOUNDING TEAM and their pedigree / track record; any COMPARABLE or PRECEDENT company the IM benchmarks itself against and what it implies; named CUSTOMER / ISSUER TESTIMONIALS or quotes; named DISTRIBUTION / CHANNEL PARTNERS; flagship CASE STUDIES; and the PRODUCT / EXPANSION ROADMAP. ' +
     'Return ONLY the deepDive JSON object { source, summary, sections }.';
 
   // Stream keepalives (like /api/generate) so a multi-second build never trips the edge timeout.
@@ -642,7 +642,7 @@ async function handleDeepDive(request, env, ctx) {
   const run = (async () => {
     let out;
     try {
-      const ans = await callClaude({ system, user, images: imPages, maxTokens: 8000 }, env);
+      const ans = await callClaude({ system, user, images: imPages, maxTokens: 10000 }, env);
       const obj = extractJson(ans.text);
       const dd = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.deepDive));
       if (!dd) throw new ApiError(502, "We couldn't build the deep dive from these documents.");
