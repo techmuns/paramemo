@@ -35,6 +35,7 @@ export default {
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
+      if (request.method === 'DELETE' && path.includes('/api/jobs/'))         return await handleJobDelete(request, env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -55,6 +56,50 @@ async function readHiddenSeeds(env) {
   try { return JSON.parse((await env.DEALS.get('hiddenSeeds')) || '[]'); }
   catch { return []; }
 }
+
+/* ------------------------------------------------------------------ *
+ * BUILD-JOB RECORDS — durable pass/fail visibility for uploads.
+ * The whole build is driven by the browser tab, and only a *successful* memo
+ * used to be saved anywhere — so a failed or interrupted build left no trace and
+ * vanished on reload. Now every build writes a small record to KV: "running" when
+ * it starts, "error" (with the reason) if it fails, and it's cleared on success
+ * (the finished deal itself is the record). GET /api/companies returns these, so
+ * the dashboard shows a build's outcome even after a reload or on another device.
+ * Stored as one key `jobs` = { [id]: { id, name, sector, status, startedAt, finishedAt, error } }.
+ * ------------------------------------------------------------------ */
+async function readJobsMap(env) {
+  if (!env.DEALS) return {};
+  try { const m = JSON.parse((await env.DEALS.get('jobs')) || '{}'); return (m && typeof m === 'object') ? m : {}; }
+  catch { return {}; }
+}
+async function saveJobsMap(env, map) {
+  // Prune so the key never grows unbounded: keep running jobs + anything finished in
+  // the last 7 days, newest 40.
+  const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+  const kept = Object.values(map)
+    .filter(j => j && j.id && (j.status === 'running' || (j.finishedAt || j.startedAt || 0) > cutoff))
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, 40);
+  const out = {}; for (const j of kept) out[j.id] = j;
+  try { await env.DEALS.put('jobs', JSON.stringify(out)); } catch { /* best-effort */ }
+  return out;
+}
+async function setJob(env, job) {
+  if (!env.DEALS || !job || !job.id) return;
+  try { const map = await readJobsMap(env); map[job.id] = { ...map[job.id], ...job }; await saveJobsMap(env, map); }
+  catch { /* best-effort — a job record must never break a build */ }
+}
+async function clearJob(env, id) {
+  if (!env.DEALS || !id) return;
+  try { const map = await readJobsMap(env); if (map[id]) { delete map[id]; await saveJobsMap(env, map); } }
+  catch { /* best-effort */ }
+}
+// DELETE /api/jobs/<id> — dismiss a build record (a failed/stale one) so it stops showing.
+async function handleJobDelete(request, env) {
+  if (!env.DEALS) return json({ ok: true });
+  const id = decodeURIComponent((new URL(request.url).pathname.split('/api/jobs/')[1] || '').replace(/\/+$/, ''));
+  if (id) await clearJob(env, id);
+  return json({ ok: true });
+}
 async function handleCompanies(env) {
   // The peer-multiple endpoint always responds — Munshot market data first, then a
   // screener.in fallback (scrape.do when SCRAPEDO_API_KEY is set, else a best-effort
@@ -62,14 +107,15 @@ async function handleCompanies(env) {
   // deal has listed tickers. `peerLiveProxy` is retained for the UI's diagnostics only.
   const peerLiveProxy = !!pickSecret(env, 'SCRAPEDO_API_KEY');
   const peerLiveEnabled = true;
-  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy });   // KV not bound yet → no uploads
+  if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy, jobs: [] });   // KV not bound yet → no uploads
   const index = await readIndex(env);
   const companies = [];
   for (const id of index) {
     const raw = await env.DEALS.get(`company:${id}`);
     if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
   }
-  return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled, peerLiveProxy });
+  const jobs = Object.values(await readJobsMap(env));   // running / failed builds, so the UI can show their outcome
+  return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled, peerLiveProxy, jobs });
 }
 
 // GET /api/peer-multiple?ticker=XXX — live market ratios for a LISTED peer.
@@ -185,6 +231,7 @@ async function handleGenerate(request, env, ctx) {
   let payload;
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
   const { sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
+  const jobId = (typeof payload.jobId === 'string' && payload.jobId) ? payload.jobId.slice(0, 64) : '';
   const excelText = String(payload.excelText || '').slice(0, 120000);
   // Cap combined document text (IM + any extra docs the browser concatenated) so a big multi-doc
   // upload can never overflow the model's context and trip a request-size error.
@@ -313,9 +360,16 @@ async function handleGenerate(request, env, ctx) {
   let finished = false;
   const ka = setInterval(() => { if (!finished) writer.write(enc.encode(' ')).catch(() => {}); }, 5000);   // keep the edge from idling out
   const run = (async () => {
+    const jobMeta = { id: jobId, name: (basics.name || '').trim() || 'New deal', sector: (basics.sector || '').trim() };
+    if (jobId) await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
     let out;
-    try { out = { company: await generateCompany({ system, user, imPages, basics, env }) }; }
-    catch (e) { out = { error: (e && e.message) || 'The memo could not be built. Please try again.', status: e instanceof ApiError ? e.status : 500 }; }
+    try {
+      out = { company: await generateCompany({ system, user, imPages, basics, env }) };
+      if (jobId) await clearJob(env, jobId);                    // success → the finished deal IS the record
+    } catch (e) {
+      out = { error: (e && e.message) || 'The memo could not be built. Please try again.', status: e instanceof ApiError ? e.status : 500 };
+      if (jobId) await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: out.error });
+    }
     finished = true; clearInterval(ka);
     try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
     try { await writer.close(); } catch (_) {}

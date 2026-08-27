@@ -317,17 +317,17 @@ async function loadCompanies() {
   if (!seed) throw new Error(`Could not load companies.json${status ? ` (HTTP ${status})` : ''}`);
 
   // Uploaded deals from the Worker's KV (may be [] or unavailable on a static-only host).
-  let uploaded = [], hiddenSeeds = [], peerLiveEnabled = false, peerLiveProxy = false;
+  let uploaded = [], hiddenSeeds = [], peerLiveEnabled = false, peerLiveProxy = false, jobs = [];
   try {
     const res = await fetch(apiUrl('companies'), { cache: 'no-cache' });
-    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; if (Array.isArray(d.hiddenSeeds)) hiddenSeeds = d.hiddenSeeds; peerLiveEnabled = !!d.peerLiveEnabled; peerLiveProxy = !!d.peerLiveProxy; }
+    if (res.ok) { const d = await res.json(); if (Array.isArray(d.companies)) uploaded = d.companies; if (Array.isArray(d.hiddenSeeds)) hiddenSeeds = d.hiddenSeeds; if (Array.isArray(d.jobs)) jobs = d.jobs; peerLiveEnabled = !!d.peerLiveEnabled; peerLiveProxy = !!d.peerLiveProxy; }
   } catch (_) { /* no API (static preview) — seeds only */ }
 
   const hidden = new Set(hiddenSeeds);
   const seeds = (Array.isArray(seed.companies) ? seed.companies : []).filter(c => !hidden.has(c.id));   // sample can be hidden
   const seedIds = new Set(seeds.map(c => c.id));
   const companies = [...seeds, ...uploaded.filter(c => c && !seedIds.has(c.id))].map(prepCompany);
-  return { meta: seed.meta || null, peerLiveEnabled, peerLiveProxy, companies };
+  return { meta: seed.meta || null, peerLiveEnabled, peerLiveProxy, companies, jobs };
 }
 
 // Indian PE deals run on fiscal years; some Excel models label the columns as bare calendar
@@ -437,7 +437,10 @@ function jobElapsed(job) {
 
 function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basics }
   const job = {
-    id: 'job' + (++_jobSeq), name: (payload.basics.name || '').trim() || 'New deal',
+    // Globally-unique id (time + counter + random) so the server's build record can be
+    // matched back to this job even after a reload or on another device.
+    id: 'job_' + Date.now().toString(36) + '_' + (++_jobSeq).toString(36) + Math.random().toString(36).slice(2, 6),
+    name: (payload.basics.name || '').trim() || 'New deal',
     sector: (payload.basics.sector || '').trim(), status: 'running', stageIdx: 0,
     startedAt: Date.now(), finishedAt: null, company: null, error: null, seen: false,
   };
@@ -523,7 +526,7 @@ async function runJob(job, payload) {
 
     stage(2);
     writeTO = setTimeout(() => stage(3), 7000);   // light up "writing" partway through the AI wait
-    const bodyObj = { imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64, imPages };
+    const bodyObj = { imText, excelText, sheetNames, notesText, basics: payload.basics, imPdfBase64, imPages, jobId: job.id };
     // No-interruption layer: the worker streams (so a multi-minute build never trips the edge
     // timeout), and we automatically retry once on a transient/server failure before surfacing it.
     let data = null, lastErr = null;
@@ -556,7 +559,36 @@ async function runJob(job, payload) {
 }
 
 // Discard a finished/failed job card from the pipeline (does not touch the memo).
-function dismissJob(id) { state.jobs = state.jobs.filter(j => j.id !== id); emitJobs(); }
+function dismissJob(id) {
+  const job = state.jobs.find(j => j.id === id);
+  state.jobs = state.jobs.filter(j => j.id !== id);
+  emitJobs();
+  // Best-effort remove the durable server record so a dismissed failure doesn't reappear on reload.
+  // (A successful build has no server record, so this is a harmless no-op for 'done' jobs.)
+  if (job && job.status !== 'done') { try { fetch(apiUrl('jobs/' + encodeURIComponent(id)), { method: 'DELETE' }).catch(() => {}); } catch (_) {} }
+}
+
+// On load, bring the server's build records into the in-memory job list so a build's outcome
+// (failed, or still in flight) is visible after a reload or on another device — the pipeline cards
+// and the 🔔 render straight from state.jobs. A "running" record with no live tab driving it (older
+// than 15 min) is treated as stopped, so a dead build never spins forever.
+function hydrateServerJobs(list) {
+  if (!Array.isArray(list)) return;
+  const now = Date.now(), STALE = 15 * 60 * 1000;
+  list.forEach(sj => {
+    if (!sj || !sj.id || state.jobs.some(j => j.id === sj.id)) return;   // never duplicate an in-session job
+    let status = sj.status === 'running' ? 'running' : 'error';
+    let error = sj.error || 'The build didn’t finish — please try again.';
+    if (status === 'running' && (now - (sj.startedAt || now)) > STALE) {
+      status = 'error'; error = 'The build was interrupted before it finished (the tab may have been closed) — please try again.';
+    }
+    state.jobs.push({
+      id: sj.id, name: sj.name || 'New deal', sector: sj.sector || '',
+      status, stageIdx: 3, startedAt: sj.startedAt || now, finishedAt: sj.finishedAt || null,
+      company: null, error, seen: true, fromServer: true,
+    });
+  });
+}
 
 /* ---- Lazy-load pdf.js + SheetJS the first time a partner uploads ---- */
 let _libsPromise = null;
@@ -669,7 +701,7 @@ function renderBellPanel() {
     }
     if (j.status === 'error') {
       return `<div class="notif"><span class="notif-ic" style="color:#fff;background:#F43F5E">${icon('alert', 'w-4 h-4')}</span>
-        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Couldn't build the memo. ${esc(j.error || '')}</div></div>
+        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Couldn't build the memo. ${esc(j.error || '')}</div><button class="notif-cta" data-retry="${j.id}" type="button">${icon('refreshCw', 'w-3.5 h-3.5')} Try again</button></div>
         <button class="notif-x" data-dismiss="${j.id}" aria-label="Dismiss">${icon('x', 'w-4 h-4')}</button></div>`;
     }
     return `<div class="notif click" data-view-job="${j.company ? j.company.id : ''}"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#14B8A6,#10B981)">${icon('check', 'w-4 h-4', 3)}</span>
@@ -681,6 +713,7 @@ function renderBellPanel() {
     const id = el.dataset.viewJob; closeBell(); if (id) openCompany(id);
   }));
   menu.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); dismissJob(b.dataset.dismiss); }));
+  menu.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const id = b.dataset.retry; closeBell(); dismissJob(id); openAddDealModal(); }));
 }
 function openBell() {
   $('#bell-menu').classList.remove('hidden');
@@ -1424,8 +1457,10 @@ function renderJobCard(j) {
     const el = h(`<div class="job-card err">
       <span class="job-spin">${icon('alert', 'w-4 h-4')}</span>
       <div class="min-w-0" style="flex:1 1 auto"><div class="job-name">${esc(j.name)}</div><div class="job-status">Couldn't build the memo — ${esc(j.error || '')}</div></div>
+      <button class="job-btn" data-retry="${j.id}">Try again</button>
       <button class="job-btn" data-dismiss="${j.id}">Dismiss</button>
     </div>`);
+    el.querySelector('[data-retry]').addEventListener('click', () => { dismissJob(j.id); openAddDealModal(); });
     el.querySelector('[data-dismiss]').addEventListener('click', () => dismissJob(j.id));
     return el;
   }
@@ -4106,6 +4141,7 @@ async function init() {
     state.companies = Array.isArray(data.companies) ? data.companies : [];
     state.peerLiveEnabled = !!data.peerLiveEnabled;
     state.peerLiveProxy = !!data.peerLiveProxy;
+    hydrateServerJobs(data.jobs);   // show any failed / in-flight builds from a previous visit
     populateCompanyDropdown();
     window.addEventListener('hashchange', route);
     route();                       // respects a deep-link hash on first load
