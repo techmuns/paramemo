@@ -3792,7 +3792,11 @@ async function imageFileToCanvas(file, { maxDim }) {
 }
 // Render every uploaded PDF/image into one shared budget of <= maxImages JPEGs, then encode within
 // a total byte budget (so a big multi-doc upload never exceeds the model's request-size limit).
-async function renderAllDocImages(files, { maxImages = 20, targetW = 1540, maxDim = 7600, budgetBytes = 6_000_000 } = {}) {
+// NOTE: keep this payload MODERATE. A very large image set makes the Bedrock vision call slow
+// enough that a heavy multi-document deal can run past the Worker's limit and never finish. The
+// full page TEXT of every document is always sent separately, so the images are supplementary
+// (logos, org charts, infographics) — 12 legible composites cover that without bloating the request.
+async function renderAllDocImages(files, { maxImages = 12, targetW = 1280, maxDim = 6200, budgetBytes = 4_000_000 } = {}) {
   try {
     const docs = [];
     for (const f of files) {
@@ -3975,8 +3979,8 @@ function openAddDealModal() {
     { icon: 'scale',    label: 'Analysing the numbers & fit' },
     { icon: 'sparkles', label: 'Writing your screening memo' },
   ];
-  const BAR_BASE  = [10, 32, 54, 76];   // where the bar jumps to when a step begins
-  const BAR_CREEP = [28, 50, 72, 96];   // where it slowly creeps while that step runs
+  const BAR_BASE  = [8, 28, 50, 70];    // where the bar jumps to when a step begins
+  const BAR_CREEP = [24, 44, 64, 80];   // creep ceiling while a step runs — kept well under 100% so it never implies "almost done"
 
   // Build the working screen once and return a small controller to drive it.
   function renderWorking(job) {
@@ -3984,7 +3988,7 @@ function openAddDealModal() {
       <div class="gen-wrap">
         <div class="gen-hero"><div class="gen-hero-ic">${icon('sparkles', 'w-6 h-6', 2.2)}</div></div>
         <div class="gen-head font-display" data-head>Getting started…</div>
-        <div class="gen-sub">This usually takes about a minute — you can keep working, it builds in the background.</div>
+        <div class="gen-sub" data-sub>Most memos take 1–3 minutes; a large deal with many pages can take longer. You can keep working — it builds in the background and won't be lost if you reload.</div>
         <div class="pbar"><div class="pbar-fill" data-bar></div></div>
         <div class="pbar-meta"><span class="pbar-elapsed" data-elapsed>0:00 elapsed</span><span class="pbar-pct" data-pct>0%</span></div>
         <div class="gen-steps">
@@ -4007,13 +4011,18 @@ function openAddDealModal() {
     const pctEl = bodyEl.querySelector('[data-pct]');
     const headEl = bodyEl.querySelector('[data-head]');
     const elapsedEl = bodyEl.querySelector('[data-elapsed]');
+    const subEl = bodyEl.querySelector('[data-sub]');
     const stepEls = [...bodyEl.querySelectorAll('[data-gstep]')];
     let curPct = 0, pctRAF = 0, creepTO = null, finished = false, timerIV = null;
 
     const fmtElapsed = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
     function startTimer() {
       if (timerIV) return;
-      const tick = () => { if (elapsedEl) elapsedEl.textContent = fmtElapsed(Date.now() - job.startedAt) + ' elapsed'; };
+      const tick = () => {
+        if (elapsedEl) elapsedEl.textContent = fmtElapsed(Date.now() - job.startedAt) + ' elapsed';
+        // Be honest once it runs long — the elapsed clock is the real signal, not the bar.
+        if (subEl && !finished && Date.now() - job.startedAt > 90000) subEl.textContent = 'Taking longer than usual — still working. Large deals can take several minutes; you can keep working and it won\'t be lost.';
+      };
       tick();
       timerIV = setInterval(tick, 1000);
     }

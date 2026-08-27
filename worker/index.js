@@ -114,7 +114,20 @@ async function handleCompanies(env) {
     const raw = await env.DEALS.get(`company:${id}`);
     if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
   }
-  const jobs = Object.values(await readJobsMap(env));   // running / failed builds, so the UI can show their outcome
+  // Running / failed builds, so the UI can show their outcome. A build stuck "running" well past
+  // the Worker's own limit was almost certainly killed mid-flight (no done/error was ever written)
+  // — surface it as a failure instead of a forever-spinner, and persist that so it stays resolved.
+  let jobs = Object.values(await readJobsMap(env));
+  const STALE_MS = 14 * 60 * 1000, now = Date.now();
+  let mutated = false;
+  jobs = jobs.map(j => {
+    if (j && j.status === 'running' && now - (j.startedAt || now) > STALE_MS) {
+      mutated = true;
+      return { ...j, status: 'error', finishedAt: now, error: 'The build didn’t finish in time — the documents may be very large. Please try again.' };
+    }
+    return j;
+  });
+  if (mutated) { const m = {}; jobs.forEach(j => { if (j && j.id) m[j.id] = j; }); await saveJobsMap(env, m); }
   return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled, peerLiveProxy, jobs });
 }
 
@@ -463,11 +476,11 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
     // generous timeout. Retry only genuinely-transient failures (429/5xx, a dropped connection);
     // do NOT hammer a timed-out call — another few-minute wait won't help and only risks the
     // browser giving up. One slow-but-complete attempt beats four aborted ones.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 500))); // ~1.5s, 3s (+jitter) — give a throttle window time to clear
       let res;
       try {
-        res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(280_000) });
+        res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(180_000) });   // fail a too-slow model cleanly (with an error record) before the Worker itself is killed
       } catch (e) {
         lastErr = `network error: ${e.message}`;
         if (e.name === 'TimeoutError') { timedOut = true; break; }  // too slow — stop; don't burn another few minutes
