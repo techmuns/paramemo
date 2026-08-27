@@ -765,8 +765,8 @@ function renderBellPanel() {
   if (!list.length) { menu.innerHTML = '<div class="bell-empty">No memos in progress.<br>Upload a deal and it builds here.</div>'; return; }
   menu.innerHTML = list.map(j => {
     if (j.status === 'running') {
-      return `<div class="notif"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#2E6FD6,#0C3078)">${icon('loader', 'w-4 h-4')}</span>
-        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Building your memo… <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div></div></div>`;
+      return `<div class="notif click" data-watch-job="${j.id}"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#2E6FD6,#0C3078)">${icon('loader', 'w-4 h-4')}</span>
+        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Building your memo… <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div><div class="notif-cta">${icon('trendingUp', 'w-3.5 h-3.5')} View progress</div></div></div>`;
     }
     if (j.status === 'error') {
       return `<div class="notif"><span class="notif-ic" style="color:#fff;background:#F43F5E">${icon('alert', 'w-4 h-4')}</span>
@@ -783,6 +783,10 @@ function renderBellPanel() {
   }));
   menu.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); dismissJob(b.dataset.dismiss); }));
   menu.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const id = b.dataset.retry; closeBell(); dismissJob(id); openAddDealModal(); }));
+  menu.querySelectorAll('[data-watch-job]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-dismiss]')) return;
+    const j = state.jobs.find(x => x.id === el.dataset.watchJob); closeBell(); if (j) openAddDealModal({ watchJob: j });
+  }));
 }
 function openBell() {
   $('#bell-menu').classList.remove('hidden');
@@ -1535,11 +1539,16 @@ function renderJobCard(j) {
   }
   const pct = [12, 34, 56, 82][j.stageIdx] || 12;
   const label = ['Reading the Information Memorandum', 'Reading the financial model', 'Analysing the numbers & fit', 'Writing your screening memo'][j.stageIdx] || 'Working';
-  return h(`<div class="job-card">
+  const el = h(`<div class="job-card is-clickable" role="button" tabindex="0" aria-label="Open build progress for ${esc(j.name)}">
     <span class="job-spin">${icon('loader', 'w-4 h-4')}</span>
     <div class="min-w-0"><div class="job-name">${esc(j.name)}</div><div class="job-status">${esc(label)}… · <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div></div>
     <div class="job-bar"><span style="width:${pct}%"></span></div>
+    <span class="job-open">${icon('arrowRight', 'w-4 h-4')}</span>
   </div>`);
+  const open = () => openAddDealModal({ watchJob: j });
+  el.addEventListener('click', open);
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  return el;
 }
 
 /* ---- Cards view ---- */
@@ -3879,8 +3888,10 @@ async function fileToBase64(file) {
   return btoa(bin);
 }
 
-/* ---- The real "Add a deal" modal: upload → AI → memo ---- */
-function openAddDealModal() {
+/* ---- The real "Add a deal" modal: upload → AI → memo ----
+ * opts.watchJob: open straight into a running job's live progress screen (e.g. from clicking a
+ * still-building pipeline card) instead of the upload form. */
+function openAddDealModal(opts = {}) {
   const root = $('#modal-root');
   const sel = { im: null, excel: null, notes: null, extra: [] };   // chosen files (extra = any supporting docs)
   let jobUnsub = null, gpCtl = null;                     // background-job mirror (see generate/close)
@@ -4093,12 +4104,12 @@ function openAddDealModal() {
     });
   }
 
-  // Start a background job and mirror its progress in the modal while it's open.
-  // Closing the modal does NOT cancel the job — the pipeline card + bell take over.
-  function generate() {
-    if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
-    if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
-    const job = startGeneration({ files: { im: sel.im, excel: sel.excel, notes: sel.notes, extra: sel.extra.slice() }, basics: { ...captured.basics } });
+  // Show + follow a job's live progress screen (the big bar, steps and elapsed clock) in the modal.
+  // Reused by generate() AND by clicking a still-building pipeline card / bell row, so a partner who
+  // closed the modal can always re-open the full progress view. Safe if the job already finished.
+  function mirror(job) {
+    if (job.status === 'done')  { renderDone(job.company, jobElapsed(job)); return; }
+    if (job.status === 'error') { renderForm(job.error); return; }
     gpCtl = renderWorking(job);
     let lastStage = -1, shown = false;
     const update = () => {
@@ -4116,6 +4127,14 @@ function openAddDealModal() {
     };
     jobUnsub = onJobs(update);
     update();
+  }
+
+  // Start a background job and mirror its progress in the modal while it's open.
+  // Closing the modal does NOT cancel the job — the pipeline card + bell take over.
+  function generate() {
+    if (!sel.im)    return renderForm('Please add the Information Memorandum (PDF).');
+    if (!sel.excel) return renderForm('Please add the Excel financial model (.xlsx).');
+    mirror(startGeneration({ files: { im: sel.im, excel: sel.excel, notes: sel.notes, extra: sel.extra.slice() }, basics: { ...captured.basics } }));
   }
 
   // Capture basics before we blow away the form during "working" (so generate can read them).
@@ -4147,7 +4166,7 @@ function openAddDealModal() {
   overlay.querySelector('.modal-close').addEventListener('click', close);
   document.addEventListener('keydown', onKey);
 
-  renderForm();
+  if (opts.watchJob) mirror(opts.watchJob); else renderForm();
   root.appendChild(overlay);
   requestAnimationFrame(() => overlay.classList.add('show'));
 }

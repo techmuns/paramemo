@@ -150,6 +150,11 @@
     .job-bar { flex: 1 1 auto; max-width: 260px; height: 6px; border-radius: 999px; background: #EDF0F5; overflow: hidden; }
     .job-bar span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg,#0C3078,#2E6FD6 60%,#14B8A6); transition: width .5s ease; }
     .job-card.err .job-spin { background: linear-gradient(140deg,#F43F5E,#be123c); }
+    .job-card.is-clickable { cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+    .job-card.is-clickable:hover { border-color: var(--border-strong); box-shadow: 0 6px 20px rgba(12,48,120,.10); }
+    .job-card.is-clickable:focus-visible { outline: none; box-shadow: var(--ring-navy); }
+    .job-open { flex: 0 0 auto; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; color: var(--navy); background: rgba(12,48,120,.06); opacity: .55; transition: opacity .15s, transform .15s; }
+    .job-card.is-clickable:hover .job-open { opacity: 1; transform: translateX(2px); }
     .job-btn { font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--border); background: #fff; color: var(--ink); }
     .job-btn:hover { border-color: var(--border-strong); }
     .job-btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
