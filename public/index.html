@@ -957,6 +957,13 @@
     .gen-bg { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 16px; padding: 9px; border-radius: 10px;
       font-size: 12.5px; font-weight: 600; color: var(--muted); background: #F4F6FB; border: 1px solid var(--border); transition: color .15s, border-color .15s, background .15s; }
     .gen-bg:hover { color: var(--navy); border-color: var(--border-strong); background: #EEF2FB; }
+    .gen-actions { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .gen-actions .gen-bg { margin-top: 0; }
+    .gen-cancel { border: 0; background: transparent; color: #be123c; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 4px; border-radius: 8px; }
+    .gen-cancel:hover { text-decoration: underline; }
+    .job-cancel { color: #be123c; }
+    .job-cancel:hover { border-color: #F43F5E; color: #be123c; background: rgba(244,63,94,.06); }
+    .dd-prep-ic svg { animation: spin .9s linear infinite; }
 
     /* ---- Export preview (fallback when the browser blocks print in an iframe) ---- */
     .pv-overlay { padding: 0; }

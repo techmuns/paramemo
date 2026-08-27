@@ -32,6 +32,7 @@ export default {
     try {
       // endsWith keeps the routes working even if the app is served under a sub-path.
       if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env, ctx);
+      if (request.method === 'POST'   && path.endsWith('/api/deepdive'))      return await handleDeepDive(request, env, ctx);
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
@@ -312,28 +313,7 @@ async function handleGenerate(request, env, ctx) {
     '• comps.trading = { asOf, source, note, rows:[ { name, ticker|null, listed, marketCapCr, evCr, revenueCr, ebitdaPct, evEbitda, evRevenue, note } ] } — LISTED peers\' trading multiples. Give the NSE ticker for listed Indian names; leave marketCapCr/evCr null (they refresh live from Screener) and fill evEbitda/evRevenue only where a figure is provided.\n' +
     '• comps.transactions = { source, note, rows:[ { date:"YYYY" or "YYYY-MM", target, buyer, seller|null, dealType, stakePct, dealValue:"<as quoted, e.g. ₹340 cr or $34 mn>", evEbitda, evRevenue, note } ] } — past M&A / PE deals in the space and the multiples paid; null any multiple not disclosed.\n' +
     '• All money in ₹ crore except transaction dealValue (keep it as quoted). Percentages are plain numbers (18 = 18%). A peer, deal, multiple, market cap or margin counts as "in the documents" ONLY if it is in the IM, the banker notes or the Private Circle export — otherwise leave it null / omit the row.\n\n' +
-    'IM DEEP-DIVE (deepDive) — the flagship section: a COMPLETE, visual unpacking of the Information Memorandum so a partner NEVER has to open the PDF. Build it whenever an IM / pitch deck is provided (omit ONLY when there is no IM at all). Capture everything material the IM contains — miss nothing a partner would need — and present it as VISUAL blocks, not walls of text.\n' +
-    '• SHAPE: deepDive = { source:"<e.g. Company IM + management model>", summary:"<2–3 sentence executive nutshell>", sections:[ { title, icon?, summary?, blocks:[ … ] } ] }.\n' +
-    '• SECTIONS ARE DYNAMIC — YOU decide them from THIS IM\'s own structure; there is NO fixed list and you must NOT force sections the IM does not cover. Include a section only when the IM has real content for it. Typical sections when present: Market & opportunity (size, growth, drivers, import-substitution); Business model / how they make money; Products & segments; Financial trajectory; Unit economics; Customers & contracts; Competition & positioning; Growth strategy & roadmap; Use of proceeds; Capacity & operations / manufacturing; Supply chain / sourcing; Management & organisation; ESG / compliance; Key risks. Add any other section the IM emphasises (technology, regulatory, order book, store/franchise economics, ...). Aim for genuine coverage — often 5–10 sections for a full IM.\n' +
-    '• Each section: title = short and specific; summary = one plain-English takeaway line; icon (optional) ONE of: globe, factory, trendingUp, users, coins, target, briefcase, gauge, layers, wallet, mapPin, sparkles, shield, barChart.\n' +
-    '• BLOCKS — pick the RIGHT visual for each piece of content, from this FIXED library (use the exact "type" strings and field names; unknown types are dropped):\n' +
-    '   – kpis: { type:"kpis", title?, items:[ { label, value, sub?, unit?, delta? } ] } — a row of headline numbers. value may be a number OR a formatted string ("₹2.4 lakh cr","23%"). delta optional ("12%"/"-5%").\n' +
-    '   – bars: { type:"bars", title?, unit?, items:[ { label, value:<number>, note? } ] } — compare quantities (revenue by segment, geography split, capex lines). value MUST be numeric.\n' +
-    '   – trend: { type:"trend", title?, caption?, x:[<labels>], series:[ { name, values:[<numbers|null> aligned to x] } ] } — anything over time (revenue/EBITDA, volumes, subscribers, store count).\n' +
-    '   – donut: { type:"donut", title?, center?, centerSub?, items:[ { label, value:<number> } ] } — a share / mix breakdown (revenue mix, end-market mix, shareholding).\n' +
-    '   – funnel: { type:"funnel", title?, items:[ { label, value:<number>, unit?, note? } ] } — a narrowing sequence (TAM→SAM→SOM, sales / order funnel).\n' +
-    '   – flow: { type:"flow", title?, steps:[ { label, note? } ] } — a process, value chain, or business-model sequence.\n' +
-    '   – timeline: { type:"timeline", title?, items:[ { date, label, note? } ] } — company history, milestones, roadmap.\n' +
-    '   – table: { type:"table", title?, caption?, columns:[<strings>], rows:[ [<cells>] ] } — any grid (unit economics, cohorts, top customers, product list). Cells are strings or numbers.\n' +
-    '   – bullets: { type:"bullets", title?, items:[ "point" | { head, text } ] } — qualitative lists (strengths, moats, use of proceeds when no figures).\n' +
-    '   – keyvalue: { type:"keyvalue", title?, items:[ { k, v } ] } — fact sheets (deal terms, quick company facts).\n' +
-    '   – callout: { type:"callout", tone:"info|good|warn|bad", title?, text } — highlight a key insight, a tailwind (good) or a risk (warn/bad).\n' +
-    '   – quote: { type:"quote", text, source? } — a management or customer quote actually printed in the IM.\n' +
-    '   – text: { type:"text", title?, text } — a short narrative paragraph. Use SPARINGLY; prefer the visual blocks above.\n' +
-    '• PREFER VISUALS: every chart, table and number the IM shows should land in a kpis / bars / trend / donut / funnel / table block. Reserve text / bullets / quote for genuinely qualitative content.\n' +
-    '• SAME ACCURACY RULES APPLY: every number, name, quote and label must come from the IM / banker notes / model — NEVER invent one to fill a chart. If a topic is only qualitative in the IM, present it with bullets / flow / keyvalue / timeline (no fabricated numbers). Read the PAGE IMAGES for content not in the text (market maps, charts, logo walls).\n' +
-    '• CONSISTENCY: any financial figures here must match the financials / segments / returns you output (same years, same actual-vs-forecast split, ₹ crore).\n' +
-    '• Clean, not cluttered: group related blocks under the right section so each section tells one clear story. Thoroughness beats brevity — it is fine to be long — but every block must carry real IM content.\n\n' +
+    'IM DEEP-DIVE: do NOT include a "deepDive" key in this response — the visual IM unpacking is built in a separate, second pass so this memo stays fast and reliable. Focus here on a complete, accurate core memo.\n\n' +
     'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
     'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
     '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
@@ -562,9 +542,113 @@ async function loadTemplate(request, env) {
     const res = await env.ASSETS.fetch(new Request(new URL('/data/companies.json', request.url)));
     const data = await res.json();
     const k = (data.companies || []).find(c => c.id === 'kusumgar');
-    if (k) return JSON.stringify(k, null, 2);
+    if (k) { const { deepDive, ...core } = k; return JSON.stringify(core, null, 2); }   // deepDive is a separate pass — keep it out of the core-memo schema
   } catch { /* fall through */ }
   return '{ "name": "", "shortName": "", "sector": "", "sectorTag": "", "oneLiner": "", "origination": {"date":"","banker":""}, "transaction": {"headline":"","amountCr":0,"type":"","coInvestment":"TBD"}, "fit": {"verdict":"watch","reason":""}, "revenueSpark": {"unit":"₹ cr","years":[],"values":[],"actualsThrough":""}, "headline": {"revenueLabel":"","revenueCr":0,"ebitdaPct":0,"patPositive":true}, "snapshot": {}, "financials": {"unit":"₹ cr","years":[],"actualsThrough":"","cagrCols":[],"rows":{"revenue":[],"growthPct":[],"grossMarginPct":[],"ebitda":[],"ebitdaPct":[],"pat":[],"patPct":[],"capex":[],"operatingCashflow":[],"fcf":[],"roePct":[],"rocePct":[],"nwcDays":[],"cash":[],"netWorth":[],"debt":[]},"cagr":{"revenue":[],"ebitda":[],"pat":[]},"segments":{"unit":"₹ cr","note":"","rows":[]},"revenueMix":{"label":"","slices":[]}}, "fitChecklist": [], "integrity": [], "questions": [], "thesis": [], "concerns": [], "returns": {"investmentCr":0,"startEbitdaCr":0,"startYear":"","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}} }';
+}
+
+/* ------------------------------------------------------------------ *
+ * IM DEEP-DIVE — generated as a SECOND pass (POST /api/deepdive).
+ * The core memo builds first and lands fast; this fills in the big visual IM
+ * unpacking separately, so no single generation is long enough to be killed.
+ * ------------------------------------------------------------------ */
+const DEEP_DIVE_SPEC =
+  'The deepDive is a COMPLETE, visual unpacking of the Information Memorandum so a partner NEVER has to open the PDF. Capture everything material the IM contains — miss nothing a partner would need — and present it as VISUAL blocks, not walls of text.\n' +
+  '• SHAPE: { source:"<e.g. Company IM + management model>", summary:"<2–3 sentence executive nutshell>", sections:[ { title, icon?, summary?, blocks:[ … ] } ] }.\n' +
+  '• SECTIONS ARE DYNAMIC — YOU decide them from THIS IM\'s own structure; there is NO fixed list and you must NOT force sections the IM does not cover. Include a section only when the IM has real content for it. Typical sections when present: Market & opportunity; Business model / how they make money; Products & segments; Financial trajectory; Unit economics; Customers & contracts; Competition & positioning; Growth strategy & roadmap; Use of proceeds; Capacity & operations; Supply chain; Management & organisation; ESG / compliance; Key risks. Add any other section the IM emphasises. Aim for genuine coverage — often 5–10 sections for a full IM.\n' +
+  '• Each section: title = short and specific; summary = one plain-English takeaway line; icon (optional) ONE of: globe, factory, trendingUp, users, coins, target, briefcase, gauge, layers, wallet, mapPin, sparkles, shield, barChart.\n' +
+  '• BLOCKS — pick the RIGHT visual for each piece of content, from this FIXED library (use the exact "type" strings and field names; unknown types are dropped):\n' +
+  '   – kpis: { type:"kpis", title?, items:[ { label, value, sub?, unit?, delta? } ] } — headline numbers. value may be a number OR a formatted string ("₹2.4 lakh cr","23%").\n' +
+  '   – bars: { type:"bars", title?, unit?, items:[ { label, value:<number>, note? } ] } — compare quantities. value MUST be numeric.\n' +
+  '   – trend: { type:"trend", title?, caption?, x:[<labels>], series:[ { name, values:[<numbers|null> aligned to x] } ] } — anything over time.\n' +
+  '   – donut: { type:"donut", title?, center?, centerSub?, items:[ { label, value:<number> } ] } — a share / mix breakdown.\n' +
+  '   – funnel: { type:"funnel", title?, items:[ { label, value:<number>, unit?, note? } ] } — a narrowing sequence (TAM→SAM→SOM).\n' +
+  '   – flow: { type:"flow", title?, steps:[ { label, note? } ] } — a process / value chain.\n' +
+  '   – timeline: { type:"timeline", title?, items:[ { date, label, note? } ] } — history, milestones, roadmap.\n' +
+  '   – table: { type:"table", title?, caption?, columns:[<strings>], rows:[ [<cells>] ] } — any grid. Cells are strings or numbers.\n' +
+  '   – bullets: { type:"bullets", title?, items:[ "point" | { head, text } ] } — qualitative lists.\n' +
+  '   – keyvalue: { type:"keyvalue", title?, items:[ { k, v } ] } — fact sheets.\n' +
+  '   – callout: { type:"callout", tone:"info|good|warn|bad", title?, text } — a key insight, tailwind (good) or risk (warn/bad).\n' +
+  '   – quote: { type:"quote", text, source? } — a management/customer quote actually printed in the IM.\n' +
+  '   – text: { type:"text", title?, text } — a short narrative paragraph. Use SPARINGLY; prefer the visual blocks.\n' +
+  '• PREFER VISUALS: every chart, table and number the IM shows should land in a kpis / bars / trend / donut / funnel / table block.\n' +
+  '• Clean, not cluttered: group related blocks under the right section so each section tells one clear story.';
+
+async function loadDeepDiveExample(request, env) {
+  try {
+    const res = await env.ASSETS.fetch(new Request(new URL('/data/companies.json', request.url)));
+    const data = await res.json();
+    const k = (data.companies || []).find(c => c.id === 'kusumgar');
+    if (k && k.deepDive) return JSON.stringify(k.deepDive, null, 2);
+  } catch { /* fall through */ }
+  return '{ "source": "", "summary": "", "sections": [ { "title": "", "icon": "globe", "summary": "", "blocks": [ { "type": "kpis", "items": [ { "label": "", "value": "" } ] } ] } ] }';
+}
+// A compact view of the memo's financials so the deepDive's figures stay consistent with it.
+function compactFinancials(c) {
+  const f = (c && c.financials) || {}, rows = f.rows || {};
+  const pick = k => Array.isArray(rows[k]) ? rows[k] : undefined;
+  const o = { name: c && c.name, years: f.years, actualsThrough: f.actualsThrough, revenue: pick('revenue'), ebitda: pick('ebitda'), ebitdaPct: pick('ebitdaPct'), pat: pick('pat') };
+  if (f.segments && Array.isArray(f.segments.rows)) o.segments = f.segments.rows.map(r => ({ name: r.name, values: r.values }));
+  if (c && c.headline) o.headline = c.headline;
+  if (c && c.transaction) o.ask = c.transaction.headline;
+  try { return JSON.stringify(o); } catch { return '{}'; }
+}
+
+async function handleDeepDive(request, env, ctx) {
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
+  let payload;
+  try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
+  const id = String(payload.id || '').trim();
+  if (!id) throw new ApiError(400, 'Missing deal id.');
+  const raw = await env.DEALS.get(`company:${id}`);
+  if (!raw) throw new ApiError(404, 'That deal is no longer available.');
+  let company; try { company = JSON.parse(raw); } catch { throw new ApiError(500, 'The stored deal is unreadable.'); }
+
+  const imText = String(payload.imText || '').trim().slice(0, 220000);
+  const excelText = String(payload.excelText || '').slice(0, 120000);
+  const notesText = String(payload.notesText || '');
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 12);
+
+  const example = await loadDeepDiveExample(request, env);
+  const system =
+    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY its visual IM DEEP-DIVE. ' +
+    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
+    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
+    'ACCURACY: every number, name, quote and label must come from the IM / banker notes / model provided — NEVER invent one to fill a chart. If a topic is only qualitative, use bullets / flow / keyvalue / timeline. Read the PAGE IMAGES for content not in the text (charts, market maps, logo walls).\n\n' +
+    DEEP_DIVE_SPEC;
+  const user =
+    'Build the deepDive object. Copy this SHAPE exactly (a real example):\n```json\n' + example + '\n```\n' +
+    'The core memo already computed these financials — any figures you show MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
+    '=== INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none)') + '\n' +
+    '=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n' +
+    (notesText.trim() ? '=== BANKER NOTES ===\n' + notesText + '\n' : '') +
+    'Return ONLY the deepDive JSON object { source, summary, sections }.';
+
+  // Stream keepalives (like /api/generate) so a multi-second build never trips the edge timeout.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter(); const enc = new TextEncoder();
+  let finished = false;
+  const ka = setInterval(() => { if (!finished) writer.write(enc.encode(' ')).catch(() => {}); }, 5000);
+  const run = (async () => {
+    let out;
+    try {
+      const ans = await callClaude({ system, user, images: imPages, maxTokens: 10000 }, env);
+      const obj = extractJson(ans.text);
+      const dd = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.deepDive));
+      if (!dd) throw new ApiError(502, "We couldn't build the deep dive from these documents.");
+      let cur = company; try { const r2 = await env.DEALS.get(`company:${id}`); if (r2) cur = JSON.parse(r2); } catch { /* keep the copy we have */ }
+      cur.deepDive = dd;
+      await env.DEALS.put(`company:${id}`, JSON.stringify(cur));
+      out = { deepDive: dd };
+    } catch (e) {
+      out = { error: (e && e.message) || 'The deep dive could not be built.', status: e instanceof ApiError ? e.status : 500 };
+    }
+    finished = true; clearInterval(ka);
+    try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
+    try { await writer.close(); } catch (_) {}
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(run);
+  return new Response(readable, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
 }
 
 /* ------------------------------------------------------------------ *

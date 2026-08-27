@@ -440,6 +440,7 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
     // Globally-unique id (time + counter + random) so the server's build record can be
     // matched back to this job even after a reload or on another device.
     id: 'job_' + Date.now().toString(36) + '_' + (++_jobSeq).toString(36) + Math.random().toString(36).slice(2, 6),
+    _abort: (typeof AbortController !== 'undefined') ? new AbortController() : null,   // lets the partner cancel the build
     name: (payload.basics.name || '').trim() || 'New deal',
     sector: (payload.basics.sector || '').trim(), status: 'running', stageIdx: 0,
     startedAt: Date.now(), finishedAt: null, company: null, error: null, seen: false,
@@ -454,12 +455,12 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
 // POST to /api/generate and read the streamed response. The worker emits keepalive spaces while it
 // works (so Cloudflare never 524s a long build) and a final JSON line; we read to the end, parse the
 // last line, and throw an error carrying its HTTP status so the caller can decide whether to retry.
-async function callGenerate(bodyObj) {
+async function callGenerate(bodyObj, signal) {
   let res, buf = '';
   try {
     res = await fetch(apiUrl('generate'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(bodyObj),
+      body: JSON.stringify(bodyObj), signal,
     });
     if (res.body && res.body.getReader) {
       const reader = res.body.getReader(), dec = new TextDecoder();
@@ -533,7 +534,7 @@ async function runJob(job, payload) {
     // timeout), and we automatically retry once on a transient/server failure before surfacing it.
     let data = null, lastErr = null;
     for (let attempt = 0; attempt < 2 && job.status === 'running'; attempt++) {
-      try { data = await callGenerate(bodyObj); lastErr = null; break; }
+      try { data = await callGenerate(bodyObj, job._abort && job._abort.signal); lastErr = null; break; }
       catch (e) {
         lastErr = e;
         const retriable = !e.status || e.status >= 500;   // network / stream / 5xx → retry; 4xx (bad input) → don't
@@ -542,6 +543,7 @@ async function runJob(job, payload) {
       }
     }
     clearTimeout(writeTO);
+    if (job._cancelled) return;   // the partner cancelled — stop quietly (the card is already gone)
     if (!data) {
       // The worker streamed back an explicit failure (bad input, or "busy"/overloaded) — the build
       // is genuinely over, so surface the reason right away instead of waiting on the poller.
@@ -564,9 +566,15 @@ async function runJob(job, payload) {
     job._streaming = false;
     job.finishedAt = Date.now();
     addCompany(data.company);
+    // The core memo is in — now fill in the visual Deep Dive as a SEPARATE, lighter pass so the
+    // deal lands fast and no single build is long enough to be killed. Best-effort and additive.
+    const stored = companyById(data.company.id);
+    if (stored) stored._deepDivePending = true;
     emitJobs();
+    startDeepDive(data.company.id, { imText, imPages, excelText, sheetNames, notesText, basics: payload.basics });
   } catch (err) {
     clearTimeout(writeTO);
+    if (job._cancelled) return;   // cancelled mid-build — no error to show
     console.error(err);
     job._streaming = false;
     job.status = 'error';
@@ -574,6 +582,39 @@ async function runJob(job, payload) {
     job.finishedAt = Date.now();
     emitJobs();
   }
+}
+
+// Second pass: build the visual Deep Dive for a freshly-created deal and merge it in. Runs in the
+// background; if it fails or is interrupted the deal is unaffected (it just has no Deep Dive yet).
+async function startDeepDive(id, payload) {
+  try {
+    const res = await fetch(apiUrl('deepdive'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, ...payload }) });
+    let buf = '';
+    if (res.body && res.body.getReader) { const rd = res.body.getReader(), dec = new TextDecoder(); for (;;) { const { done, value } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); } buf += dec.decode(); }
+    else buf = await res.text();
+    let d = {}; try { d = JSON.parse((buf.split('\n').pop() || '').trim()); } catch { /* leave as {} */ }
+    const c = companyById(id);
+    if (!c) return;
+    delete c._deepDivePending;
+    if (d && d.deepDive) { c.deepDive = d.deepDive; c._deepDiveFailed = false; }
+    else c._deepDiveFailed = (d && d.error) || true;
+    if (ui.companyId === id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');   // live-refresh if they're watching it
+  } catch (_) {
+    const c = companyById(id); if (c) { delete c._deepDivePending; c._deepDiveFailed = true; }
+  }
+}
+
+// Cancel a build in progress: abort this tab's request, drop the card, and clear the server record.
+// (The server may still finish a build already in flight — if a deal lands anyway, it's removable.)
+function cancelJob(id) {
+  const job = state.jobs.find(j => j.id === id);
+  if (!job) return;
+  job._cancelled = true; job.status = 'cancelled'; job._streaming = false;
+  try { job._abort && job._abort.abort(); } catch (_) {}
+  state.jobs = state.jobs.filter(j => j.id !== id);
+  emitJobs();
+  try { fetch(apiUrl('jobs/' + encodeURIComponent(id)), { method: 'DELETE' }).catch(() => {}); } catch (_) {}
+  toast('Build cancelled');
 }
 
 // Discard a finished/failed job card from the pipeline (does not touch the memo).
@@ -766,7 +807,8 @@ function renderBellPanel() {
   menu.innerHTML = list.map(j => {
     if (j.status === 'running') {
       return `<div class="notif click" data-watch-job="${j.id}"><span class="notif-ic" style="color:#fff;background:linear-gradient(140deg,#2E6FD6,#0C3078)">${icon('loader', 'w-4 h-4')}</span>
-        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Building your memo… <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div><div class="notif-cta">${icon('trendingUp', 'w-3.5 h-3.5')} View progress</div></div></div>`;
+        <div class="notif-body"><div class="notif-title">${esc(j.name)}</div><div class="notif-sub">Building your memo… <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div><div class="notif-cta">${icon('trendingUp', 'w-3.5 h-3.5')} View progress</div></div>
+        <button class="notif-x" data-cancel="${j.id}" aria-label="Cancel build">${icon('x', 'w-4 h-4')}</button></div>`;
     }
     if (j.status === 'error') {
       return `<div class="notif"><span class="notif-ic" style="color:#fff;background:#F43F5E">${icon('alert', 'w-4 h-4')}</span>
@@ -784,9 +826,10 @@ function renderBellPanel() {
   menu.querySelectorAll('[data-dismiss]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); dismissJob(b.dataset.dismiss); }));
   menu.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); const id = b.dataset.retry; closeBell(); dismissJob(id); openAddDealModal(); }));
   menu.querySelectorAll('[data-watch-job]').forEach(el => el.addEventListener('click', e => {
-    if (e.target.closest('[data-dismiss]')) return;
+    if (e.target.closest('[data-dismiss]') || e.target.closest('[data-cancel]')) return;
     const j = state.jobs.find(x => x.id === el.dataset.watchJob); closeBell(); if (j) openAddDealModal({ watchJob: j });
   }));
+  menu.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); cancelJob(b.dataset.cancel); }));
 }
 function openBell() {
   $('#bell-menu').classList.remove('hidden');
@@ -1543,11 +1586,13 @@ function renderJobCard(j) {
     <span class="job-spin">${icon('loader', 'w-4 h-4')}</span>
     <div class="min-w-0"><div class="job-name">${esc(j.name)}</div><div class="job-status">${esc(label)}… · <span class="job-el" data-el="${j.id}">${jobElapsed(j)}</span></div></div>
     <div class="job-bar"><span style="width:${pct}%"></span></div>
+    <button class="job-btn job-cancel" type="button" data-cancel>Cancel</button>
     <span class="job-open">${icon('arrowRight', 'w-4 h-4')}</span>
   </div>`);
   const open = () => openAddDealModal({ watchJob: j });
-  el.addEventListener('click', open);
+  el.addEventListener('click', e => { if (e.target.closest('[data-cancel]')) return; open(); });
   el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  el.querySelector('[data-cancel]').addEventListener('click', e => { e.stopPropagation(); cancelJob(j.id); });
   return el;
 }
 
@@ -2898,9 +2943,18 @@ function renderDDSection(s, i) {
 function renderDeepDive(c) {
   const wrap = h('<div class="space-y-5"></div>');
   if (!hasDeepDive(c)) {
+    if (c._deepDivePending) {
+      wrap.appendChild(h(`<div class="coming"><div class="cs-ico dd-prep-ic">${icon('loader', 'w-6 h-6')}</div>
+        <div class="text-[15px] font-semibold text-ink">Preparing the deep dive…</div>
+        <p class="text-[13px] text-ink-muted mt-1 max-w-md">The core memo is ready — we're now unpacking the whole IM into visual sections. This usually takes another minute; it'll appear here on its own, and it's saved so you can come back to it.</p></div>`));
+      return wrap;
+    }
+    const failed = c._deepDiveFailed;
     wrap.appendChild(h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
-      <div class="text-[15px] font-semibold text-ink">The IM deep-dive appears here</div>
-      <p class="text-[13px] text-ink-muted mt-1 max-w-md">Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.</p></div>`));
+      <div class="text-[15px] font-semibold text-ink">${failed ? 'The deep dive didn’t finish' : 'The IM deep-dive appears here'}</div>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">${failed
+        ? 'The core memo is complete, but the visual IM unpacking couldn’t be built this time. Re-upload the deal to try the deep dive again — the rest of the memo is unaffected.'
+        : 'Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.'}</p></div>`));
     return wrap;
   }
   const dd = c.deepDive;
@@ -4010,13 +4064,17 @@ function openAddDealModal(opts = {}) {
               <span class="gstep-stat"></span>
             </div>`).join('')}
         </div>
-        <button class="gen-bg" data-bg type="button">${icon('arrowLeft', 'w-3.5 h-3.5', 2.4)} Keep working — I'll tell you when it's ready</button>
+        <div class="gen-actions">
+          <button class="gen-bg" data-bg type="button">${icon('arrowLeft', 'w-3.5 h-3.5', 2.4)} Keep working — I'll tell you when it's ready</button>
+          <button class="gen-cancel" data-cancel type="button">Cancel this build</button>
+        </div>
       </div>`;
 
     bodyEl.querySelector('[data-bg]').addEventListener('click', () => {
       close();
       toast(`Building ${job.name} — the 🔔 will light up when it's ready`);
     });
+    bodyEl.querySelector('[data-cancel]').addEventListener('click', () => { cancelJob(job.id); close(); });
 
     const barEl = bodyEl.querySelector('[data-bar]');
     const pctEl = bodyEl.querySelector('[data-pct]');
