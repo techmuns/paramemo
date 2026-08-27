@@ -2961,12 +2961,18 @@ function renderDeepDive(c) {
         <p class="text-[13px] text-ink-muted mt-1 max-w-md">The core memo is ready — we're now unpacking the whole IM into visual sections. This usually takes another minute; it'll appear here on its own, and it's saved so you can come back to it.</p></div>`));
       return wrap;
     }
-    const failed = c._deepDiveFailed, canRetry = !isSample(c);   // uploaded deals can rebuild the deep dive in place (server has the IM text)
+    const failedMsg = typeof c._deepDiveFailed === 'string' ? c._deepDiveFailed : '';
+    const failed = !!c._deepDiveFailed;
+    const needsReupload = /re-upload/i.test(failedMsg);   // built before we stored the IM — a retry can't help; only a fresh upload can
+    const canRetry = !isSample(c) && !needsReupload;
+    const body = failed
+      ? ('The core memo is complete and ready to show — ' + (needsReupload
+          ? 'but this deal was built before we started saving the IM for rebuilds, so please <b>re-upload it once</b> to add the deep dive. New deals won’t need this.'
+          : (failedMsg ? esc(failedMsg) : 'the visual IM unpacking just couldn’t be built this time.') + (canRetry ? ' Try again below.' : '')))
+      : 'Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.';
     const card = h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
       <div class="text-[15px] font-semibold text-ink">${failed ? 'The deep dive didn’t finish' : 'The IM deep-dive appears here'}</div>
-      <p class="text-[13px] text-ink-muted mt-1 max-w-md">${failed
-        ? ('The core memo is complete and ready to show — the visual IM unpacking just couldn’t be built this time.' + (canRetry ? ' Try again below.' : ' Re-upload the deal to try the deep dive again — the rest of the memo is unaffected.'))
-        : 'Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.'}</p>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">${body}</p>
       ${canRetry ? `<button class="hdr-btn dd-retry-btn" type="button" style="margin-top:14px;color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('refreshCw', 'w-4 h-4')} Try the deep dive again</button>` : ''}</div>`);
     if (canRetry) card.querySelector('.dd-retry-btn').addEventListener('click', () => retryDeepDive(c.id));
     wrap.appendChild(card);
