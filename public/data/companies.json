@@ -1068,6 +1068,295 @@
     },
     {
       "id": "attero",
+      "deepDive": {
+        "source": "Attero Recycling — Information Memorandum + management model",
+        "summary": "Attero is India's largest e-waste recycler, scaling from ₹21 cr (FY19) to ₹446 cr (FY24) revenue as it turned EBITDA-positive, with management projecting ₹4,614 cr by FY28 on new lithium-ion and black-mass capacity. Margins are thin today (~8%); metal-price and execution risk are the main watch-items.",
+        "sections": [
+          {
+            "title": "Market & opportunity",
+            "icon": "globe",
+            "summary": "A regulation-driven recycling market growing fast, with formal recyclers still a small share.",
+            "blocks": [
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "India e-waste / year",
+                    "value": "~1.8 mn tonnes",
+                    "sub": "among the world's largest"
+                  },
+                  {
+                    "label": "Formally recycled",
+                    "value": "~15%",
+                    "sub": "the rest is informal — long runway"
+                  },
+                  {
+                    "label": "Li-ion recycling",
+                    "value": "high-growth",
+                    "sub": "EV & electronics tailwind"
+                  },
+                  {
+                    "label": "EPR mandate",
+                    "value": "expanding",
+                    "sub": "brands must recycle"
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "good",
+                "title": "Regulation is the tailwind",
+                "text": "Extended Producer Responsibility (EPR) rules force brands to recycle a rising share of what they sell — turning compliance into recurring demand (and EPR-credit revenue) for formal recyclers like Attero."
+              }
+            ]
+          },
+          {
+            "title": "How Attero makes money",
+            "icon": "factory",
+            "summary": "Collect end-of-life electronics and batteries, refine them to pure metals, and monetise EPR credits.",
+            "blocks": [
+              {
+                "type": "flow",
+                "title": "Recycling value chain",
+                "steps": [
+                  {
+                    "label": "Collect",
+                    "note": "E-waste & used Li-ion batteries"
+                  },
+                  {
+                    "label": "Shred & separate",
+                    "note": "Mechanical processing"
+                  },
+                  {
+                    "label": "Refine",
+                    "note": "Metallurgy to pure metals"
+                  },
+                  {
+                    "label": "Sell metals + EPR credits",
+                    "note": "Copper, aluminium, battery metals + credits"
+                  }
+                ]
+              },
+              {
+                "type": "bullets",
+                "title": "Revenue engines",
+                "items": [
+                  {
+                    "head": "Metal sales",
+                    "text": "Pure copper, aluminium, iron and battery metals recovered and sold back into the market — the core line."
+                  },
+                  {
+                    "head": "EPR credits",
+                    "text": "Recycling credits sold to brands (LG, HP, Sony and others) that must meet EPR targets — high-margin and recurring."
+                  },
+                  {
+                    "head": "Technical services & refurbishment",
+                    "text": "Processing-as-a-service and refurbished devices add smaller, steady streams."
+                  },
+                  {
+                    "head": "Lithium-ion & black-mass",
+                    "text": "The new growth engine as EV and electronics batteries reach end-of-life."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Financial trajectory",
+            "icon": "trendingUp",
+            "summary": "Revenue up ~20× in five years; EBITDA turned positive and management projects a steep ramp on new capacity.",
+            "blocks": [
+              {
+                "type": "trend",
+                "title": "Revenue & EBITDA (₹ cr)",
+                "caption": "FY25–FY28 are management projections.",
+                "x": [
+                  "FY19",
+                  "FY20",
+                  "FY21",
+                  "FY22",
+                  "FY23",
+                  "FY24",
+                  "FY25",
+                  "FY26",
+                  "FY27",
+                  "FY28"
+                ],
+                "series": [
+                  {
+                    "name": "Revenue",
+                    "values": [
+                      21.4,
+                      33.8,
+                      114.1,
+                      213.8,
+                      288.7,
+                      445.6,
+                      1013.6,
+                      1801.4,
+                      3010.4,
+                      4614.3
+                    ]
+                  },
+                  {
+                    "name": "EBITDA",
+                    "values": [
+                      -27.4,
+                      -9.9,
+                      24.7,
+                      60.5,
+                      17.3,
+                      36.7,
+                      96.2,
+                      312.4,
+                      611,
+                      1097
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "FY24 revenue",
+                    "value": "₹446 cr"
+                  },
+                  {
+                    "label": "EBITDA margin (FY24)",
+                    "value": "8%",
+                    "sub": "expanding with scale"
+                  },
+                  {
+                    "label": "FY28E revenue",
+                    "value": "₹4,614 cr",
+                    "sub": "management projection"
+                  },
+                  {
+                    "label": "FY28E EBITDA",
+                    "value": "₹1,097 cr",
+                    "sub": "~24% margin"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Revenue mix",
+            "icon": "coins",
+            "summary": "Metal sales lead today; EPR credits and the new lithium lines add higher-margin ballast.",
+            "blocks": [
+              {
+                "type": "donut",
+                "title": "FY24 revenue by segment (₹ cr)",
+                "center": "₹446 cr",
+                "centerSub": "FY24",
+                "items": [
+                  {
+                    "label": "E-waste — metal sale",
+                    "value": 300.8
+                  },
+                  {
+                    "label": "E-waste — EPR credits",
+                    "value": 75
+                  },
+                  {
+                    "label": "Technical services",
+                    "value": 37.2
+                  },
+                  {
+                    "label": "Lithium-ion (existing)",
+                    "value": 21.3
+                  },
+                  {
+                    "label": "Refurbishment",
+                    "value": 11.2
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Growth plan & use of proceeds",
+            "icon": "target",
+            "summary": "Pre-IPO primary capital funds the lithium-ion and black-mass expansion.",
+            "blocks": [
+              {
+                "type": "timeline",
+                "title": "Milestones & roadmap",
+                "items": [
+                  {
+                    "date": "2008",
+                    "label": "Founded",
+                    "note": "India's first large formal e-waste recycler"
+                  },
+                  {
+                    "date": "2018",
+                    "label": "Lithium-ion recycling",
+                    "note": "Battery-metal recovery capability"
+                  },
+                  {
+                    "date": "FY24",
+                    "label": "₹446 cr revenue",
+                    "note": "EBITDA-positive at scale"
+                  },
+                  {
+                    "date": "FY27–28E",
+                    "label": "New Li-B 20k + black-mass 10k",
+                    "note": "Capacity drives the projected ramp"
+                  },
+                  {
+                    "date": "IPO",
+                    "label": "Pre-IPO primary raise",
+                    "note": "Up to ₹425 cr"
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "info",
+                "title": "Use of proceeds",
+                "text": "The ~₹425 cr pre-IPO primary raise is earmarked chiefly for the new lithium-ion (20k tpa) and black-mass (10k tpa) capacity that underpins management's FY27–28 projections, plus working capital."
+              }
+            ]
+          },
+          {
+            "title": "Moat & what could go wrong",
+            "icon": "shield",
+            "summary": "Scale, technology and EPR relationships protect the franchise; margins and metal prices are the watch-items.",
+            "blocks": [
+              {
+                "type": "bullets",
+                "title": "Why it's defensible",
+                "items": [
+                  {
+                    "head": "Scale & network",
+                    "text": "India's largest formal collection and processing footprint."
+                  },
+                  {
+                    "head": "Proprietary technology",
+                    "text": "In-house metallurgy and IP for high recovery rates."
+                  },
+                  {
+                    "head": "Brand EPR relationships",
+                    "text": "Recurring credit demand from large OEMs."
+                  },
+                  {
+                    "head": "Regulatory moat",
+                    "text": "Formal-recycler licensing and compliance raise the entry bar."
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "warn",
+                "title": "Key risks",
+                "text": "Thin current margins (~8%), exposure to metal-price swings, and heavy reliance on executing the new lithium-ion / black-mass capacity to hit projections — sized further in the Integrity and Returns tabs."
+              }
+            ]
+          }
+        ]
+      },
       "name": "Attero Recycling Private Limited",
       "shortName": "Attero",
       "monogram": "AT",
@@ -1934,6 +2223,256 @@
     },
     {
       "id": "style-union",
+      "deepDive": {
+        "source": "Style Union (Nexon Omniverse) — Information Memorandum + management model",
+        "summary": "Style Union is a no-discount value-fashion retailer with 100+ stores across South India, scaling revenue from ₹37 cr (FY22) to ₹345 cr (FY24) and guided to ₹2,925 cr by FY28E. It is only now crossing into EBITDA profitability (FY25E), so execution on the store rollout and the path to sustainable margins are the key questions.",
+        "sections": [
+          {
+            "title": "Market & opportunity",
+            "icon": "globe",
+            "summary": "A large value-fashion market shifting from unorganised to organised, branded retail.",
+            "blocks": [
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "India apparel market",
+                    "value": "large & growing",
+                    "sub": "value is the biggest slice"
+                  },
+                  {
+                    "label": "Organised shift",
+                    "value": "structural",
+                    "sub": "unbranded → branded value"
+                  },
+                  {
+                    "label": "Store base",
+                    "value": "100+",
+                    "sub": "across South India"
+                  },
+                  {
+                    "label": "Model",
+                    "value": "No-discount",
+                    "sub": "protects gross margin"
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "info",
+                "title": "Where it plays",
+                "text": "Value fashion — affordable men's, women's and kids' apparel that refreshes weekly — is the largest and most defensible slice of Indian apparel as shoppers move from unorganised stores to branded value chains."
+              }
+            ]
+          },
+          {
+            "title": "How Style Union makes money",
+            "icon": "briefcase",
+            "summary": "A tight, no-discount store model with fast weekly refresh, run by ex-Future Group operators.",
+            "blocks": [
+              {
+                "type": "flow",
+                "title": "The retail model",
+                "steps": [
+                  {
+                    "label": "Design & source",
+                    "note": "In-house, trend-led"
+                  },
+                  {
+                    "label": "Weekly refresh",
+                    "note": "New styles every week"
+                  },
+                  {
+                    "label": "No-discount stores",
+                    "note": "Full-price selling"
+                  },
+                  {
+                    "label": "Fast inventory turns",
+                    "note": "High sell-through, low ageing"
+                  }
+                ]
+              },
+              {
+                "type": "bullets",
+                "title": "What sets it apart",
+                "items": [
+                  {
+                    "head": "No-discount pricing",
+                    "text": "Full-price model keeps gross margins above value-retail peers."
+                  },
+                  {
+                    "head": "Weekly newness",
+                    "text": "Rapid refresh drives repeat footfall and sell-through."
+                  },
+                  {
+                    "head": "Veteran team",
+                    "text": "Led by operators from the erstwhile Future Group."
+                  },
+                  {
+                    "head": "South-India density",
+                    "text": "Cluster expansion keeps supply chain and brand-building efficient."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Financial trajectory",
+            "icon": "trendingUp",
+            "summary": "Revenue ~9× in two years; EBITDA crosses into the black from FY25E on operating leverage.",
+            "blocks": [
+              {
+                "type": "trend",
+                "title": "Revenue & EBITDA (₹ cr)",
+                "caption": "FY25E–FY28E are management projections.",
+                "x": [
+                  "FY22",
+                  "FY23",
+                  "FY24",
+                  "FY25E",
+                  "FY26E",
+                  "FY27E",
+                  "FY28E"
+                ],
+                "series": [
+                  {
+                    "name": "Revenue",
+                    "values": [
+                      37,
+                      182,
+                      345,
+                      570,
+                      1038,
+                      1793,
+                      2925
+                    ]
+                  },
+                  {
+                    "name": "EBITDA",
+                    "values": [
+                      -14,
+                      -16,
+                      -15,
+                      3,
+                      64,
+                      185,
+                      383
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "FY24 revenue",
+                    "value": "₹345 cr",
+                    "sub": "90% YoY growth"
+                  },
+                  {
+                    "label": "EBITDA (FY24)",
+                    "value": "₹-15 cr",
+                    "sub": "pre-profitability"
+                  },
+                  {
+                    "label": "Turns EBITDA+",
+                    "value": "FY25E",
+                    "sub": "on operating leverage"
+                  },
+                  {
+                    "label": "FY28E revenue",
+                    "value": "₹2,925 cr",
+                    "sub": "management projection"
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "warn",
+                "title": "Still proving the model",
+                "text": "Margins are negative through FY24 and only cross zero in FY25E on management's plan — the central question is whether store-level economics scale into sustainable, positive EBITDA."
+              }
+            ]
+          },
+          {
+            "title": "Competition & positioning",
+            "icon": "scale",
+            "summary": "Competes in the fast-growing value-fashion lane led by Zudio, against V-Mart, V2 and Intune.",
+            "blocks": [
+              {
+                "type": "table",
+                "title": "The value-fashion set",
+                "caption": "Listed peers benchmarked in the Comps tab; positioning is qualitative.",
+                "columns": [
+                  "Player",
+                  "Positioning"
+                ],
+                "rows": [
+                  [
+                    "Trent (Zudio)",
+                    "Category leader, fast national rollout"
+                  ],
+                  [
+                    "V-Mart Retail",
+                    "Value retail, tier 2/3 towns"
+                  ],
+                  [
+                    "V2 Retail",
+                    "Value fashion, expanding"
+                  ],
+                  [
+                    "Shoppers Stop (Intune)",
+                    "New value format from a department-store major"
+                  ],
+                  [
+                    "Style Union",
+                    "No-discount, South-India density, higher gross margin"
+                  ]
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Growth plan & use of proceeds",
+            "icon": "target",
+            "summary": "Primary growth capital funds the next wave of store expansion.",
+            "blocks": [
+              {
+                "type": "timeline",
+                "title": "Milestones & roadmap",
+                "items": [
+                  {
+                    "date": "FY22",
+                    "label": "₹37 cr revenue",
+                    "note": "Early scale-up"
+                  },
+                  {
+                    "date": "FY24",
+                    "label": "100+ stores · ₹345 cr",
+                    "note": "Density across South India"
+                  },
+                  {
+                    "date": "FY25E",
+                    "label": "EBITDA-positive",
+                    "note": "Operating leverage kicks in"
+                  },
+                  {
+                    "date": "FY28E",
+                    "label": "₹2,925 cr target",
+                    "note": "On accelerated store rollout"
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "info",
+                "title": "Use of proceeds",
+                "text": "The ~₹400 cr primary growth raise funds new-store capex, working capital for inventory, and brand-building to accelerate the rollout beyond South India."
+              }
+            ]
+          }
+        ]
+      },
       "name": "Nexon Omniverse Limited (Style Union)",
       "shortName": "Style Union",
       "monogram": "SU",

@@ -2,10 +2,18 @@
 
 A visual **screening-memo dashboard** for Paragon Partners. Partners upload a
 company's Information Memorandum (PDF) and Excel financial model; the app reads
-them, uses Claude to auto-build a colourful, plain-language memo across seven
-tabs (Snapshot · Financials · Fit · Integrity · Questions · Thesis · Returns),
-and lets a partner export a 2-page PDF to email — all read over the weekend
-before Monday's pipeline meeting.
+them, uses Claude to auto-build a colourful, plain-language memo across nine
+tabs (Snapshot · **Deep Dive** · Financials · Fit · Integrity · Questions ·
+Thesis · Comps · Returns), and lets a partner export a full screening report to
+email — all read over the weekend before Monday's pipeline meeting.
+
+The **Deep Dive** tab unpacks the *entire* IM into visual sections — market,
+business model, unit economics, customers, growth plan, use of proceeds and
+whatever else the document covers — so a partner never has to open the PDF. It's
+**generic**: the AI decides the sections per deal and emits typed visual blocks
+(KPIs, bar/line/donut charts, funnels, flows, timelines, tables, callouts, …)
+that the app renders as self-contained HTML+SVG, so the same content appears in
+the live tab *and* in the exported report.
 
 It's a **Cloudflare Worker static site** with a tiny API. No build step: plain
 HTML + JS, Tailwind + Chart.js from CDN.
@@ -106,16 +114,20 @@ don't, scanned PDFs just prompt the partner to paste the key details.
 npx wrangler secret put MISTRAL_API_KEY   # optional
 ```
 
-**Optional live screener** — on the Returns tab, any deal whose peer set names
-**listed** players (with NSE tickers) shows a *"Listed peers · live from
-Screener"* panel that pulls each one's current **P/E, market cap and ROE** from
-[screener.in](https://www.screener.in); for a P/E-benchmarked deal those
-multiples also backfill the comparison table and its median. It works without
-any key (a best-effort direct fetch), but screener blocks datacenter IPs, so set
-a [scrape.do](https://scrape.do) token for reliable results:
+**Live peer market data** — on the Comps tab, any deal whose peer set names
+**listed** players (with NSE tickers) shows a *"Listed peers · live market
+data"* panel that pulls each one's current **P/E, market cap and trading
+multiples (EV/EBITDA, EV/Revenue)** and backfills any blanks in the trading-comps
+table (and its median). The primary source is the **Munshot market-data API**
+(`fastapi.muns.io/stock-data`) — reliable and not bot-blocked; if it has no data
+for a ticker it falls back to [screener.in](https://www.screener.in), via
+[scrape.do](https://scrape.do) when a token is set, else a best-effort direct
+fetch. The Munshot endpoint works without a key, but setting a Munshot token
+raises its rate limits; the scrape.do token is only for the screener fallback:
 
 ```bash
-npx wrangler secret put SCRAPEDO_API_KEY   # optional — reliable live peer data
+npx wrangler secret put MUNSHOT_TOKEN       # optional — raises Munshot rate limits (also used by the governance sweep)
+npx wrangler secret put SCRAPEDO_API_KEY    # optional — only for the screener.in fallback
 ```
 
 **Optional governance sweep** — when a memo is generated, the **Integrity** tab's
