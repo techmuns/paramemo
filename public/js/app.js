@@ -585,14 +585,15 @@ async function runJob(job, payload) {
   }
 }
 
-// Re-run the Deep Dive pass for a deal (this session), reusing the inputs cached at build time.
+// Re-run the Deep Dive pass for a deal. Uses this session's cached inputs if present (richest —
+// includes page images); otherwise sends nothing and the worker rebuilds from the IM text it
+// stored when the memo was built — so this works after a reload / on another device too.
 function retryDeepDive(id) {
   const c = companyById(id);
   if (!c) return;
-  if (!c._ddInputs) { toast('Re-upload this deal to rebuild its deep dive'); return; }
   c._deepDivePending = true; c._deepDiveFailed = false;
   if (ui.companyId === id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');
-  startDeepDive(id, c._ddInputs);
+  startDeepDive(id, c._ddInputs || {});
 }
 
 // Second pass: build the visual Deep Dive for a freshly-created deal and merge it in. Runs in the
@@ -2960,7 +2961,7 @@ function renderDeepDive(c) {
         <p class="text-[13px] text-ink-muted mt-1 max-w-md">The core memo is ready — we're now unpacking the whole IM into visual sections. This usually takes another minute; it'll appear here on its own, and it's saved so you can come back to it.</p></div>`));
       return wrap;
     }
-    const failed = c._deepDiveFailed, canRetry = !!c._ddInputs;
+    const failed = c._deepDiveFailed, canRetry = !isSample(c);   // uploaded deals can rebuild the deep dive in place (server has the IM text)
     const card = h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
       <div class="text-[15px] font-semibold text-ink">${failed ? 'The deep dive didn’t finish' : 'The IM deep-dive appears here'}</div>
       <p class="text-[13px] text-ink-muted mt-1 max-w-md">${failed

@@ -231,6 +231,7 @@ async function handleDelete(request, env) {
     return json({ ok: true, id, hidden: true });
   }
   await env.DEALS.delete(`company:${id}`);
+  try { await env.DEALS.delete(`dealsrc:${id}`); } catch { /* best-effort */ }
   const index = await readIndex(env);
   await env.DEALS.put('index', JSON.stringify(index.filter(x => x !== id)));
   return json({ ok: true, id });
@@ -359,6 +360,9 @@ async function handleGenerate(request, env, ctx) {
     try {
       const company = await generateCompany({ system, user, imPages, basics, env });
       out = { company };
+      // Stash the deal's source TEXT so the Deep Dive can be (re)built server-side later — from any
+      // device, after a reload — without re-uploading the files. Text only (cheap); images aren't kept.
+      try { await env.DEALS.put(`dealsrc:${company.id}`, JSON.stringify({ imText, excelText, notesText })); } catch { /* best-effort */ }
       // Mark done WITH the deal id (not just cleared) so a client that reloaded or lost its
       // connection mid-build can reconnect by polling and pick up the finished deal.
       if (jobId) await setJob(env, { ...jobMeta, status: 'done', companyId: company.id, finishedAt: Date.now(), error: null });
@@ -604,10 +608,15 @@ async function handleDeepDive(request, env, ctx) {
   if (!raw) throw new ApiError(404, 'That deal is no longer available.');
   let company; try { company = JSON.parse(raw); } catch { throw new ApiError(500, 'The stored deal is unreadable.'); }
 
-  const imText = String(payload.imText || '').trim().slice(0, 220000);
-  const excelText = String(payload.excelText || '').slice(0, 120000);
-  const notesText = String(payload.notesText || '');
+  let imText = String(payload.imText || '').trim().slice(0, 220000);
+  let excelText = String(payload.excelText || '').slice(0, 120000);
+  let notesText = String(payload.notesText || '');
   const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 6);   // lighter than the core memo — the memo already did the heavy vision pass
+  // Retry path: the client sent no text, so rebuild from the source we stashed when the memo was built.
+  if (!imText) {
+    try { const s = JSON.parse((await env.DEALS.get(`dealsrc:${id}`)) || 'null'); if (s) { imText = String(s.imText || '').slice(0, 220000); if (!excelText) excelText = String(s.excelText || '').slice(0, 120000); if (!notesText) notesText = String(s.notesText || ''); } } catch { /* none stored */ }
+  }
+  if (!imText && !imPages.length) throw new ApiError(400, 'This deal has no stored IM to rebuild the deep dive from — please re-upload it.');
 
   const example = await loadDeepDiveExample(request, env);
   const system =
