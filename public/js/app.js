@@ -473,7 +473,7 @@ async function callGenerate(bodyObj) {
   let data;
   try { data = JSON.parse(lastLine); }
   catch { const e = new Error('The memo builder didn\'t respond properly this time. Please try again.'); e.status = res.status || 0; throw e; }
-  if (data.error) { const e = new Error(data.error); e.status = data.status || res.status; throw e; }
+  if (data.error) { const e = new Error(data.error); e.status = data.status || res.status; e.serverReported = true; throw e; }   // the worker finished and reported a failure — definitive
   if (!data.company) { const e = new Error('The memo builder didn\'t return a finished memo. Please try again.'); e.status = 502; throw e; }
   return data;
 }
@@ -481,6 +481,7 @@ async function callGenerate(bodyObj) {
 async function runJob(job, payload) {
   const stage = i => { if (job.status === 'running') { job.stageIdx = i; emitJobs(); } };
   let writeTO = null;
+  job._streaming = true;   // this tab is driving the live build → the poller leaves this job alone
   try {
     stage(0);
     try { await ensureUploadLibs(); }
@@ -542,13 +543,15 @@ async function runJob(job, payload) {
     }
     clearTimeout(writeTO);
     if (!data) {
+      // The worker streamed back an explicit failure (bad input, or "busy"/overloaded) — the build
+      // is genuinely over, so surface the reason right away instead of waiting on the poller.
+      if (lastErr && lastErr.serverReported) throw lastErr;
       const st = lastErr && lastErr.status;
-      // A 4xx means the server rejected the input (bad/unreadable files) — retrying the same
-      // upload won't help, so surface it now.
       if (st && st >= 400 && st < 500) throw lastErr;
-      // Anything else (dropped stream, network blip, 5xx) does NOT mean the build died: the
+      // Anything else (dropped stream, network blip) does NOT mean the build died: the
       // worker keeps generating after a dropped connection and records the result. Hand the job
       // to the poller, which reconciles the real outcome from the server — don't kill it here.
+      job._streaming = false;   // release it to the poller
       job._awaitServer = true;
       emitJobs();
       ensureJobPolling();
@@ -558,12 +561,14 @@ async function runJob(job, payload) {
     job.stageIdx = 3;
     job.company = data.company;
     job.status = 'done';
+    job._streaming = false;
     job.finishedAt = Date.now();
     addCompany(data.company);
     emitJobs();
   } catch (err) {
     clearTimeout(writeTO);
     console.error(err);
+    job._streaming = false;
     job.status = 'error';
     job.error = (err && err.message) || 'Something went wrong — please try again.';
     job.finishedAt = Date.now();
@@ -625,19 +630,31 @@ async function pollJobsOnce() {
 }
 // Fold the server's truth into the local job list: pull in any newly-finished deals and
 // flip each in-flight job to done / error based on its server record.
+// IMPORTANT: KV is eventually consistent — a build's record can take up to ~a minute to become
+// visible to these reads. So we NEVER fail a job just because its record isn't visible yet; a
+// running job only ends on a decisive signal (an 'error'/'done' record, or the finished deal
+// itself appearing), the reload staleness check, or a long hard cap. And a job whose live stream
+// is still running in THIS tab is owned by that stream — the poller won't race it.
 function reconcileJobsFromServer(d) {
   let changed = false;
   if (Array.isArray(d.companies)) d.companies.forEach(c => { if (c && c.id && !companyById(c.id)) { addCompany(c); changed = true; } });
   const byId = {}; (Array.isArray(d.jobs) ? d.jobs : []).forEach(j => { if (j && j.id) byId[j.id] = j; });
+  const norm = s => String(s || '').trim().toLowerCase();
   const now = Date.now();
+  const claimed = new Set(state.jobs.map(j => j.company && j.company.id).filter(Boolean));
   state.jobs.forEach(j => {
-    if (j.status !== 'running') return;
+    if (j.status !== 'running' || j._streaming) return;   // a live stream in this tab owns its own job
     const sj = byId[j.id];
-    if (sj && sj.status === 'error') { j.status = 'error'; j.error = sj.error || 'The build failed — please try again.'; j.finishedAt = sj.finishedAt || now; changed = true; }
-    else if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; changed = true; }
-    else if (sj && sj.status === 'running') { j._lost = 0; }                          // server confirms it's building
-    else { j._lost = j._lost || now; if (now - j._lost > 90000) { j.status = 'error'; j.error = 'We couldn’t confirm this build — please try again.'; j.finishedAt = now; changed = true; } }
-    if (j.status === 'running' && now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
+    if (sj && sj.status === 'error') { j.status = 'error'; j.error = sj.error || 'The build failed — please try again.'; j.finishedAt = sj.finishedAt || now; changed = true; return; }
+    if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; changed = true; return; }
+    // No decisive record yet. If the finished deal itself has shown up (matched by the name the
+    // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
+    if (j.name && j.name !== 'New deal') {
+      const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
+      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); changed = true; return; }
+    }
+    // Only a build well past the worker's own limits (record never resolved) is treated as stuck.
+    if (now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
   });
   return changed;
 }
