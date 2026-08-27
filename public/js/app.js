@@ -569,7 +569,7 @@ async function runJob(job, payload) {
     // The core memo is in — now fill in the visual Deep Dive as a SEPARATE, lighter pass so the
     // deal lands fast and no single build is long enough to be killed. Best-effort and additive.
     const stored = companyById(data.company.id);
-    const ddInputs = { imText, imPages: imPages.slice(0, 6), excelText, sheetNames, notesText, basics: payload.basics };
+    const ddInputs = { imText, imPages: [], excelText, sheetNames, notesText, basics: payload.basics };   // Deep Dive is TEXT-ONLY — the core memo already did the heavy vision pass; this keeps it fast enough to finish
     if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; }   // cache inputs so the Deep Dive can be retried this session
     emitJobs();
     startDeepDive(data.company.id, ddInputs);

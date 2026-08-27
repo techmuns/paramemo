@@ -631,7 +631,7 @@ async function handleDeepDive(request, env, ctx) {
     '=== INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none)') + '\n' +
     '=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n' +
     (notesText.trim() ? '=== BANKER NOTES ===\n' + notesText + '\n' : '') +
-    'SCOPE: produce 5–8 well-chosen sections covering the most important parts of the IM (not more), each with a few focused blocks — complete but concise, so it builds quickly and reliably. ' +
+    'SCOPE: produce 4–6 well-chosen sections covering the most important parts of the IM (not more), each with a few focused blocks — complete but concise, so it builds quickly and reliably. ' +
     'Return ONLY the deepDive JSON object { source, summary, sections }.';
 
   // Stream keepalives (like /api/generate) so a multi-second build never trips the edge timeout.
