@@ -56,10 +56,10 @@ async function readHiddenSeeds(env) {
   catch { return []; }
 }
 async function handleCompanies(env) {
-  // The live-screener endpoint always responds (scrape.do when SCRAPEDO_API_KEY is set,
-  // a best-effort direct screener.in fetch otherwise), so the "listed peers · live"
-  // panel is offered wherever a deal has listed tickers. `peerLiveProxy` tells the UI
-  // whether the reliable proxy path is configured.
+  // The peer-multiple endpoint always responds — Munshot market data first, then a
+  // screener.in fallback (scrape.do when SCRAPEDO_API_KEY is set, else a best-effort
+  // direct fetch) — so the "listed peers · live market data" panel is offered wherever a
+  // deal has listed tickers. `peerLiveProxy` is retained for the UI's diagnostics only.
   const peerLiveProxy = !!pickSecret(env, 'SCRAPEDO_API_KEY');
   const peerLiveEnabled = true;
   if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy });   // KV not bound yet → no uploads
@@ -72,20 +72,29 @@ async function handleCompanies(env) {
   return json({ companies, hiddenSeeds: await readHiddenSeeds(env), peerLiveEnabled, peerLiveProxy });
 }
 
-// GET /api/peer-multiple?ticker=XXX — live market ratios for a LISTED peer from
-// screener.in. Uses scrape.do when SCRAPEDO_API_KEY is set (reliable, the proxy
-// gets past screener's bot-blocking); otherwise it tries screener.in directly as
-// a best-effort fallback. Purely additive: returns {} on any failure, never throws.
+// GET /api/peer-multiple?ticker=XXX — live market ratios for a LISTED peer.
+// PRIMARY source is the Munshot market-data API (fastapi.muns.io/stock-data): it
+// returns P/E, market cap AND the actual comp multiples (EV/EBITDA, EV/Revenue) for
+// an NSE ticker, isn't bot-blocked, and needs no scraping proxy. If Munshot has no
+// data it FALLS BACK to screener.in — via scrape.do when SCRAPEDO_API_KEY is set,
+// else a best-effort direct fetch. Purely additive: returns {} / ok:false on any
+// failure, never throws.
 async function handlePeerMultiple(request, env) {
   const ticker = (new URL(request.url).searchParams.get('ticker') || '').trim().toUpperCase();
   if (!/^[A-Z0-9&.-]{1,20}$/.test(ticker)) return json({});
 
+  // 1) Munshot — reliable, gives the comp multiples the Comps tab actually wants.
+  try {
+    const m = await peerViaMunshot(ticker, env);
+    if (m && (m.pe != null || m.marketCapCr != null || m.evEbitda != null || m.evRevenue != null)) return json({ ticker, ok: true, via: 'munshot', ...m });
+  } catch (_) { /* fall through to the screener path */ }
+
+  // 2) screener.in fallback (scrape.do when keyed, else direct — may be blocked for datacenter IPs).
   const key = pickSecret(env, 'SCRAPEDO_API_KEY');
   const target = `https://www.screener.in/company/${encodeURIComponent(ticker)}/`;
   const fetchUrl = key
     ? `https://api.scrape.do/?token=${encodeURIComponent(key)}&url=${encodeURIComponent(target)}`
-    : target;   // direct fallback (may be blocked for datacenter IPs — that's fine, we just return {})
-
+    : target;
   try {
     const res = await fetch(fetchUrl, {
       signal: AbortSignal.timeout(12000),
@@ -101,7 +110,7 @@ async function handlePeerMultiple(request, env) {
       const n = m ? parseFloat(m[1].replace(/,/g, '')) : null;
       return (n == null || isNaN(n)) ? null : n;
     };
-    const out = { ticker, ok: true };
+    const out = { ticker, ok: true, via: key ? 'scrape.do' : 'direct' };
     const pe = grab('Stock P/E');
     const marketCapCr = grab('Market Cap');
     const roce = grab('ROCE');
@@ -114,6 +123,40 @@ async function handlePeerMultiple(request, env) {
   } catch (e) {
     return json({ ticker, ok: false, via: key ? 'scrape.do' : 'direct', error: (e && e.message) || 'fetch failed' });
   }
+}
+
+// Munshot market data for one listed peer. POST /stock-data returns a "Key=Value,Key=Value…"
+// string for an NSE symbol (e.g. "GARFIBRES" → "GARFIBRES.NS"); we parse out the P/E, market
+// cap and the EV multiples. Money fields come back as ABSOLUTE ₹ (INR) → convert to ₹ crore.
+// Returns a fields object, or null when Munshot has no data for the ticker. Never throws to caller.
+async function peerViaMunshot(ticker, env) {
+  const url = pickSecret(env, 'MUNSHOT_STOCK_URL') || 'https://fastapi.muns.io/stock-data';
+  const token = pickSecret(env, 'MUNSHOT_TOKEN');   // optional: the endpoint is public but the token raises rate limits
+  const sym = ticker.includes('.') ? ticker : ticker + '.NS';   // Munshot uses Yahoo-style NSE symbols
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ ticker_symbol: sym, type: 'stockquote', country: pickSecret(env, 'MUNSHOT_COUNTRY') || 'India' }),
+    signal: AbortSignal.timeout(12000),
+  });
+  if (!res.ok) return null;
+  let data; try { data = await res.json(); } catch { return null; }
+  if (typeof data !== 'string') return null;   // an error object ({detail:…}) means no data for this ticker
+  const d = {};
+  for (const part of data.split(',')) { const i = part.indexOf('='); if (i > 0) d[part.slice(0, i).trim()] = part.slice(i + 1).trim(); }
+  const gv = k => { const v = d[k]; if (v == null) return null; const n = parseFloat(String(v).replace(/,/g, '')); return isFinite(n) ? n : null; };
+  const r2 = n => n == null ? null : Math.round(n * 100) / 100;
+  const inr = /inr/i.test(d.Currency || 'INR');
+  const toCr = n => (n == null || !inr) ? null : Math.round(n / 1e7);   // absolute ₹ → ₹ crore
+  const out = {};
+  const pe = r2(gv('P/E Ratio (Trailing)')); if (pe != null) out.pe = pe;
+  const mc = toCr(gv('Market Cap')); if (mc != null) out.marketCapCr = mc;
+  const ev = toCr(gv('Enterprise Value')); if (ev != null) out.evCr = ev;
+  const ee = r2(gv('EV/EBITDA')); if (ee != null) out.evEbitda = ee;
+  const er = r2(gv('EV/Revenue')); if (er != null) out.evRevenue = er;
+  const pb = r2(gv('Price-to-Book')); if (pb != null) out.pb = pb;
+  const roe = gv('Return on Equity'); if (roe != null) out.roe = Math.round(roe);
+  return Object.keys(out).length ? out : null;
 }
 
 // DELETE /api/companies/<id> — remove an uploaded deal, OR hide a built-in sample.
@@ -209,6 +252,28 @@ async function handleGenerate(request, env, ctx) {
     '• comps.trading = { asOf, source, note, rows:[ { name, ticker|null, listed, marketCapCr, evCr, revenueCr, ebitdaPct, evEbitda, evRevenue, note } ] } — LISTED peers\' trading multiples. Give the NSE ticker for listed Indian names; leave marketCapCr/evCr null (they refresh live from Screener) and fill evEbitda/evRevenue only where a figure is provided.\n' +
     '• comps.transactions = { source, note, rows:[ { date:"YYYY" or "YYYY-MM", target, buyer, seller|null, dealType, stakePct, dealValue:"<as quoted, e.g. ₹340 cr or $34 mn>", evEbitda, evRevenue, note } ] } — past M&A / PE deals in the space and the multiples paid; null any multiple not disclosed.\n' +
     '• All money in ₹ crore except transaction dealValue (keep it as quoted). Percentages are plain numbers (18 = 18%). A peer, deal, multiple, market cap or margin counts as "in the documents" ONLY if it is in the IM, the banker notes or the Private Circle export — otherwise leave it null / omit the row.\n\n' +
+    'IM DEEP-DIVE (deepDive) — the flagship section: a COMPLETE, visual unpacking of the Information Memorandum so a partner NEVER has to open the PDF. Build it whenever an IM / pitch deck is provided (omit ONLY when there is no IM at all). Capture everything material the IM contains — miss nothing a partner would need — and present it as VISUAL blocks, not walls of text.\n' +
+    '• SHAPE: deepDive = { source:"<e.g. Company IM + management model>", summary:"<2–3 sentence executive nutshell>", sections:[ { title, icon?, summary?, blocks:[ … ] } ] }.\n' +
+    '• SECTIONS ARE DYNAMIC — YOU decide them from THIS IM\'s own structure; there is NO fixed list and you must NOT force sections the IM does not cover. Include a section only when the IM has real content for it. Typical sections when present: Market & opportunity (size, growth, drivers, import-substitution); Business model / how they make money; Products & segments; Financial trajectory; Unit economics; Customers & contracts; Competition & positioning; Growth strategy & roadmap; Use of proceeds; Capacity & operations / manufacturing; Supply chain / sourcing; Management & organisation; ESG / compliance; Key risks. Add any other section the IM emphasises (technology, regulatory, order book, store/franchise economics, ...). Aim for genuine coverage — often 5–10 sections for a full IM.\n' +
+    '• Each section: title = short and specific; summary = one plain-English takeaway line; icon (optional) ONE of: globe, factory, trendingUp, users, coins, target, briefcase, gauge, layers, wallet, mapPin, sparkles, shield, barChart.\n' +
+    '• BLOCKS — pick the RIGHT visual for each piece of content, from this FIXED library (use the exact "type" strings and field names; unknown types are dropped):\n' +
+    '   – kpis: { type:"kpis", title?, items:[ { label, value, sub?, unit?, delta? } ] } — a row of headline numbers. value may be a number OR a formatted string ("₹2.4 lakh cr","23%"). delta optional ("12%"/"-5%").\n' +
+    '   – bars: { type:"bars", title?, unit?, items:[ { label, value:<number>, note? } ] } — compare quantities (revenue by segment, geography split, capex lines). value MUST be numeric.\n' +
+    '   – trend: { type:"trend", title?, caption?, x:[<labels>], series:[ { name, values:[<numbers|null> aligned to x] } ] } — anything over time (revenue/EBITDA, volumes, subscribers, store count).\n' +
+    '   – donut: { type:"donut", title?, center?, centerSub?, items:[ { label, value:<number> } ] } — a share / mix breakdown (revenue mix, end-market mix, shareholding).\n' +
+    '   – funnel: { type:"funnel", title?, items:[ { label, value:<number>, unit?, note? } ] } — a narrowing sequence (TAM→SAM→SOM, sales / order funnel).\n' +
+    '   – flow: { type:"flow", title?, steps:[ { label, note? } ] } — a process, value chain, or business-model sequence.\n' +
+    '   – timeline: { type:"timeline", title?, items:[ { date, label, note? } ] } — company history, milestones, roadmap.\n' +
+    '   – table: { type:"table", title?, caption?, columns:[<strings>], rows:[ [<cells>] ] } — any grid (unit economics, cohorts, top customers, product list). Cells are strings or numbers.\n' +
+    '   – bullets: { type:"bullets", title?, items:[ "point" | { head, text } ] } — qualitative lists (strengths, moats, use of proceeds when no figures).\n' +
+    '   – keyvalue: { type:"keyvalue", title?, items:[ { k, v } ] } — fact sheets (deal terms, quick company facts).\n' +
+    '   – callout: { type:"callout", tone:"info|good|warn|bad", title?, text } — highlight a key insight, a tailwind (good) or a risk (warn/bad).\n' +
+    '   – quote: { type:"quote", text, source? } — a management or customer quote actually printed in the IM.\n' +
+    '   – text: { type:"text", title?, text } — a short narrative paragraph. Use SPARINGLY; prefer the visual blocks above.\n' +
+    '• PREFER VISUALS: every chart, table and number the IM shows should land in a kpis / bars / trend / donut / funnel / table block. Reserve text / bullets / quote for genuinely qualitative content.\n' +
+    '• SAME ACCURACY RULES APPLY: every number, name, quote and label must come from the IM / banker notes / model — NEVER invent one to fill a chart. If a topic is only qualitative in the IM, present it with bullets / flow / keyvalue / timeline (no fabricated numbers). Read the PAGE IMAGES for content not in the text (market maps, charts, logo walls).\n' +
+    '• CONSISTENCY: any financial figures here must match the financials / segments / returns you output (same years, same actual-vs-forecast split, ₹ crore).\n' +
+    '• Clean, not cluttered: group related blocks under the right section so each section tells one clear story. Thoroughness beats brevity — it is fine to be long — but every block must carry real IM content.\n\n' +
     'FIT — judge INDEPENDENTLY and skeptically. The IM is a sell-side marketing document; do NOT accept its ' +
     'optimism at face value. Mark a fitChecklist item "yes" only when the documents clearly prove it, else "no" or ' +
     '"tbd". Weigh profitability, EBITDA margin, free cash flow, customer concentration and governance critically. ' +
@@ -536,6 +601,8 @@ function normalizeCompany(o, id, basics = {}) {
   o.returns = coerceReturns(o);   // guarantee a valid illustrative-returns block (the Returns tab depends on it)
   const comps = coerceComps(o.comps);   // optional comps block — keep only when it carries real rows
   if (comps) o.comps = comps; else delete o.comps;
+  const dd = coerceDeepDive(o.deepDive);   // optional generic IM deep-dive — keep only when it has real blocks
+  if (dd) o.deepDive = dd; else delete o.deepDive;
   o._uploaded = true;  // marker (UI can badge uploaded deals if desired)
   return o;
 }
@@ -635,6 +702,37 @@ function coerceComps(k) {
     if (tx.rows.length) out.transactions = tx;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+// The generic IM deep-dive (dynamic sections of typed visual blocks). The frontend renderer is
+// deliberately permissive — it ignores unknown fields and degrades gracefully — so here we only
+// GUARANTEE STRUCTURE (sections[].blocks[].type) and CAP sizes so a runaway response can't bloat
+// the memo. We keep every other field the model emits verbatim; kept only when it has real blocks.
+const DD_ARRAY_KEYS = ['items', 'rows', 'steps', 'series', 'x', 'labels', 'categories', 'years', 'stages', 'events', 'milestones', 'points', 'columns', 'cols', 'headers', 'slices', 'segments', 'data', 'pairs', 'list', 'kpis', 'stats', 'metrics'];
+function coerceDeepDive(dd) {
+  if (!isObj(dd) || !Array.isArray(dd.sections)) return null;
+  const sections = [];
+  for (const s of dd.sections.slice(0, 16)) {
+    if (!isObj(s) || !Array.isArray(s.blocks)) continue;
+    const blocks = [];
+    for (const b of s.blocks.slice(0, 24)) {
+      if (!isObj(b) || typeof b.type !== 'string' || !b.type) continue;
+      for (const key of DD_ARRAY_KEYS) if (Array.isArray(b[key])) b[key] = b[key].slice(0, 120);
+      if (Array.isArray(b.series)) b.series.forEach(se => { if (isObj(se) && Array.isArray(se.values)) se.values = se.values.slice(0, 120); });
+      if (Array.isArray(b.rows)) b.rows = b.rows.map(r => Array.isArray(r) ? r.slice(0, 24) : r);
+      blocks.push(b);
+    }
+    if (!blocks.length) continue;
+    const sec = { title: typeof s.title === 'string' ? s.title : '', blocks };
+    if (typeof s.icon === 'string') sec.icon = s.icon;
+    if (typeof s.summary === 'string') sec.summary = s.summary;
+    sections.push(sec);
+  }
+  if (!sections.length) return null;
+  const out = { sections };
+  if (typeof dd.source === 'string') out.source = dd.source;
+  if (typeof dd.summary === 'string') out.summary = dd.summary;
+  return out;
 }
 
 /* ------------------------------------------------------------------ *

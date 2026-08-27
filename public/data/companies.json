@@ -7,6 +7,414 @@
   "companies": [
     {
       "id": "kusumgar",
+      "deepDive": {
+        "source": "Kusumgar Limited — Information Memorandum + management model",
+        "summary": "Kusumgar is a 55-year-old technical-textiles maker whose defence-linked fabrics have driven revenue from ₹192 cr (FY21) to ₹798 cr (FY25) at ~25% EBITDA margins, with management guiding to ₹1,319 cr by FY27E. It sits in a large, fast-growing, still-import-heavy market with under 1% share — a long runway, gated by customer concentration and capex execution.",
+        "sections": [
+          {
+            "title": "Market & opportunity",
+            "icon": "globe",
+            "summary": "A large, double-digit-growth market that India still imports heavily — and Kusumgar has under 1% of it.",
+            "blocks": [
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "India technical-textiles market",
+                    "value": "₹2.4 lakh cr",
+                    "sub": "~₹3.9 lakh cr by FY30"
+                  },
+                  {
+                    "label": "Market growth",
+                    "value": "10%",
+                    "sub": "FY25–FY30 CAGR",
+                    "delta": "10%"
+                  },
+                  {
+                    "label": "Still imported",
+                    "value": "~40%",
+                    "sub": "import-substitution runway"
+                  },
+                  {
+                    "label": "Kusumgar share",
+                    "value": "<1%",
+                    "sub": "long runway to grow"
+                  }
+                ]
+              },
+              {
+                "type": "donut",
+                "title": "Where sector demand comes from",
+                "center": "₹2.4L cr",
+                "centerSub": "FY25",
+                "caption": "Illustrative end-market mix for Indian technical textiles.",
+                "items": [
+                  {
+                    "label": "Defence & security",
+                    "value": 34
+                  },
+                  {
+                    "label": "Industrial & auto",
+                    "value": 24
+                  },
+                  {
+                    "label": "Infrastructure & geo-textiles",
+                    "value": 18
+                  },
+                  {
+                    "label": "Filtration",
+                    "value": 14
+                  },
+                  {
+                    "label": "Sportswear & consumer",
+                    "value": 10
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "good",
+                "title": "Policy tailwind",
+                "text": "Defence indigenisation (\"Make in India\") plus the PLI scheme for technical textiles are pulling demand onshore — directly into Kusumgar's addressable market."
+              }
+            ]
+          },
+          {
+            "title": "How Kusumgar makes money",
+            "icon": "factory",
+            "summary": "A vertically integrated maker — yarn to finished fabric to fabricated product, mostly for defence.",
+            "blocks": [
+              {
+                "type": "flow",
+                "title": "Value chain",
+                "steps": [
+                  {
+                    "label": "Speciality yarn & polymers",
+                    "note": "Nylon, polyester, technical inputs"
+                  },
+                  {
+                    "label": "Weaving",
+                    "note": "High-tenacity technical fabric"
+                  },
+                  {
+                    "label": "Coating & lamination",
+                    "note": "Performance finishes"
+                  },
+                  {
+                    "label": "Fabrication & finishing",
+                    "note": "Cut, stitch, assemble"
+                  },
+                  {
+                    "label": "Supply to OEMs & brands",
+                    "note": "Defence, industrial, outdoor"
+                  }
+                ]
+              },
+              {
+                "type": "bullets",
+                "title": "Revenue engines",
+                "items": [
+                  {
+                    "head": "Defence fabrics",
+                    "text": "High-performance woven cloth for parachutes, body armour and military gear — the largest and fastest-growing line."
+                  },
+                  {
+                    "head": "Defence solutions",
+                    "text": "Fabricated end-products and assemblies — a higher-value step beyond raw fabric."
+                  },
+                  {
+                    "head": "Auto & industrial",
+                    "text": "Coated and laminated fabrics for conveyor belts, tarpaulins and automotive uses — steady ballast."
+                  }
+                ]
+              },
+              {
+                "type": "keyvalue",
+                "title": "At a glance",
+                "items": [
+                  {
+                    "k": "Founded",
+                    "v": "1970"
+                  },
+                  {
+                    "k": "Manufacturing",
+                    "v": "Vapi & Silvassa"
+                  },
+                  {
+                    "k": "Integration",
+                    "v": "Design → weave → coat → fabricate, in-house"
+                  },
+                  {
+                    "k": "Exports",
+                    "v": "~50% of sales, mostly USA"
+                  },
+                  {
+                    "k": "Approvals",
+                    "v": "Defence-qualified; ISO / NABL lab"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Financial trajectory",
+            "icon": "trendingUp",
+            "summary": "Revenue up ~4× in four years at held ~25% margins; management guides to ₹1,319 cr by FY27E.",
+            "blocks": [
+              {
+                "type": "trend",
+                "title": "Revenue & EBITDA (₹ cr)",
+                "caption": "FY26E–FY27E are management projections.",
+                "x": [
+                  "FY21",
+                  "FY22",
+                  "FY23",
+                  "FY24",
+                  "FY25",
+                  "FY26E",
+                  "FY27E"
+                ],
+                "series": [
+                  {
+                    "name": "Revenue",
+                    "values": [
+                      192,
+                      224,
+                      302,
+                      483,
+                      798,
+                      903,
+                      1319
+                    ]
+                  },
+                  {
+                    "name": "EBITDA",
+                    "values": [
+                      38,
+                      47,
+                      56,
+                      130,
+                      198,
+                      228,
+                      337
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "bars",
+                "title": "FY25 revenue by segment",
+                "unit": "₹ cr",
+                "items": [
+                  {
+                    "label": "Defence fabrics",
+                    "value": 375
+                  },
+                  {
+                    "label": "Defence solutions",
+                    "value": 240
+                  },
+                  {
+                    "label": "Auto & industrial",
+                    "value": 128
+                  }
+                ]
+              },
+              {
+                "type": "kpis",
+                "items": [
+                  {
+                    "label": "EBITDA margin (FY25)",
+                    "value": "25%"
+                  },
+                  {
+                    "label": "Revenue CAGR FY21–25",
+                    "value": "43%",
+                    "delta": "43%"
+                  },
+                  {
+                    "label": "Export share",
+                    "value": "~50%",
+                    "sub": "mostly US"
+                  },
+                  {
+                    "label": "FY27E revenue",
+                    "value": "₹1,319 cr",
+                    "sub": "management projection"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Customers & demand",
+            "icon": "users",
+            "summary": "Roughly half the book is exports to US defence and outdoor OEMs; the rest is domestic defence and industrial.",
+            "blocks": [
+              {
+                "type": "table",
+                "title": "Demand by channel",
+                "caption": "Approximate revenue split from the IM; channel-level, not named accounts.",
+                "columns": [
+                  "Customer / channel",
+                  "Type",
+                  "Est. share"
+                ],
+                "rows": [
+                  [
+                    "US defence & outdoor OEMs",
+                    "Export",
+                    "~50%"
+                  ],
+                  [
+                    "Indian defence (MoD / DPSUs)",
+                    "Domestic",
+                    "~22%"
+                  ],
+                  [
+                    "Industrial & auto OEMs",
+                    "Domestic",
+                    "~18%"
+                  ],
+                  [
+                    "Other / distributors",
+                    "Mixed",
+                    "~10%"
+                  ]
+                ]
+              },
+              {
+                "type": "quote",
+                "text": "Our defence-grade fabrics take years to qualify with each customer — but once we are in, we tend to stay in for the life of the platform.",
+                "source": "Management, IM"
+              }
+            ]
+          },
+          {
+            "title": "Growth plan & use of proceeds",
+            "icon": "target",
+            "summary": "A small slice of a huge market, with primary capital going mostly into capacity.",
+            "blocks": [
+              {
+                "type": "funnel",
+                "title": "Runway — market to near-term target",
+                "items": [
+                  {
+                    "label": "TAM — India technical textiles",
+                    "value": 240000,
+                    "unit": "₹ cr",
+                    "note": "FY25 sector size"
+                  },
+                  {
+                    "label": "SAM — defence + industrial addressable",
+                    "value": 28000,
+                    "unit": "₹ cr"
+                  },
+                  {
+                    "label": "SOM — Kusumgar FY27E target",
+                    "value": 1319,
+                    "unit": "₹ cr"
+                  }
+                ]
+              },
+              {
+                "type": "bars",
+                "title": "Indicative use of proceeds",
+                "unit": "%",
+                "items": [
+                  {
+                    "label": "Capacity expansion (weave + coat)",
+                    "value": 45
+                  },
+                  {
+                    "label": "Backward integration / yarn",
+                    "value": 20
+                  },
+                  {
+                    "label": "Working capital",
+                    "value": 20
+                  },
+                  {
+                    "label": "General corporate",
+                    "value": 15
+                  }
+                ]
+              },
+              {
+                "type": "timeline",
+                "title": "Milestones & roadmap",
+                "items": [
+                  {
+                    "date": "1970",
+                    "label": "Founded",
+                    "note": "Technical fabrics for parachutes"
+                  },
+                  {
+                    "date": "2008",
+                    "label": "Coating & lamination",
+                    "note": "Defence-grade finishing capability"
+                  },
+                  {
+                    "date": "2018",
+                    "label": "Exports scale",
+                    "note": "Multi-year US OEM supply"
+                  },
+                  {
+                    "date": "FY24",
+                    "label": "₹483 cr revenue",
+                    "note": "Margins step up toward ~27%"
+                  },
+                  {
+                    "date": "FY25",
+                    "label": "₹798 cr revenue",
+                    "note": "Defence mix drives growth"
+                  },
+                  {
+                    "date": "FY27E",
+                    "label": "₹1,319 cr target",
+                    "note": "On capacity ramp"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "title": "Moat & what could go wrong",
+            "icon": "shield",
+            "summary": "Hard-won approvals and integration protect the franchise; concentration and capex are the watch-items.",
+            "blocks": [
+              {
+                "type": "bullets",
+                "title": "Why it's defensible",
+                "items": [
+                  {
+                    "head": "Long qualification cycles",
+                    "text": "Defence and OEM approvals take years — once in, hard to displace."
+                  },
+                  {
+                    "head": "In-house R&D & integration",
+                    "text": "Design-to-fabric under one roof supports custom, high-margin work."
+                  },
+                  {
+                    "head": "Sticky export relationships",
+                    "text": "Multi-year supply to US defence and outdoor OEMs."
+                  },
+                  {
+                    "head": "Margin resilience",
+                    "text": "~25% EBITDA held through the growth ramp."
+                  }
+                ]
+              },
+              {
+                "type": "callout",
+                "tone": "warn",
+                "title": "Key risks",
+                "text": "Customer and geography concentration (US), input-cost and FX swings, and execution risk on the capacity expansion are the main watch-items — sized further in the Integrity and Returns tabs."
+              }
+            ]
+          }
+        ]
+      },
       "name": "Kusumgar Limited",
       "shortName": "Kusumgar",
       "monogram": "KG",

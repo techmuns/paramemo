@@ -151,6 +151,11 @@ const ICONS = {
   bell:       '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
   loader:     '<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>',
   refreshCw:  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  bookOpen:   '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  mapPin:     '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  factory:    '<path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/>',
+  globe:      '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
 };
 function icon(name, cls = 'w-4 h-4', sw = 2) {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}"
@@ -582,6 +587,7 @@ const companyById = id => state.companies.find(c => c.id === id);
  * ---------------------------------------------------------------------------*/
 const TABS = [
   { key: 'snapshot',   label: 'Snapshot',   icon: 'clipboard'  },
+  { key: 'deepdive',   label: 'Deep Dive',  icon: 'bookOpen'   },
   { key: 'financials', label: 'Financials', icon: 'barChart'   },
   { key: 'fit',        label: 'Fit',        icon: 'target'     },
   { key: 'integrity',  label: 'Integrity',  icon: 'shield'     },
@@ -592,7 +598,7 @@ const TABS = [
 ];
 // All tabs are built; none carry a "coming soon" dot.
 // (renderComingSoon remains as a harmless fallback for any unknown tab key.)
-const LIVE_TABS = ['snapshot', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
+const LIVE_TABS = ['snapshot', 'deepdive', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
 const TAB_KEYS = TABS.map(t => t.key);
 const TAB_META = Object.fromEntries(TABS.map(t => [t.key, t]));
 
@@ -1189,7 +1195,10 @@ function renderFullReport(c) {
   const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
   const people = arr => (arr || []).map(p => `<div class="fr-person"><b>${esc(p.name)}</b><span>${esc(p.role)}</span>${p.note ? `<span class="nt">${esc(p.note)}</span>` : ''}</div>`).join('');
   const own = (s.ownership || []).map(x => `<tr><td>${esc(x.holder)}</td><td class="num">${x.pct}%</td></tr>`).join('');
-  const sec = (n, title, body) => `<section class="fr-sec"><h2><span class="fr-n">${n}</span>${esc(title)}</h2>${body}</section>`;
+  // Auto-numbered so conditional sections (deep-dive, questions, comps, returns)
+  // never leave a gap; template `${}` expressions evaluate in source order.
+  let _sn = 0;
+  const sec = (title, body, cls) => `<section class="fr-sec${cls ? ' ' + cls : ''}"><h2><span class="fr-n">${++_sn}</span>${esc(title)}</h2>${body}</section>`;
 
   return `
     <div class="fr">
@@ -1210,7 +1219,7 @@ function renderFullReport(c) {
         </div>
       </div>
 
-      ${sec(1, 'Business overview', `
+      ${sec('Business overview', `
         <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
         ${bullets ? `<ul class="fr-ul">${bullets}</ul>` : ''}
         <div class="fr-people-grid">
@@ -1220,7 +1229,7 @@ function renderFullReport(c) {
         ${own ? `<h3 style="margin-top:12px">Ownership</h3><table class="fr-facts">${own}</table>` : (s.ownershipNote ? `<p class="fr-note">${esc(s.ownershipNote)}</p>` : '')}
       `)}
 
-      ${sec(2, 'The deal', `<table class="fr-facts">
+      ${sec('The deal', `<table class="fr-facts">
         <tr><td>Ask</td><td class="num">${esc(t.headline || '—')}</td></tr>
         <tr><td>Type</td><td class="num">${esc(t.type || '—')}</td></tr>
         <tr><td>Co-investment</td><td class="num">${esc(t.coInvestment || 'TBU')}</td></tr>
@@ -1229,36 +1238,35 @@ function renderFullReport(c) {
         <tr><td>Origination date</td><td class="num">${esc(fmtDate(o.date) || '—')}</td></tr>
       </table>`)}
 
-      ${sec(3, 'Financials', `
+      ${hasDeepDive(c) ? sec('From the Information Memorandum — full briefing', frDeepDive(c), 'fr-sec-dd') : ''}
+
+      ${sec('Financials', `
         <div class="fr-cap">All figures in ₹ crore; tinted columns are forecast.</div>
         ${printFinTable(c)}
         ${printSegments(c)}
       `)}
 
-      ${sec(4, 'Fit assessment', `
+      ${sec('Fit assessment', `
         <div class="fr-fitline"><span class="fr-verdict sm fr-${esc(c.fit ? c.fit.verdict : 'watch')}"><span class="dot"></span>${fit.label}</span><span>${esc(c.fit ? c.fit.reason : '')}</span></div>
         ${printChecklist(c)}
       `)}
 
-      ${sec(5, 'Integrity & governance', printIntegrity(c))}
+      ${sec('Integrity & governance', printIntegrity(c))}
 
-      ${Array.isArray(c.questions) && c.questions.length ? sec(6, 'Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
+      ${Array.isArray(c.questions) && c.questions.length ? sec('Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
 
-      ${sec(7, 'Investment thesis & risks', `
+      ${sec('Investment thesis & risks', `
         <div class="fr-cols">
           <div><h3>Why we'd invest</h3>${(c.thesis || []).map(x => `<div class="fr-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
           <div><h3>What worries us</h3>${(c.concerns || []).map(x => `<div class="fr-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
         </div>
       `)}
 
-      ${(() => {
-        const compsShown = hasComps(c) || hasPeers(c);
-        const compsSec = hasComps(c) ? sec(8, 'Peers & comparables', frComps(c))
-          : (hasPeers(c) ? sec(8, 'Peers & comparables', frPeerComps(c)) : '');
-        const retSec = c.returns ? sec(compsShown ? 9 : 8, 'Illustrative returns',
-          `<div class="fr-cap">Base case built on management’s own projections — illustrative, not a recommendation.</div>${frReturns(c)}`) : '';
-        return compsSec + retSec;
-      })()}
+      ${hasComps(c) ? sec('Peers & comparables', frComps(c))
+        : (hasPeers(c) ? sec('Peers & comparables', frPeerComps(c)) : '')}
+
+      ${c.returns ? sec('Illustrative returns',
+        `<div class="fr-cap">Base case built on management’s own projections — illustrative, not a recommendation.</div>${frReturns(c)}`) : ''}
 
       <div class="fr-foot">Paragon Partners · Screening Report · Private &amp; Confidential</div>
     </div>`;
@@ -1706,6 +1714,7 @@ function renderTabPanel(c, tab) {
   panel.innerHTML = '';
   let node;
   if (tab === 'snapshot')        node = renderSnapshot(c);
+  else if (tab === 'deepdive')   node = renderDeepDive(c);
   else if (tab === 'financials') node = renderFinancials(c);
   else if (tab === 'fit')        node = renderFit(c);
   else if (tab === 'integrity')  node = renderIntegrity(c);
@@ -2074,6 +2083,7 @@ function chartCard(title, iconName, chartType) {
 
 /* ---- 7c. Coming-soon tabs (nav stays complete + stable) ---- */
 const SOON_DESC = {
+  deepdive:  'Everything inside the Information Memorandum, unpacked into visual sections — so you never have to open the PDF.',
   fit:       'How this deal maps to Paragon’s mandate — sector, cheque size, stage and the full go / watch / pass rationale.',
   integrity: 'Promoter background, governance flags and the diligence checklist that must clear before we proceed.',
   questions: 'The sharp questions for the banker and management, gathered in one place for the meeting.',
@@ -2418,29 +2428,31 @@ function attachCompsLive(card, c, rows) {
 
   const liveTable = live => {
     const cell = v => v == null ? '<span class="peer-live-na">—</span>' : v;
+    const mult = v => v == null ? null : v.toFixed(1) + '×';
     const body = listed.map(r => {
       const d = (live.byTicker || {})[r.ticker] || {};
       return `<tr><td>${esc(r.name)} <span class="peer-tick">${esc(r.ticker)}</span></td>
         <td class="num">${cell(d.marketCapCr != null ? fmtCr(d.marketCapCr) : null)}</td>
-        <td class="num">${cell(d.pe != null ? d.pe.toFixed(1) + '×' : null)}</td>
-        <td class="num">${cell(d.roe != null ? d.roe + '%' : null)}</td></tr>`;
+        <td class="num">${cell(mult(d.pe))}</td>
+        <td class="num">${cell(mult(d.evEbitda))}</td>
+        <td class="num">${cell(mult(d.evRevenue))}</td></tr>`;
     }).join('');
-    const got = listed.some(r => { const d = (live.byTicker || {})[r.ticker]; return d && (d.pe != null || d.marketCapCr != null); });
+    const got = listed.some(r => { const d = (live.byTicker || {})[r.ticker]; return d && (d.pe != null || d.marketCapCr != null || d.evEbitda != null || d.evRevenue != null); });
     const foot = got
-      ? `Live from Screener.in${live.ts ? ' · ' + esc(live.ts) : ''}${state.peerLiveProxy ? '' : ' · direct (best-effort)'}.`
-      : `Screener returned no figures right now.${state.peerLiveProxy ? ' Try Refresh in a moment.' : ' Set the SCRAPEDO_API_KEY secret for reliable results.'}`;
+      ? `Live market data${live.ts ? ' · ' + esc(live.ts) : ''}. Market cap, P/E and EV multiples for the listed peers.`
+      : `No live figures right now — the market-data source may be busy. Try Refresh in a moment.`;
     return `<div class="peer-scroll mt-2"><table class="peer-tbl peer-live-tbl">
-        <thead><tr><th>Listed peer</th><th class="num">Market cap</th><th class="num">P/E</th><th class="num">ROE</th></tr></thead>
+        <thead><tr><th>Listed peer</th><th class="num">Market cap</th><th class="num">P/E</th><th class="num">EV/EBITDA</th><th class="num">EV/Revenue</th></tr></thead>
         <tbody>${body}</tbody></table></div><p class="peer-live-hint">${foot}</p>`;
   };
   const renderPanel = () => {
     const live = c._peerLive;
     box.innerHTML = `
       <div class="peer-live-head">
-        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live from Screener</span>
+        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live market data</span>
         <button class="peer-live-btn" type="button" data-live-fetch>${icon('refreshCw', 'w-3.5 h-3.5')}<span>${live ? 'Refresh' : 'Fetch live market data'}</span><span class="peer-live-tag">live</span></button>
       </div>
-      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current market cap, P/E and ROE straight from Screener.in.</p>`}</div>`;
+      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current market cap, P/E and trading multiples (EV/EBITDA, EV/Revenue) live — and fill any blanks in the table above.</p>`}</div>`;
     box.querySelector('[data-live-fetch]').addEventListener('click', fetchLive);
   };
   const fetchLive = async e => {
@@ -2451,17 +2463,354 @@ function attachCompsLive(card, c, rows) {
       try {
         const res = await fetch(apiUrl('peer-multiple') + '?ticker=' + encodeURIComponent(r.ticker));
         const d = await res.json().catch(() => ({}));
-        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), roce: _num(d.roce), roe: _num(d.roe) };
+        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), evCr: _num(d.evCr), evEbitda: _num(d.evEbitda), evRevenue: _num(d.evRevenue), roe: _num(d.roe) };
       } catch (_) { byTicker[r.ticker] = byTicker[r.ticker] || {}; }
     }));
     c._peerLive = { ts: nowLabel(), byTicker };
-    // Backfill the trading table's blank Mkt-cap cells from the live data, then re-render the tab.
+    // Backfill the trading table's blank cells (mkt cap, EV, and the EV multiples) from live data,
+    // then re-render the tab so the median row recomputes off the freshly filled multiples.
     let filled = false;
-    listed.forEach(r => { const mc = byTicker[r.ticker] && byTicker[r.ticker].marketCapCr; if (mc != null && r.marketCapCr == null) { r.marketCapCr = Math.round(mc); filled = true; } });
+    listed.forEach(r => {
+      const d = byTicker[r.ticker]; if (!d) return;
+      if (d.marketCapCr != null && r.marketCapCr == null) { r.marketCapCr = Math.round(d.marketCapCr); filled = true; }
+      if (d.evCr != null && r.evCr == null) { r.evCr = Math.round(d.evCr); filled = true; }
+      if (d.evEbitda != null && r.evEbitda == null) { r.evEbitda = d.evEbitda; filled = true; }
+      if (d.evRevenue != null && r.evRevenue == null) { r.evRevenue = d.evRevenue; filled = true; }
+    });
     if (filled) { renderTabPanel(c, 'comps'); return; }
     renderPanel();
   };
   renderPanel();
+}
+
+/* ---- 7g-bis. IM Deep-Dive — a GENERIC, block-based unpacking of the whole IM ----
+ * The client wants the dashboard so complete he never has to open the Information
+ * Memorandum. So the AI emits, per deal, a fully dynamic:
+ *     c.deepDive = { source?, summary?, sections:[ { title, icon?, summary?, blocks:[…] } ] }
+ * There is NO fixed list of sections — they adapt to whatever a given IM contains
+ * (market, business model, unit economics, customers, moat, use of proceeds, …).
+ * Every block carries a `type` from the fixed visual library below; unknown types
+ * degrade gracefully. Blocks are pure HTML + inline SVG using `.dd-*` classes
+ * (defined once in index.html), so the SAME renderers drive both this live tab and
+ * the printed/exported report (exportDocHtml inlines every <style>). --------------- */
+
+const DD_PALETTE = ['#0C3078', '#2563EB', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#14B8A6', '#EF4444', '#64748B'];
+const ddColor = i => DD_PALETTE[i % DD_PALETTE.length];
+const ddIsNum = v => typeof v === 'number' && isFinite(v);
+const ddSafeIcon = name => (name && ICONS[name]) ? name : null;
+
+// Display a value: numbers get Indian grouping (+ optional unit); strings pass through
+// verbatim (IMs often carry pre-formatted values like "₹5,000 cr" or "23% YoY").
+function ddValue(v, unit) {
+  if (v == null || v === '') return '';
+  if (ddIsNum(v)) {
+    const abs = Math.abs(v);
+    const s = abs >= 1000 ? Math.round(v).toLocaleString('en-IN')
+            : (Math.round(v * 100) / 100).toLocaleString('en-IN');
+    return esc(s + (unit ? ' ' + unit : ''));
+  }
+  return esc(String(v)) + (unit ? ' ' + esc(unit) : '');
+}
+// Pull a number out of a number or a string ("₹1,240 cr" → 1240) for chart geometry.
+function ddToNum(v) {
+  if (ddIsNum(v)) return v;
+  if (typeof v === 'string') { const m = v.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/); if (m) return parseFloat(m[0]); }
+  return null;
+}
+// Compact axis tick (Indian lakh/crore scale) so y-labels stay narrow.
+const ddTrim = s => s.replace(/\.0$/, '');
+function ddCompact(v) {
+  const a = Math.abs(v);
+  if (a >= 1e7) return ddTrim((v / 1e7).toFixed(a >= 1e8 ? 0 : 1)) + 'Cr';
+  if (a >= 1e5) return ddTrim((v / 1e5).toFixed(a >= 1e6 ? 0 : 1)) + 'L';
+  if (a >= 1e3) return ddTrim((v / 1e3).toFixed(a >= 1e4 ? 0 : 1)) + 'k';
+  return String(Math.round(v * 10) / 10);
+}
+// A "nice" round step (1/2/5 × 10ⁿ) for readable axis gridlines.
+function ddNiceStep(raw) {
+  if (!(raw > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / e;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * e;
+}
+const ddField = (o, ...keys) => { for (const k of keys) if (o && o[k] != null && o[k] !== '') return o[k]; return undefined; };
+
+// Optional block heading + caption (charts/tables/bars use these; self-titled blocks skip).
+function ddBlockHead(b) {
+  const t = ddField(b, 'title', 'heading');
+  if (!t) return '';
+  const ic = ddSafeIcon(b.icon);
+  return `<div class="dd-bh">${ic ? `<span class="dd-bh-ico">${icon(ic, 'w-3.5 h-3.5', 2.4)}</span>` : ''}<span class="dd-bh-t">${esc(t)}</span></div>`;
+}
+const ddBlockCap = b => { const c = ddField(b, 'caption', 'footnote'); return c ? `<div class="dd-cap">${esc(c)}</div>` : ''; };
+
+/* ---- the block library — each returns an HTML *body* string (no outer wrapper) ---- */
+
+// KPI tiles: big number, label, optional sub + delta chip.
+function ddKpis(b) {
+  const items = (b.items || b.stats || b.kpis || b.metrics || []).filter(Boolean);
+  if (!items.length) return '';
+  const tiles = items.map(it => {
+    const val = ddField(it, 'value', 'v', 'val');
+    const label = ddField(it, 'label', 'k', 'name');
+    const delta = ddField(it, 'delta', 'change');
+    let dchip = '';
+    if (delta != null && delta !== '') {
+      const up = ddIsNum(delta) ? delta >= 0 : !/^-|↓|down|drop|decl/i.test(String(delta));
+      const bad = it.tone === 'bad' || (it.tone !== 'good' && !up);
+      dchip = `<span class="dd-kpi-d ${bad ? 'is-bad' : 'is-good'}">${up ? '▲' : '▼'} ${esc(String(delta).replace(/^[+-]/, ''))}</span>`;
+    }
+    return `<div class="dd-kpi">
+      <div class="dd-kpi-v">${ddValue(val, it.unit)}${dchip}</div>
+      <div class="dd-kpi-l">${esc(label || '')}</div>
+      ${it.sub ? `<div class="dd-kpi-s">${esc(it.sub)}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="dd-kpis">${tiles}</div>`;
+}
+
+// Horizontal bars, proportional to the max value.
+function ddBars(b) {
+  const items = (b.items || b.rows || b.data || []).filter(Boolean);
+  if (!items.length) return '';
+  const nums = items.map(it => ddToNum(ddField(it, 'value', 'v', 'val')));
+  const max = Math.max(1, ...nums.map(n => n == null ? 0 : Math.abs(n)));
+  const rows = items.map((it, i) => {
+    const raw = ddField(it, 'value', 'v', 'val');
+    const w = nums[i] == null ? 0 : Math.max(2, Math.abs(nums[i]) / max * 100);
+    return `<div class="dd-bar-row">
+      <div class="dd-bar-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</div>
+      <div class="dd-bar-track"><span class="dd-bar-fill" style="width:${w}%;background:${esc(it.color || ddColor(i))}"></span></div>
+      <div class="dd-bar-val">${raw == null ? '' : ddValue(raw, b.unit || it.unit)}</div>${it.note ? `<div class="dd-bar-note">${esc(it.note)}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="dd-bars">${rows}</div>`;
+}
+
+// Line / area chart over time — one or more series, self-contained SVG.
+function ddTrend(b) {
+  const x = b.x || b.labels || b.categories || b.years || [];
+  let series = b.series;
+  if (!series && Array.isArray(b.values)) series = [{ name: b.name || '', values: b.values }];
+  series = (series || []).filter(s => s && Array.isArray(s.values) && s.values.length);
+  if (!series.length) return '';
+  const n = Math.max(...series.map(s => s.values.length), x.length || 0);
+  if (n < 2) return '';
+  const nums = series.flatMap(s => s.values.map(ddToNum)).filter(v => v != null);
+  if (!nums.length) return '';
+  // "Nice" round bounds so gridlines read 0 / 500 / 1k / 1.5k, not 349.5 / 699.1.
+  const dMin = Math.min(...nums), dMax = Math.max(...nums), lo0 = dMin >= 0 ? 0 : dMin;
+  const step = ddNiceStep(((dMax - lo0) || 1) / 4);
+  const lo = Math.floor(lo0 / step) * step;
+  let hi = Math.ceil(dMax / step) * step;
+  if (hi <= lo) hi = lo + step;
+  const W = 720, H = 250, mL = 46, mR = 16, mT = 14, mB = 34, iw = W - mL - mR, ih = H - mT - mB;
+  const X = i => mL + (n <= 1 ? iw / 2 : iw * i / (n - 1));
+  const Y = v => mT + ih * (1 - (v - lo) / (hi - lo));
+  const grid = [], ylab = [];
+  for (let v = lo; v <= hi + step * 1e-6; v += step) { const y = Y(v); grid.push(`<line x1="${mL}" y1="${y.toFixed(1)}" x2="${W - mR}" y2="${y.toFixed(1)}" class="dd-grid"/>`); ylab.push(`<text x="${mL - 6}" y="${(y + 3).toFixed(1)}" class="dd-yt">${esc(ddCompact(v))}</text>`); }
+  const xstep = n <= 9 ? 1 : Math.ceil(n / 8);
+  const xlab = []; for (let i = 0; i < n; i++) if (i % xstep === 0 || i === n - 1) xlab.push(`<text x="${X(i).toFixed(1)}" y="${H - 12}" class="dd-xt">${esc(String(x[i] != null ? x[i] : i + 1))}</text>`);
+  const paths = series.map((s, si) => {
+    const col = s.color || ddColor(si);
+    const pts = s.values.map((v, i) => { const y = ddToNum(v); return y == null ? null : `${X(i).toFixed(1)},${Y(y).toFixed(1)}`; }).filter(Boolean);
+    if (!pts.length) return '';
+    const dots = s.values.map((v, i) => { const y = ddToNum(v); return y == null ? '' : `<circle cx="${X(i).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="3" fill="${esc(col)}"/>`; }).join('');
+    const area = series.length === 1 ? `<polygon points="${X(0).toFixed(1)},${Y(lo).toFixed(1)} ${pts.join(' ')} ${X(n - 1).toFixed(1)},${Y(lo).toFixed(1)}" fill="${tint(col, .10)}"/>` : '';
+    return `${area}<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(col)}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+  }).join('');
+  const legend = series.length > 1 ? `<div class="dd-lg dd-lg-row-wrap">${series.map((s, si) => `<span class="dd-lg-chip"><span class="dd-lg-dot" style="background:${esc(s.color || ddColor(si))}"></span>${esc(s.name || 'Series ' + (si + 1))}</span>`).join('')}</div>` : '';
+  return `${legend}<svg viewBox="0 0 ${W} ${H}" class="dd-chart" role="img" aria-label="trend chart">${grid.join('')}${ylab.join('')}${xlab.join('')}${paths}</svg>`;
+}
+
+// Donut / share breakdown — SVG ring + legend with values and %.
+function ddDonut(b) {
+  const items = (b.items || b.slices || b.data || b.segments || []).filter(it => it && ddToNum(ddField(it, 'value', 'v', 'val')) != null);
+  if (!items.length) return '';
+  const vals = items.map(it => Math.abs(ddToNum(ddField(it, 'value', 'v', 'val'))));
+  const total = vals.reduce((a, c) => a + c, 0) || 1;
+  const R = 58, TH = 24, C = 2 * Math.PI * R, cx = 80, cy = 80;
+  let off = 0;
+  const arcs = items.map((it, i) => { const dash = vals[i] / total * C; const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${esc(it.color || ddColor(i))}" stroke-width="${TH}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`; off += dash; return seg; }).join('');
+  const center = b.center != null ? b.center : (b.total != null ? ddValue(b.total) : '');
+  const ctext = center ? `<text x="${cx}" y="${cy - 2}" text-anchor="middle" class="dd-donut-c1">${esc(String(center))}</text>${b.centerSub ? `<text x="${cx}" y="${cy + 15}" text-anchor="middle" class="dd-donut-c2">${esc(b.centerSub)}</text>` : ''}` : '';
+  const legend = items.map((it, i) => `<div class="dd-lg-item"><span class="dd-lg-dot" style="background:${esc(it.color || ddColor(i))}"></span><span class="dd-lg-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</span><span class="dd-lg-val">${ddValue(ddField(it, 'value', 'v', 'val'), it.unit)}</span><span class="dd-lg-pct">${Math.round(vals[i] / total * 100)}%</span></div>`).join('');
+  return `<div class="dd-donut"><svg viewBox="0 0 160 160" class="dd-donut-svg" role="img" aria-label="share chart">${arcs}${ctext}</svg><div class="dd-lg">${legend}</div></div>`;
+}
+
+// Funnel — centered bars that narrow down the list (TAM→SAM→SOM, sales stages, …).
+function ddFunnel(b) {
+  const items = (b.items || b.stages || b.data || []).filter(Boolean);
+  if (!items.length) return '';
+  const nums = items.map(it => ddToNum(ddField(it, 'value', 'v', 'val')));
+  const max = Math.max(1, ...nums.map(n => n == null ? 0 : Math.abs(n)));
+  const rows = items.map((it, i) => {
+    const w = nums[i] == null ? 100 : Math.max(16, Math.abs(nums[i]) / max * 100);
+    const col = ddColor(i);
+    return `<div class="dd-fn-row"><div class="dd-fn-bar" style="width:${w}%;background:linear-gradient(90deg,${tint(col, .92)},${tint(col, .6)})"><span class="dd-fn-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</span><span class="dd-fn-val">${ddValue(ddField(it, 'value', 'v', 'val'), it.unit)}</span></div>${it.note ? `<span class="dd-fn-note">${esc(it.note)}</span>` : ''}</div>`;
+  }).join('');
+  return `<div class="dd-funnel">${rows}</div>`;
+}
+
+// Flow / process / value chain — steps connected by arrows, wraps on narrow screens.
+function ddFlow(b) {
+  const steps = (b.steps || b.items || b.stages || []).filter(Boolean);
+  if (!steps.length) return '';
+  const node = (s, i) => {
+    const label = typeof s === 'string' ? s : (ddField(s, 'label', 'name', 'title') || '');
+    const note = typeof s === 'object' ? ddField(s, 'note', 'detail') : '';
+    const ic = typeof s === 'object' ? ddSafeIcon(s.icon) : null;
+    return `<div class="dd-flow-step"><div class="dd-flow-num">${ic ? icon(ic, 'w-4 h-4') : (i + 1)}</div><div class="dd-flow-body"><div class="dd-flow-lab">${esc(label)}</div>${note ? `<div class="dd-flow-note">${esc(note)}</div>` : ''}</div></div>`;
+  };
+  return `<div class="dd-flow">${steps.map(node).join(`<span class="dd-flow-ar">${icon('arrowRight', 'w-4 h-4')}</span>`)}</div>`;
+}
+
+// Timeline — dated milestones down a rail (history, roadmap, key events).
+function ddTimeline(b) {
+  const items = (b.items || b.events || b.milestones || []).filter(Boolean);
+  if (!items.length) return '';
+  const rows = items.map((it, i) => `<div class="dd-tl-row"><div class="dd-tl-date">${esc(ddField(it, 'date', 'year', 'when') || '')}</div><div class="dd-tl-rail"><span class="dd-tl-dot" style="background:${ddColor(i)}"></span></div><div class="dd-tl-body"><div class="dd-tl-lab">${esc(ddField(it, 'label', 'title', 'event') || '')}</div>${ddField(it, 'note', 'detail') ? `<div class="dd-tl-note">${esc(ddField(it, 'note', 'detail'))}</div>` : ''}</div></div>`).join('');
+  return `<div class="dd-tl">${rows}</div>`;
+}
+
+// Generic table — arrays or arrays-of-objects; numeric columns auto-right-align.
+function ddTable(b) {
+  let cols = b.columns || b.cols || b.headers || [];
+  const rows = b.rows || b.data || [];
+  if (!rows.length) return '';
+  cols = cols.map(c => typeof c === 'string' ? { label: c } : { label: ddField(c, 'label', 'name', 'key') || '', align: c.align, key: c.key, unit: c.unit });
+  if (!cols.length && rows[0] && !Array.isArray(rows[0])) cols = Object.keys(rows[0]).map(k => ({ label: k, key: k }));
+  if (!cols.length && Array.isArray(rows[0])) cols = rows[0].map((_, i) => ({ label: '' }));
+  const norm = r => Array.isArray(r) ? r : cols.map(c => r[c.key || c.label]);
+  const numCol = cols.map((_, ci) => rows.every(r => { const v = norm(r)[ci]; return v == null || v === '' || ddToNum(v) != null; }) && rows.some(r => ddToNum(norm(r)[ci]) != null));
+  const head = `<tr>${cols.map((c, ci) => `<th class="${(c.align === 'right' || numCol[ci]) ? 'num' : ''}">${esc(c.label)}</th>`).join('')}</tr>`;
+  const body = rows.map(r => { const cells = norm(r); const cls0 = ci => ci === 0 ? ' dd-td0' : ''; return `<tr>${cols.map((c, ci) => `<td class="${(c.align === 'right' || (numCol[ci] && ci > 0)) ? 'num' : ''}${cls0(ci)}">${ddValue(cells[ci], c.unit)}</td>`).join('')}</tr>`; }).join('');
+  return `<div class="dd-tbl-wrap"><table class="dd-tbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+// Bullets — plain strings, or {head, text} titled points.
+function ddBullets(b) {
+  const items = (b.items || b.points || b.list || []).filter(x => x != null && x !== '');
+  if (!items.length) return '';
+  const cols = items.length > 5 ? ' dd-bullets-2' : '';
+  const li = it => {
+    if (typeof it !== 'object') return `<li><span class="dd-bl-mk">${icon('check', 'w-3.5 h-3.5', 3)}</span><span>${esc(it)}</span></li>`;
+    const head = ddField(it, 'head', 'title', 'label'), text = ddField(it, 'text', 'detail', 'note') || '';
+    return `<li><span class="dd-bl-mk">${icon(ddSafeIcon(it.icon) || 'check', 'w-3.5 h-3.5', 3)}</span><span>${head ? `<b>${esc(head)}</b>${text ? ' — ' : ''}` : ''}${esc(text)}</span></li>`;
+  };
+  return `<ul class="dd-bullets${cols}">${items.map(li).join('')}</ul>`;
+}
+
+// Callout — tinted highlight box (info / good / warn / bad / neutral).
+const DD_TONES = { info: { c: '#2563EB', ic: 'info' }, good: { c: '#10B981', ic: 'check' }, warn: { c: '#F59E0B', ic: 'alert' }, bad: { c: '#E11D48', ic: 'alert' }, neutral: { c: '#64748B', ic: 'info' } };
+function ddCallout(b) {
+  const text = ddField(b, 'text', 'body', 'detail'), title = b.title;
+  if (!text && !title) return '';
+  const tn = DD_TONES[b.tone] || DD_TONES.info;
+  return `<div class="dd-callout" style="--cc:${tn.c};background:${tint(tn.c, .07)};border-color:${tint(tn.c, .28)}"><span class="dd-callout-ico" style="color:${tn.c}">${icon(ddSafeIcon(b.icon) || tn.ic, 'w-4 h-4')}</span><div>${title ? `<div class="dd-callout-t">${esc(title)}</div>` : ''}${text ? `<div class="dd-callout-x">${esc(text)}</div>` : ''}</div></div>`;
+}
+
+// Key/value facts — two-column definition grid (deal terms, quick stats).
+function ddKeyValue(b) {
+  const items = (b.items || b.pairs || b.rows || []).filter(Boolean);
+  if (!items.length) return '';
+  const rows = items.map(it => `<div class="dd-kv-row"><span class="dd-kv-k">${esc(ddField(it, 'k', 'key', 'label', 'name') || '')}</span><span class="dd-kv-v">${ddValue(ddField(it, 'v', 'value', 'detail'), it.unit)}</span></div>`).join('');
+  return `<div class="dd-kv">${rows}</div>`;
+}
+
+// Pull-quote — management commentary, customer testimonial.
+function ddQuote(b) {
+  const text = ddField(b, 'text', 'quote', 'body');
+  if (!text) return '';
+  const src = ddField(b, 'source', 'attribution', 'who');
+  return `<figure class="dd-quote"><blockquote>${esc(text)}</blockquote>${src ? `<figcaption>— ${esc(src)}</figcaption>` : ''}</figure>`;
+}
+
+// Narrative paragraph(s).
+function ddText(b) {
+  const t = ddField(b, 'text', 'body', 'content');
+  if (!t) return '';
+  return (Array.isArray(t) ? t : [t]).filter(Boolean).map(p => `<p class="dd-text">${esc(p)}</p>`).join('');
+}
+
+// Unknown type: salvage anything renderable so no IM content is silently dropped.
+function ddFallback(b) {
+  if (Array.isArray(b.items) && b.items.length) return ddBullets({ items: b.items.map(x => typeof x === 'object' ? (ddField(x, 'label', 'name', 'text', 'title') || JSON.stringify(x)) : x) });
+  const t = ddField(b, 'text', 'body', 'summary', 'detail');
+  return t ? `<p class="dd-text">${esc(t)}</p>` : '';
+}
+
+const DD_RENDERERS = {
+  kpis: ddKpis, kpi: ddKpis, stats: ddKpis, stat: ddKpis, metrics: ddKpis,
+  bars: ddBars, bar: ddBars, barchart: ddBars, hbar: ddBars, ranking: ddBars,
+  trend: ddTrend, line: ddTrend, linechart: ddTrend, trendline: ddTrend, area: ddTrend,
+  donut: ddDonut, pie: ddDonut, doughnut: ddDonut, share: ddDonut, breakdown: ddDonut, mix: ddDonut,
+  funnel: ddFunnel,
+  flow: ddFlow, process: ddFlow, valuechain: ddFlow, steps: ddFlow, journey: ddFlow,
+  timeline: ddTimeline, milestones: ddTimeline, history: ddTimeline, roadmap: ddTimeline,
+  table: ddTable, grid: ddTable, matrix: ddTable,
+  bullets: ddBullets, list: ddBullets, points: ddBullets, checklist: ddBullets,
+  callout: ddCallout, note: ddCallout, highlight: ddCallout, insight: ddCallout, risk: ddCallout,
+  keyvalue: ddKeyValue, keyvalues: ddKeyValue, facts: ddKeyValue, terms: ddKeyValue, details: ddKeyValue,
+  quote: ddQuote, testimonial: ddQuote,
+  text: ddText, paragraph: ddText, para: ddText, narrative: ddText,
+};
+const DD_SELF_TITLED = { callout: 1, note: 1, highlight: 1, insight: 1, risk: 1, quote: 1, testimonial: 1 };
+
+function renderDDBlock(b) {
+  if (!b || typeof b !== 'object' || !b.type) return '';
+  const type = String(b.type).toLowerCase().replace(/[^a-z]/g, '');
+  const R = DD_RENDERERS[type] || ddFallback;
+  let body = '';
+  try { body = R(b) || ''; } catch (_) { body = ''; }
+  if (!body) return '';
+  const head = DD_SELF_TITLED[type] ? '' : ddBlockHead(b);
+  return `<div class="dd-block">${head}${body}${ddBlockCap(b)}</div>`;
+}
+
+function hasDeepDive(c) {
+  return !!(c && c.deepDive && Array.isArray(c.deepDive.sections) &&
+    c.deepDive.sections.some(s => s && Array.isArray(s.blocks) && s.blocks.some(x => x && x.type)));
+}
+
+const DD_SEC_ICONS = ['layers', 'trendingUp', 'factory', 'users', 'coins', 'target', 'globe', 'briefcase', 'gauge', 'sparkles', 'wallet', 'mapPin'];
+function renderDDSection(s, i) {
+  if (!s || !Array.isArray(s.blocks)) return null;
+  const blocks = s.blocks.map(renderDDBlock).filter(Boolean).join('');
+  if (!blocks) return null;
+  const ic = ddSafeIcon(s.icon) || DD_SEC_ICONS[i % DD_SEC_ICONS.length];
+  return h(`<section class="surface-card p-5 dd-sec">
+    <div class="section-title"><span class="sec-ico">${icon(ic, 'w-4 h-4')}</span>${esc(s.title || ('Section ' + (i + 1)))}</div>
+    ${s.summary ? `<p class="dd-sec-sum">${esc(s.summary)}</p>` : ''}
+    <div class="dd-blocks">${blocks}</div></section>`);
+}
+
+function renderDeepDive(c) {
+  const wrap = h('<div class="space-y-5"></div>');
+  if (!hasDeepDive(c)) {
+    wrap.appendChild(h(`<div class="coming"><div class="cs-ico">${icon('bookOpen', 'w-6 h-6')}</div>
+      <div class="text-[15px] font-semibold text-ink">The IM deep-dive appears here</div>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">Add a deal with an Information Memorandum and this tab unpacks everything inside it — market, business model, unit economics, growth, customers, use of proceeds and more — as visual sections, so you never have to open the PDF.</p></div>`));
+    return wrap;
+  }
+  const dd = c.deepDive;
+  const n = dd.sections.filter(s => s && Array.isArray(s.blocks) && s.blocks.length).length;
+  wrap.appendChild(h(`<div class="dd-hero">
+      <div class="dd-hero-ico">${icon('bookOpen', 'w-5 h-5')}</div>
+      <div><div class="dd-hero-t">Everything in the Information Memorandum — unpacked</div>
+        <div class="dd-hero-s">${esc(dd.source || 'From the IM and supporting documents')} · ${n} section${n === 1 ? '' : 's'}. You shouldn't need to open the PDF.</div></div></div>`));
+  if (dd.summary) wrap.appendChild(h(`<div class="dd-execsum"><div class="dd-execsum-h">${icon('sparkles', 'w-3.5 h-3.5')} In a nutshell</div><p>${esc(dd.summary)}</p></div>`));
+  dd.sections.forEach((s, i) => { const node = renderDDSection(s, i); if (node) wrap.appendChild(node); });
+  return wrap;
+}
+
+// Print/export: same blocks, folded into the report's section styling.
+function frDeepDive(c) {
+  if (!hasDeepDive(c)) return '';
+  const secs = c.deepDive.sections.map((s, i) => {
+    if (!s || !Array.isArray(s.blocks)) return '';
+    const blocks = s.blocks.map(renderDDBlock).filter(Boolean).join('');
+    if (!blocks) return '';
+    return `<div class="fr-dd-sec"><h3>${esc(s.title || ('Part ' + (i + 1)))}</h3>${s.summary ? `<p class="fr-cap">${esc(s.summary)}</p>` : ''}<div class="dd-blocks">${blocks}</div></div>`;
+  }).filter(Boolean).join('');
+  return secs ? (c.deepDive.summary ? `<p class="fr-note" style="margin-bottom:10px">${esc(c.deepDive.summary)}</p>` : '') + secs : '';
 }
 
 /* ---- 7h. Returns tab — the real PE returns model (JRG/Bloom methodology) ------
@@ -2816,12 +3165,12 @@ function maybeAddPeerLive(card, c) {
     const live = c._peerLive;
     box.innerHTML = `
       <div class="peer-live-head">
-        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live from Screener</span>
+        <span class="peer-live-title">${icon('search', 'w-3.5 h-3.5')} Listed peers · live market data</span>
         <button class="peer-live-btn" type="button" data-live-fetch>
           ${icon('refreshCw', 'w-3.5 h-3.5')}<span>${live ? 'Refresh' : 'Fetch live market data'}</span><span class="peer-live-tag">live</span>
         </button>
       </div>
-      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current P/E and market cap straight from Screener.in.</p>`}</div>`;
+      <div data-live-body>${live ? liveTable(live) : `<p class="peer-live-hint">Pull each listed peer's current P/E and market cap live.</p>`}</div>`;
     box.querySelector('[data-live-fetch]').addEventListener('click', fetchLive);
   };
 
@@ -2838,8 +3187,8 @@ function maybeAddPeerLive(card, c) {
     }).join('');
     const got = listed.some(r => { const d = live.byTicker[r.ticker]; return d && (d.pe != null || d.marketCapCr != null); });
     const foot = got
-      ? `Live from Screener.in${live.ts ? ' · ' + esc(live.ts) : ''}${state.peerLiveProxy ? '' : ' · direct (best-effort)'}.`
-      : `Screener returned no figures right now.${state.peerLiveProxy ? ' Try Refresh in a moment.' : ' Set the SCRAPEDO_API_KEY secret for reliable results.'}`;
+      ? `Live market data${live.ts ? ' · ' + esc(live.ts) : ''}.`
+      : `No live figures right now — the market-data source may be busy. Try Refresh in a moment.`;
     return `
       <div class="peer-scroll mt-2">
         <table class="peer-tbl peer-live-tbl">
