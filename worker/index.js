@@ -364,8 +364,11 @@ async function handleGenerate(request, env, ctx) {
     if (jobId) await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
     let out;
     try {
-      out = { company: await generateCompany({ system, user, imPages, basics, env }) };
-      if (jobId) await clearJob(env, jobId);                    // success → the finished deal IS the record
+      const company = await generateCompany({ system, user, imPages, basics, env });
+      out = { company };
+      // Mark done WITH the deal id (not just cleared) so a client that reloaded or lost its
+      // connection mid-build can reconnect by polling and pick up the finished deal.
+      if (jobId) await setJob(env, { ...jobMeta, status: 'done', companyId: company.id, finishedAt: Date.now(), error: null });
     } catch (e) {
       out = { error: (e && e.message) || 'The memo could not be built. Please try again.', status: e instanceof ApiError ? e.status : 500 };
       if (jobId) await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: out.error });
@@ -452,6 +455,7 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
 
   const models = modelChain(env);
   const tried = [];
+  let sawBusy = false;   // a model was throttled/overloaded (429/5xx/network) rather than simply unusable
   for (const modelId of models) {
     const endpoint = `https://bedrock-runtime.${region}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
     let lastErr = '', unusable = false, timedOut = false;
@@ -460,7 +464,7 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
     // do NOT hammer a timed-out call — another few-minute wait won't help and only risks the
     // browser giving up. One slow-but-complete attempt beats four aborted ones.
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1))); // 1s, 2s
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 500))); // ~1.5s, 3s (+jitter) — give a throttle window time to clear
       let res;
       try {
         res = await fetch(endpoint, { method: 'POST', headers, body, signal: AbortSignal.timeout(280_000) });
@@ -491,11 +495,16 @@ async function callClaude({ system, user, images = [], maxTokens = 16000 }, env)
     }
     tried.push(`${modelId} → ${lastErr}`);
     if (timedOut) throw new ApiError(504, 'The memo took too long to build (the documents may be very large). Please try again — it usually completes on a second run.');
-    // Only 400/403/404 falls through to the next id; exhausted 429/5xx/network errors stop here.
-    if (!unusable) { console.error('memo-builder error', lastErr); throw new ApiError(502, 'The memo builder is busy right now. Please wait a moment and try again.'); }
+    // 429/5xx/network exhausted on THIS model → DON'T give up: fall through to the next id in the
+    // chain. A different model / inference profile usually has separate capacity when one is being
+    // throttled or is overloaded (common on big vision payloads). We only surface "busy" once every
+    // model has been tried.
+    if (!unusable) { console.error('memo-builder model exhausted:', modelId, '→', lastErr); sawBusy = true; }
   }
   console.error('no usable model. tried:', tried.join(' | '));
-  throw new ApiError(502, 'The memo builder is temporarily unavailable. Please try again shortly, or contact your administrator if it persists.');
+  throw new ApiError(502, sawBusy
+    ? 'The AI service is rate-limiting or overloaded right now — on every model we tried. Please wait a minute and try again (larger deals with many pages are more likely to hit this).'
+    : 'The memo builder is temporarily unavailable. Please try again shortly, or contact your administrator if it persists.');
 }
 
 // Optional OCR fallback via Mistral (best-effort; only when a scanned PDF is sent).

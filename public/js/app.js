@@ -446,6 +446,7 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
   };
   state.jobs.push(job);
   emitJobs();
+  ensureJobPolling();                 // watch it server-side too, so a reload can't orphan it
   runJob(job, payload);               // fire and forget — survives modal close
   return job;
 }
@@ -540,7 +541,19 @@ async function runJob(job, payload) {
       }
     }
     clearTimeout(writeTO);
-    if (!data) throw lastErr || new Error('The memo could not be built. Please try again.');
+    if (!data) {
+      const st = lastErr && lastErr.status;
+      // A 4xx means the server rejected the input (bad/unreadable files) — retrying the same
+      // upload won't help, so surface it now.
+      if (st && st >= 400 && st < 500) throw lastErr;
+      // Anything else (dropped stream, network blip, 5xx) does NOT mean the build died: the
+      // worker keeps generating after a dropped connection and records the result. Hand the job
+      // to the poller, which reconciles the real outcome from the server — don't kill it here.
+      job._awaitServer = true;
+      emitJobs();
+      ensureJobPolling();
+      return;
+    }
 
     job.stageIdx = 3;
     job.company = data.company;
@@ -576,7 +589,7 @@ function hydrateServerJobs(list) {
   if (!Array.isArray(list)) return;
   const now = Date.now(), STALE = 15 * 60 * 1000;
   list.forEach(sj => {
-    if (!sj || !sj.id || state.jobs.some(j => j.id === sj.id)) return;   // never duplicate an in-session job
+    if (!sj || !sj.id || sj.status === 'done' || state.jobs.some(j => j.id === sj.id)) return;   // 'done' → the deal already shows; never duplicate
     let status = sj.status === 'running' ? 'running' : 'error';
     let error = sj.error || 'The build didn’t finish — please try again.';
     if (status === 'running' && (now - (sj.startedAt || now)) > STALE) {
@@ -588,6 +601,45 @@ function hydrateServerJobs(list) {
       company: null, error, seen: true, fromServer: true,
     });
   });
+  ensureJobPolling();   // a hydrated "running" build keeps being watched until it resolves
+}
+
+/* ---- No-interruption layer ------------------------------------------------------
+ * A build runs SERVER-SIDE: the worker keeps generating even after this tab's
+ * connection drops (reload, tab switch, sleep, flaky network), and records the
+ * outcome. So instead of depending on one live connection staying open, whenever a
+ * build is in flight we POLL the server and reconcile — the finished deal and its
+ * pass/fail come from the server's record. Close the tab mid-build, come back, and
+ * the card is still there and completes on its own. ------------------------------- */
+let _jobPollTO = null;
+const anyJobRunning = () => state.jobs.some(j => j.status === 'running');
+function ensureJobPolling() { if (!_jobPollTO && anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000); }
+async function pollJobsOnce() {
+  _jobPollTO = null;
+  if (!anyJobRunning()) return;
+  try {
+    const res = await fetch(apiUrl('companies'), { cache: 'no-cache' });
+    if (res.ok) { const d = await res.json(); if (reconcileJobsFromServer(d)) emitJobs(); }
+  } catch (_) { /* transient — keep watching */ }
+  if (anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000);   // single owner of the timer
+}
+// Fold the server's truth into the local job list: pull in any newly-finished deals and
+// flip each in-flight job to done / error based on its server record.
+function reconcileJobsFromServer(d) {
+  let changed = false;
+  if (Array.isArray(d.companies)) d.companies.forEach(c => { if (c && c.id && !companyById(c.id)) { addCompany(c); changed = true; } });
+  const byId = {}; (Array.isArray(d.jobs) ? d.jobs : []).forEach(j => { if (j && j.id) byId[j.id] = j; });
+  const now = Date.now();
+  state.jobs.forEach(j => {
+    if (j.status !== 'running') return;
+    const sj = byId[j.id];
+    if (sj && sj.status === 'error') { j.status = 'error'; j.error = sj.error || 'The build failed — please try again.'; j.finishedAt = sj.finishedAt || now; changed = true; }
+    else if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; changed = true; }
+    else if (sj && sj.status === 'running') { j._lost = 0; }                          // server confirms it's building
+    else { j._lost = j._lost || now; if (now - j._lost > 90000) { j.status = 'error'; j.error = 'We couldn’t confirm this build — please try again.'; j.finishedAt = now; changed = true; } }
+    if (j.status === 'running' && now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
+  });
+  return changed;
 }
 
 /* ---- Lazy-load pdf.js + SheetJS the first time a partner uploads ---- */
