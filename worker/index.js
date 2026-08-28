@@ -411,33 +411,49 @@ function auditFigures(c) {
   return { flag: reasons.length > 0, reasons };
 }
 
-// One corrective pass wired INTO the run: when the audit flags a likely unit/scale error, re-ask the
-// model with the exact discrepancy and accept the corrected memo only if it resolves (or reduces) the
-// flags. Runs ONLY when something looks wrong, so clean deals pay no extra cost.
-async function recheckFigures(company, { system, user, id, basics, env }) {
+// Figures recheck wired INTO the run. A UNIT misread is always a clean power of ten, and the model's
+// own figuresAudit tells us the gap versus the CIM's stated figure — so we correct it DETERMINISTICALLY
+// (instant, no extra AI call). This keeps the safety net from ever blowing the generation time budget.
+async function recheckFigures(company, _ctx) {
   const audit = auditFigures(company);
   if (!audit.flag) return company;
-  const fix = 'FIGURES RECHECK before finalising — automatic sanity checks flagged a LIKELY UNIT / SCALE error: ' +
-    audit.reasons.join('; ') + '. ' +
-    'Re-read EACH Excel sheet\'s reporting unit (the "reporting unit:" note on the "# Sheet:" line and any "Currency:" / "INR …" cell). ' +
-    '₹ crore stays AS-IS (never ÷10); ₹ million ÷10; ₹ lakh ÷100. Reconcile revenue AND EBITDA against the figures the CIM / banker notes state IN WORDS, and keep the raise (transaction.amountCr / returns.investmentCr) sane versus revenue. ' +
-    'Return the corrected, COMPLETE JSON object only — same schema, all keys present — with the financials rescaled correctly and figuresAudit.revenueConsistent=true.';
-  try {
-    const ans = await callClaude({ system, user: `${user}\n\n${fix}`, images: [] }, env);   // text-only: the scale lives in the Excel text, not the page images
-    const obj = extractJson(ans.text);
-    if (obj && isObj(obj.financials) && Array.isArray(obj.financials.years) && obj.financials.years.length) {
-      const fixed = normalizeCompany(obj, id, basics);
-      const after = auditFigures(fixed);
-      if (!after.flag || after.reasons.length < audit.reasons.length) {
-        fixed.generatedBy = company.generatedBy;
-        fixed.generatedAt = company.generatedAt;
-        fixed._recheck = { corrected: true, before: audit.reasons, after: after.reasons };
-        return fixed;
-      }
+  const fixed = rescaleToStatedUnit(company);
+  if (fixed) {
+    const after = auditFigures(fixed);
+    if (!after.flag || after.reasons.length < audit.reasons.length) {
+      fixed._recheck = { corrected: true, method: 'auto-rescale', before: audit.reasons, after: after.reasons };
+      return fixed;
     }
-  } catch (e) { console.error('figures recheck pass failed:', e && e.message); }
-  company._recheck = { corrected: false, flags: audit.reasons };   // couldn't auto-fix — keep a trace for debugging
+  }
+  company._recheck = { corrected: false, flags: audit.reasons };   // not a clean power-of-ten gap; leave a trace, don't guess
   return company;
+}
+
+// Deterministic unit correction: when the model's own reconciliation shows revenue off from the CIM's
+// stated figure by a clean 10^k, rescale every ₹-crore figure by that factor. Returns null when the
+// gap is NOT a clean power of ten (so we never mis-scale a merely-unusual-but-correct deal).
+function rescaleToStatedUnit(c) {
+  const fa = isObj(c.figuresAudit) ? c.figuresAudit : null;
+  if (!fa) return null;
+  const m = Number(fa.modelRevenueCr), s = Number(fa.imStatedRevenueCr);
+  if (!(m > 0 && s > 0)) return null;
+  const ratio = s / m;
+  let factor = null;
+  for (const k of [10, 100, 1000, 0.1, 0.01, 0.001]) if (Math.abs(ratio - k) / k < 0.2) { factor = k; break; }
+  if (!factor) return null;
+  const out = JSON.parse(JSON.stringify(c));
+  const MONEY = new Set(['revenue', 'ebitda', 'pat', 'capex', 'fcf', 'operatingCashflow', 'cash', 'debt', 'netWorth']);
+  const scale = v => (typeof v === 'number' && isFinite(v)) ? Math.round(v * factor * 10) / 10 : v;
+  const fin = isObj(out.financials) ? out.financials : {};
+  const rows = isObj(fin.rows) ? fin.rows : {};
+  for (const k of Object.keys(rows)) if (MONEY.has(k) && Array.isArray(rows[k])) rows[k] = rows[k].map(scale);
+  if (isObj(fin.segments) && Array.isArray(fin.segments.rows)) fin.segments.rows.forEach(r => { if (r && Array.isArray(r.values)) r.values = r.values.map(scale); });
+  if (isObj(out.headline) && typeof out.headline.revenueCr === 'number') out.headline.revenueCr = scale(out.headline.revenueCr);
+  if (isObj(out.revenueSpark) && Array.isArray(out.revenueSpark.values)) out.revenueSpark.values = out.revenueSpark.values.map(scale);
+  out.figuresAudit = { ...fa, modelRevenueCr: scale(m), revenueConsistent: true,
+    note: `Auto-rescaled ×${factor} to match the CIM's stated ₹${Math.round(s)}cr — the model's unit was misread on the first pass.` };
+  out.returns = coerceReturns(out);   // re-derive the returns math off the corrected financials
+  return out;
 }
 
 // the finished company or throws an ApiError. Kept separate so handleGenerate can stream around it.
