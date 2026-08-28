@@ -1401,8 +1401,6 @@ function renderFullReport(c) {
         </div>
       </div>
 
-      ${frFiguresAudit(c)}
-
       ${sec('Business overview', `
         <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
         ${bullets ? `<ul class="fr-ul">${bullets}</ul>` : ''}
@@ -1842,8 +1840,6 @@ function renderCompanyShell(c) {
   shell.appendChild(topRow);
 
   shell.appendChild(renderIdentityStrip(c));
-  const audit = renderFiguresAudit(c);     // data-quality tripwire — units / scale sanity, always visible
-  if (audit) shell.appendChild(audit);
   shell.appendChild(renderTabBar(c));
   shell.appendChild(h('<div id="tab-panel"></div>'));
   root.appendChild(shell);

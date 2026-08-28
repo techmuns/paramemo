@@ -384,6 +384,62 @@ async function handleGenerate(request, env, ctx) {
 }
 
 // The heavy lifting: call the model (with one repair retry), validate, normalize, persist. Returns
+// Deterministic figures audit — flags a LIKELY unit/scale error from the AI's own reconciliation
+// (figuresAudit) and from raise-vs-revenue sanity. Returns { flag, reasons }. No external calls.
+function auditFigures(c) {
+  const fin = isObj(c.financials) ? c.financials : {};
+  const rows = isObj(fin.rows) ? fin.rows : {};
+  const yrs = Array.isArray(fin.years) ? fin.years : [];
+  const rev = Array.isArray(rows.revenue) ? rows.revenue : [];
+  const idxA = yrs.indexOf(fin.actualsThrough);
+  const latestRev = (idxA >= 0 && rev[idxA] != null) ? rev[idxA] : [...rev].reverse().find(v => v != null);
+  const peakRev = rev.reduce((m, v) => (typeof v === 'number' && v > m ? v : m), 0);
+  const ask = Number((isObj(c.returns) && c.returns.investmentCr) || (isObj(c.transaction) && c.transaction.amountCr) || 0);
+  const fa = isObj(c.figuresAudit) ? c.figuresAudit : null;
+  const near = (r, k) => r > 0 && Math.abs(r - k) / k < 0.25;
+  const reasons = [];
+  if (fa) {
+    const m = Number(fa.modelRevenueCr), s = Number(fa.imStatedRevenueCr);
+    if (fa.revenueConsistent === false) reasons.push(`the model's own figures-audit set revenueConsistent=false${fa.note ? ` (${fa.note})` : ''}`);
+    if (m > 0 && s > 0) {
+      const ratio = m / s;
+      for (const k of [10, 100, 1000, 0.1, 0.01, 0.001]) if (near(ratio, k)) { reasons.push(`model revenue ₹${Math.round(m)}cr vs CIM-stated ₹${Math.round(s)}cr (${ratio > 1 ? '~' + Math.round(ratio) + '×' : '~1/' + Math.round(1 / ratio) + '×'} off)`); break; }
+    }
+  }
+  if (ask > 0 && latestRev > 0 && ask / latestRev > 3) reasons.push(`the raise ₹${Math.round(ask)}cr is ${(ask / latestRev).toFixed(1)}× the latest revenue ₹${Math.round(latestRev)}cr`);
+  if (ask > 0 && peakRev > 0 && ask > peakRev) reasons.push(`the raise ₹${Math.round(ask)}cr exceeds the peak projected revenue ₹${Math.round(peakRev)}cr`);
+  return { flag: reasons.length > 0, reasons };
+}
+
+// One corrective pass wired INTO the run: when the audit flags a likely unit/scale error, re-ask the
+// model with the exact discrepancy and accept the corrected memo only if it resolves (or reduces) the
+// flags. Runs ONLY when something looks wrong, so clean deals pay no extra cost.
+async function recheckFigures(company, { system, user, id, basics, env }) {
+  const audit = auditFigures(company);
+  if (!audit.flag) return company;
+  const fix = 'FIGURES RECHECK before finalising — automatic sanity checks flagged a LIKELY UNIT / SCALE error: ' +
+    audit.reasons.join('; ') + '. ' +
+    'Re-read EACH Excel sheet\'s reporting unit (the "reporting unit:" note on the "# Sheet:" line and any "Currency:" / "INR …" cell). ' +
+    '₹ crore stays AS-IS (never ÷10); ₹ million ÷10; ₹ lakh ÷100. Reconcile revenue AND EBITDA against the figures the CIM / banker notes state IN WORDS, and keep the raise (transaction.amountCr / returns.investmentCr) sane versus revenue. ' +
+    'Return the corrected, COMPLETE JSON object only — same schema, all keys present — with the financials rescaled correctly and figuresAudit.revenueConsistent=true.';
+  try {
+    const ans = await callClaude({ system, user: `${user}\n\n${fix}`, images: [] }, env);   // text-only: the scale lives in the Excel text, not the page images
+    const obj = extractJson(ans.text);
+    if (obj && isObj(obj.financials) && Array.isArray(obj.financials.years) && obj.financials.years.length) {
+      const fixed = normalizeCompany(obj, id, basics);
+      const after = auditFigures(fixed);
+      if (!after.flag || after.reasons.length < audit.reasons.length) {
+        fixed.generatedBy = company.generatedBy;
+        fixed.generatedAt = company.generatedAt;
+        fixed._recheck = { corrected: true, before: audit.reasons, after: after.reasons };
+        return fixed;
+      }
+    }
+  } catch (e) { console.error('figures recheck pass failed:', e && e.message); }
+  company._recheck = { corrected: false, flags: audit.reasons };   // couldn't auto-fix — keep a trace for debugging
+  return company;
+}
+
 // the finished company or throws an ApiError. Kept separate so handleGenerate can stream around it.
 async function generateCompany({ system, user, imPages, basics, env }) {
   let ans = await callClaude({ system, user, images: imPages }, env);
@@ -404,9 +460,13 @@ async function generateCompany({ system, user, imPages, basics, env }) {
 
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
   const id = await uniqueId(base, env);
-  const company = normalizeCompany(obj, id, basics);
+  let company = normalizeCompany(obj, id, basics);
   company.generatedBy = ans.model;                          // which Bedrock model actually answered
   company.generatedAt = new Date().toISOString().slice(0, 10);
+
+  // FIGURES RECHECK — one built-in verification pass BEFORE the memo is stored, so a unit/scale slip
+  // (e.g. ₹385cr read as ₹38cr) is caught and corrected in the run rather than shown to a partner.
+  company = await recheckFigures(company, { system, user, imPages, id, basics, env });
 
   // Governance sweep (web + court cases) fills the Integrity checks. Best-effort: never block the memo.
   try { await runGovernance(company, env); } catch (e) { console.error('governance sweep skipped:', e && e.message); }
