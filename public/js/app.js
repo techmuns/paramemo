@@ -4169,7 +4169,7 @@ async function imageFileToCanvas(file, { maxDim }) {
 // enough that a heavy multi-document deal can run past the Worker's limit and never finish. The
 // full page TEXT of every document is always sent separately, so the images are supplementary
 // (logos, org charts, infographics) — 12 legible composites cover that without bloating the request.
-async function renderAllDocImages(files, { maxImages = 12, targetW = 1280, maxDim = 6200, budgetBytes = 4_000_000 } = {}) {
+async function renderAllDocImages(files, { maxImages = 7, targetW = 1040, maxDim = 6200, budgetBytes = 2_400_000 } = {}) {
   try {
     const docs = [];
     for (const f of files) {

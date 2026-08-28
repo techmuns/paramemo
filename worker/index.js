@@ -247,13 +247,13 @@ async function handleGenerate(request, env, ctx) {
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
   const { sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
   const jobId = (typeof payload.jobId === 'string' && payload.jobId) ? payload.jobId.slice(0, 64) : '';
-  const excelText = String(payload.excelText || '').slice(0, 120000);
+  const excelText = String(payload.excelText || '').slice(0, 85000);
   // Cap combined document text (IM + any extra docs the browser concatenated) so a big multi-doc
   // upload can never overflow the model's context and trip a request-size error.
   let imText = String(payload.imText || '').trim().slice(0, 220000);
   // The browser also renders the IM/deck pages to JPEGs so the vision model can read logo walls,
   // org charts and infographics that never appear in the extracted text. Cap defensively.
-  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 20);
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 10);
 
   // OCR fallback: if the PDF had no extractable text (scanned image) and Mistral is
   // configured, OCR the bytes the browser sent. Best-effort; failures fall through.
