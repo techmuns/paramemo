@@ -688,6 +688,32 @@
     .ret-hint.muted { color: var(--hint); }
     .impl-tbl { min-width: 380px; }
     .impl-tbl td.med, .impl-tbl th:last-child { color: var(--navy); background: #F7F9FD; }
+    /* Figures self-audit banner (units / scale sanity) */
+    .fig-audit { border-radius: 14px; border: 1px solid var(--border); overflow: hidden; }
+    .fig-audit.is-warn { border-color: #F5C77E; background: #FFFBF3; }
+    .fig-audit.is-ok { border-color: #BFE3CF; background: #F5FBF7; }
+    .fa-head { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; background: none; border: 0; cursor: pointer; text-align: left; color: var(--ink); }
+    .fa-head-l { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+    .fig-audit.is-warn .fa-head-l { color: #B45309; } .fig-audit.is-ok .fa-head-l { color: #047857; }
+    .fa-head-l b { font-weight: 700; }
+    .fa-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #fff; background: #D97706; }
+    .fa-chev { color: var(--hint); transition: transform .15s; }
+    .fa-head[aria-expanded="true"] .fa-chev { transform: rotate(180deg); }
+    .fa-body { padding: 2px 14px 13px; }
+    .fa-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+    .fa-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; line-height: 1.5; color: var(--ink); }
+    .fa-list li svg { flex: 0 0 auto; margin-top: 2px; }
+    .fa-list li.fa-warn svg { color: #D97706; } .fa-list li.fa-ok svg { color: #059669; }
+    .fa-foot { margin-top: 10px; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+    /* Source / provenance chip (where a figure came from) */
+    .src-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--navy); background: rgba(12,48,120,.07); border: 1px solid rgba(12,48,120,.12); cursor: help; }
+    .src-chip svg { width: 12px; height: 12px; }
+    .src-chip.assume { color: #B45309; background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.25); }
+    /* Full-report figures-audit block */
+    .fr-audit { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 6px 0 4px; font-size: 11.5px; }
+    .fr-audit.warn { border-color: #F5C77E; background: #FFFBF3; }
+    .fr-audit b { color: var(--ink); }
+    .fr-audit ul { margin: 5px 0 0; padding-left: 16px; } .fr-audit li { margin: 2px 0; }
     /* Peer valuation comps (Returns tab) */
     .peer-scroll { overflow-x: auto; }
     .peer-tbl { width: 100%; border-collapse: collapse; min-width: 460px; }

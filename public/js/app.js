@@ -1363,6 +1363,13 @@ function frComps(c) {
   }
   return out;
 }
+// Figures-audit block for the printed report — only shown when there's something to flag.
+function frFiguresAudit(c) {
+  const a = buildFiguresAudit(c);
+  const warns = a.items.filter(i => i.level === 'warn');
+  if (!warns.length) return '';
+  return `<div class="fr-audit warn"><b>⚠ Figures to verify before circulating:</b><ul>${warns.map(i => `<li>${esc(i.text)}</li>`).join('')}</ul></div>`;
+}
 function renderFullReport(c) {
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
   const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
@@ -1393,6 +1400,8 @@ function renderFullReport(c) {
           <div><span class="k">EBITDA margin</span><span class="v">${c.headline ? c.headline.ebitdaPct : '—'}%</span></div>
         </div>
       </div>
+
+      ${frFiguresAudit(c)}
 
       ${sec('Business overview', `
         <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
@@ -1833,9 +1842,94 @@ function renderCompanyShell(c) {
   shell.appendChild(topRow);
 
   shell.appendChild(renderIdentityStrip(c));
+  const audit = renderFiguresAudit(c);     // data-quality tripwire — units / scale sanity, always visible
+  if (audit) shell.appendChild(audit);
   shell.appendChild(renderTabBar(c));
   shell.appendChild(h('<div id="tab-panel"></div>'));
   root.appendChild(shell);
+}
+
+// ---- Figures self-audit: catch unit / scale mistakes (the ₹385cr-shown-as-₹38cr class of bug) ----
+// Runs deterministic sanity checks that need NO AI cooperation, plus surfaces the AI's own
+// figuresAudit reconciliation against the CIM. Returns { level:'warn'|'ok'|'none', items:[…] }.
+function buildFiguresAudit(c) {
+  const items = [];                                   // { level:'warn'|'ok', text }
+  const rnd = n => '₹' + Math.round(Number(n)).toLocaleString('en-IN') + 'cr';
+  const fin = c.financials || {}, rows = fin.rows || {}, yrs = Array.isArray(fin.years) ? fin.years : [];
+  const rev = Array.isArray(rows.revenue) ? rows.revenue : [];
+  const idxA = yrs.indexOf(fin.actualsThrough);
+  const latestRev = (idxA >= 0 && rev[idxA] != null) ? rev[idxA] : [...rev].reverse().find(v => v != null);
+  const peakRev = rev.reduce((m, v) => (v != null && v > m ? v : m), 0);
+  const ask = Number((c.returns && c.returns.investmentCr) || (c.transaction && c.transaction.amountCr) || 0);
+  const fa = (c.figuresAudit && typeof c.figuresAudit === 'object') ? c.figuresAudit : null;
+  const near = (r, k) => r > 0 && Math.abs(r - k) / k < 0.25;
+
+  // 1) The AI's own reconciliation against the CIM's stated revenue.
+  if (fa) {
+    const m = Number(fa.modelRevenueCr), s = Number(fa.imStatedRevenueCr);
+    if (m > 0 && s > 0) {
+      const ratio = m / s;
+      if (near(ratio, 10) || near(ratio, 0.1) || near(ratio, 100) || near(ratio, 0.01)) {
+        const f = ratio > 1 ? Math.round(ratio) + '×' : '1/' + Math.round(1 / ratio) + '×';
+        items.push({ level: 'warn', text: `Model revenue ${rnd(m)} vs the CIM's stated ${rnd(s)} — off by ~${f}. Almost always a unit misread (crore ↔ lakh ↔ million). Re-check the reporting unit and regenerate.` });
+      } else {
+        items.push({ level: 'ok', text: `Revenue ${rnd(m)} reconciles with the CIM's stated ${rnd(s)}.` });
+      }
+    }
+    if (fa.revenueConsistent === false && !items.some(i => i.level === 'warn')) {
+      items.push({ level: 'warn', text: `Figures audit flagged a scale mismatch: ${esc(fa.note || 'model and document disagree on scale')}.` });
+    }
+    if (fa.unitSource) items.push({ level: 'ok', text: `Figures taken from ${esc(fa.unitSource)}.` });
+  }
+
+  // 2) Deterministic sanity — works on ANY deal, even without an AI audit block.
+  if (ask > 0 && latestRev > 0 && ask / latestRev > 3) {
+    items.push({ level: 'warn', text: `The raise (${rnd(ask)}) is ${(ask / latestRev).toFixed(1)}× the latest revenue (${rnd(latestRev)}) — unusually high for growth equity; check whether the revenue units are 10× too small.` });
+  }
+  if (ask > 0 && peakRev > 0 && ask > peakRev) {
+    items.push({ level: 'warn', text: `The raise (${rnd(ask)}) is larger than the peak projected revenue (${rnd(peakRev)}) — a classic sign the financials were scaled 10× too small.` });
+  }
+  try {
+    const out = computeReturns(c, returnsInputs(c));
+    if (out.stakePct > 0.6) items.push({ level: 'warn', text: `At these figures the cheque implies a ~${Math.round(out.stakePct * 100)}% stake — far too high for a minority deal; the entry value (EBITDA/revenue) is likely scaled wrong.` });
+  } catch (_) {}
+
+  const warns = items.filter(i => i.level === 'warn');
+  const level = warns.length ? 'warn' : (items.length ? 'ok' : 'none');
+  // De-dupe identical texts, warnings first.
+  const seen = new Set();
+  const ordered = [...warns, ...items.filter(i => i.level === 'ok')].filter(i => (seen.has(i.text) ? false : seen.add(i.text)));
+  return { level, items: ordered };
+}
+
+function renderFiguresAudit(c) {
+  const a = buildFiguresAudit(c);
+  if (a.level === 'none') return null;
+  const warn = a.level === 'warn';
+  const warns = a.items.filter(i => i.level === 'warn');
+  const oks = a.items.filter(i => i.level === 'ok');
+  const li = arr => arr.map(i => `<li class="fa-${i.level === 'warn' ? 'warn' : 'ok'}">${i.level === 'warn' ? icon('alert', 'w-3.5 h-3.5') : icon('check', 'w-3.5 h-3.5')}<span>${i.text}</span></li>`).join('');
+  const head = warn
+    ? `${icon('alert', 'w-4 h-4')}<b>Check these figures before sharing</b><span class="fa-count">${warns.length}</span>`
+    : `${icon('check', 'w-4 h-4')}<b>Figures self-audit — consistent</b>`;
+  const el = h(`
+    <div class="fig-audit ${warn ? 'is-warn' : 'is-ok'}">
+      <button class="fa-head" type="button" aria-expanded="${warn}">
+        <span class="fa-head-l">${head}</span>
+        ${icon('chevronDown', 'fa-chev w-4 h-4')}
+      </button>
+      <div class="fa-body" ${warn ? '' : 'hidden'}>
+        <ul class="fa-list">${li(warns)}${li(oks)}</ul>
+        ${warn ? `<p class="fa-foot">These are automatic sanity checks (raise vs. revenue, implied stake, unit reconciliation). If a unit looks wrong, fix the model’s unit label or regenerate — don’t send the memo until it clears.</p>` : ''}
+      </div>
+    </div>`);
+  const btn = el.querySelector('.fa-head'), body = el.querySelector('.fa-body');
+  btn.addEventListener('click', () => {
+    const open = body.hasAttribute('hidden');
+    if (open) body.removeAttribute('hidden'); else body.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  return el;
 }
 
 function renderIdentityStrip(c) {
@@ -1858,7 +1952,7 @@ function renderIdentityStrip(c) {
       <div class="id-divider"></div>
       <div class="id-block min-w-0">
         <div class="kicker">The ask</div>
-        <div class="meta-line mt-0.5 truncate">${esc(dealHeadline(c))}</div>
+        <div class="meta-line mt-0.5 truncate">${esc(dealHeadline(c))}${(c.transaction && c.transaction.amountSource) ? ` <span class="src-chip ${/assum/i.test(c.transaction.amountSource) ? 'assume' : ''}" title="Where the raise size came from: ${esc(c.transaction.amountSource)}">${icon('info', 'w-3 h-3')}<span>${esc(c.transaction.amountSource)}</span></span>` : ''}</div>
         <div class="meta-sub tnum">${esc(c.origination.banker)} · ${esc(fmtDate(c.origination.date))}</div>
       </div>
       <div class="sm:ml-auto">
@@ -2153,7 +2247,7 @@ function renderFinCapacity(c) {
 function renderFinControls(c) {
   const el = h(`
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="fin-unit">Figures in <b>₹ crore</b> — rounded${ui.fin.forecast ? '; tinted columns = forecast' : ''}</div>
+      <div class="fin-unit">Figures in <b>₹ crore</b> — rounded${ui.fin.forecast ? '; tinted columns = forecast' : ''}${(c.financials && c.financials.unitSource) ? ` <span class="src-chip" title="Where these figures came from — verify the scale against the model. Source: ${esc(c.financials.unitSource)}">${icon('info', 'w-3 h-3')}<span>${esc(c.financials.unitSource)}</span></span>` : ''}</div>
       <div class="flex items-center gap-2">
         <div class="switch" role="group" aria-label="Forecast">
           <button data-forecast="false">Actuals only</button>
@@ -4133,7 +4227,11 @@ async function parseExcel(file, cap = 100000) {
   // The Returns tab needs cash & debt (→ net debt), so the BALANCE SHEET must reach the model too —
   // not just the P&L/summary. Lead with the cleanest (fewest-column = usually annual) P&L view, then
   // the balance sheet, then cash flow, so the balance-sheet lines survive the size cap.
-  const pnl = pick(/summary|consol|p&l|pnl|profit|income|key\s*metric|dashboard|financ/i).sort((a, b) => colsOf(a) - colsOf(b));
+  // Lead with the CONSOLIDATED / group P&L — it carries the true reporting unit (a model can mix
+  // units across tabs, e.g. consolidated in ₹ crore but detail tabs in ₹ lakh).
+  const consol = pick(/consol/i);
+  const pnlRest = pick(/summary|p&l|pnl|profit|income|key\s*metric|dashboard|financ/i).sort((a, b) => colsOf(a) - colsOf(b));
+  const pnl = [...new Set([...consol, ...pnlRest])];
   const bs  = pick(/balance|\bb\/?s\b|net\s*worth/i);
   const cfs = pick(/cash\s*flow|\bcfs\b|cash\s*statement/i);
   let chosen = [...new Set([...pnl.slice(0, 1), ...bs.slice(0, 1), ...cfs.slice(0, 1), ...pnl.slice(1)])];
@@ -4147,9 +4245,20 @@ async function parseExcel(file, cap = 100000) {
     });
     if (best) chosen = [best];
   }
+  // Detect a sheet's stated money unit from its header cells, so the AI reads the scale correctly
+  // (crore vs lakh vs million) instead of guessing — the #1 cause of 10×/100× errors.
+  const unitOf = txt => {
+    const head = txt.slice(0, 2500);
+    const m = head.match(/(?:currency|amount|figures?|values?|units?|all\s+figures?)\b[^\n,]{0,20}?(₹|rs\.?|inr)?\s*(crore?s?|cr\b|lacs?|lakhs?|millions?|mn\b|thousands?|'?000s?)/i)
+           || head.match(/(₹|rs\.?|inr)\s*(crore?s?|cr\b|lacs?|lakhs?|millions?|mn\b)\b/i)
+           || head.match(/\b(in\s+(?:crore?s?|lacs?|lakhs?|millions?|mn|thousands?))\b/i);
+    return m ? m[0].replace(/[,\n]/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  };
   let csv = '';
   for (const n of chosen) {
-    csv += `# Sheet: ${n}\n` + window.XLSX.utils.sheet_to_csv(wb.Sheets[n]) + '\n\n';
+    const sheetCsv = window.XLSX.utils.sheet_to_csv(wb.Sheets[n]);
+    const unit = unitOf(sheetCsv);
+    csv += `# Sheet: ${n}${unit ? ` — reporting unit: ${unit}` : ''}\n` + sheetCsv + '\n\n';
     if (csv.length > cap) break;
   }
   return { excelText: csv.slice(0, cap), sheetNames };
