@@ -676,6 +676,18 @@
     .sens-tbl td.g0 { background: rgba(244,63,94,.10); } .sens-tbl td.g1 { background: rgba(245,158,11,.13); }
     .sens-tbl td.g2 { background: rgba(16,185,129,.12); } .sens-tbl td.g3 { background: rgba(16,185,129,.24); }
     .sens-tbl td.here { outline: 2px solid var(--navy); outline-offset: -2px; box-shadow: inset 0 0 0 2px rgba(12,48,120,.15); }
+    /* Three stacked sensitivity grids + legend */
+    .sens-stack { display: grid; gap: 18px; }
+    .sens-h { font-family: 'Sora', sans-serif; font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 7px; }
+    .sens-legend { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 14px; font-size: 11px; color: var(--hint); }
+    .sens-legend .sk { width: 13px; height: 13px; border-radius: 3px; display: inline-block; margin-left: 6px; }
+    .sens-legend .sk.g0 { background: rgba(244,63,94,.30); } .sens-legend .sk.g1 { background: rgba(245,158,11,.32); }
+    .sens-legend .sk.g2 { background: rgba(16,185,129,.30); } .sens-legend .sk.g3 { background: rgba(16,185,129,.55); }
+    /* Entry-multiple comps hint + implied-multiples table (Returns tab) */
+    .ret-hint { margin-top: 7px; font-size: 11.5px; color: var(--navy); line-height: 1.45; }
+    .ret-hint.muted { color: var(--hint); }
+    .impl-tbl { min-width: 380px; }
+    .impl-tbl td.med, .impl-tbl th:last-child { color: var(--navy); background: #F7F9FD; }
     /* Peer valuation comps (Returns tab) */
     .peer-scroll { overflow-x: auto; }
     .peer-tbl { width: 100%; border-collapse: collapse; min-width: 460px; }
