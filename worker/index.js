@@ -42,7 +42,6 @@ export default {
       if (request.method === 'POST'   && path.endsWith('/api/gha-result'))     return await handleGhaResult(request, env);
       if (request.method === 'GET'    && path.endsWith('/api/gen-mode'))       return json({ mode: await getGenMode(env) });
       if (request.method === 'POST'   && path.endsWith('/api/gen-mode'))       return await handleSetGenMode(request, env);
-      if (request.method === 'GET'    && path.endsWith('/api/gha-debug'))      return await handleGhaDebug(env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -271,25 +270,6 @@ async function handleSetGenMode(request, env) {
   if (env.DEALS) await env.DEALS.put('settings:genMode', mode);
   return json({ ok: true, mode });
 }
-// TEMP diagnostic: proves what the Worker has at runtime WITHOUT revealing any secret.
-// Returns presence + length + a truncated SHA-256 (first 6 bytes) — a non-reversible fingerprint.
-async function handleGhaDebug(env) {
-  const fp = async (s) => {
-    if (!s) return '';
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-    return [...new Uint8Array(buf)].slice(0, 6).map((b) => b.toString(16).padStart(2, '0')).join('');
-  };
-  const want = pickSecret(env, 'GHA_SECRET');
-  const tok = pickSecret(env, 'GITHUB_DISPATCH_TOKEN');
-  return json({
-    ghaSecret: { present: !!want, len: want.length, fp: await fp(want) },
-    dispatchToken: { present: !!tok, len: tok.length },
-    ghOwner: env.GH_OWNER || pickSecret(env, 'GH_OWNER') || '',
-    ghRepo: env.GH_REPO || pickSecret(env, 'GH_REPO') || '',
-    ghaConfigured: ghaConfigured(env),
-    mode: await getGenMode(env),
-  });
-}
 // Fire the repository_dispatch that starts the Action for this job.
 async function dispatchGhaJob(env, jobId) {
   const token = pickSecret(env, 'GITHUB_DISPATCH_TOKEN');
@@ -440,7 +420,10 @@ async function handleGenerate(request, env, ctx) {
     '• questions — the meeting agenda; grouped { theme, items:[…] }. Use 4–7 themes that fit the deal (typically Strategy, Sourcing/Supply, Operations & capex, ' +
     'Customers/Distribution, Margins & financials, Peer benchmarking, IPO/exit timeline). Each item a sharp, specific question a partner would actually ask.\n\n' +
     'PEOPLE & OWNERSHIP: read the team / leadership / board slides in the PAGE IMAGES and list each promoter/manager with their EXACT name and title as shown (in the images or the text) — do not merge, ' +
-    'rename, or swap roles between people, and do NOT supply names from general knowledge. If neither the images nor the text name any people, return an empty promoters/management list or a single "To be confirmed" entry — never invent a plausible name or title. Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
+    'rename, or swap roles between people, and do NOT supply names from general knowledge. MANY team slides give a person\'s ROLE and BACKGROUND but NOT their personal name (e.g. "Co-Founder & CEO — B.E. Chemical, BITS Pilani; 15+ yrs, ex-Medibuddy"). ' +
+    'When that happens STILL list the person: put their title in "role", the education / prior-experience / tenure in "note", and set "name" to their ROLE/title itself — NEVER the string "To be confirmed". The role IS their identity. ' +
+    'Only use a single "To be confirmed" entry (or an empty list) when the documents describe NO people at all — no names AND no roles/backgrounds. Never collapse several described co-founders into one "To be confirmed" line, and never invent a personal name, title or background that is not shown. ' +
+    'Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
     'RETURNS (ALWAYS include — this is the ONE illustrative block: the entry/exit assumptions for a base-case returns model. The app computes the money multiple and IRR itself by pulling EBITDA and net debt for entryYear/exitYear straight from the financials you output, so pick sensible YEARS and MULTIPLES rather than pre-computing proceeds):\n' +
     '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", entryYear:"<FYxx>", exitYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number>, underdeliverPct:<number> } }. Every field is REQUIRED; numbers except the year strings. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected. ALSO set transaction.amountSource to exactly one of "IM stated" / "banker notes" / "assumption" so a partner can see whether the raise size is real or assumed — and if it is an assumption, keep it plausible against revenue (a growth-equity primary is rarely more than ~1× current revenue).\n' +

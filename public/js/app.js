@@ -91,6 +91,23 @@ function initials(name) {
   const p = String(name).trim().split(/\s+/);
   return ((p[0] || '')[0] || '' ) + ((p[1] || '')[0] || '');
 }
+// Team slides often describe a person by ROLE + background but never print a personal
+// name (e.g. "Co-Founder & CEO — BITS Pilani, ex-MediBuddy"). In that case the role IS the
+// identity — so we must NEVER show a "To be confirmed" placeholder when we actually have the
+// role. personName() returns a real personal name, or '' when the name field is just a
+// placeholder (or merely mirrors the role, as the management list often does).
+const PERSON_PLACEHOLDER = /^(to be confirmed\.?|to be received\.?|tbc|tbd|tba|n\/?a|na|unknown|not disclosed|not available|not provided|—|-|\.)$/i;
+function personName(p) {
+  const n = String((p && p.name) || '').trim();
+  if (!n || PERSON_PLACEHOLDER.test(n)) return '';
+  if (n === String((p && p.role) || '').trim()) return '';
+  return n;
+}
+// Avatar initials that ignore non-word tokens ("Co-Founder & CEO" → "CC", not "C&").
+function personAvatar(s) {
+  const w = String(s || '').split(/\s+/).filter(x => /[a-z]/i.test(x));
+  return ((w[0] || '')[0] || '') + ((w[1] || '')[0] || '');
+}
 // Turn a Bedrock model id into a friendly name, e.g.
 // Built-in demo deals (Kusumgar/Attero/Style Union) have no generatedBy; real
 // uploads always do. Used to badge samples so they're never mistaken for uploads.
@@ -1223,8 +1240,12 @@ function renderMemoExact(c) {
   const overviewBul = [];
   if (s.whatTheyDo) overviewBul.push(esc(s.whatTheyDo));
   (s.businessBullets || []).forEach(b => overviewBul.push(esc(b)));
-  const promoters = (s.promoters || []).map(p => `<b>${esc(p.name)}</b> (${esc(p.role)})${p.note ? ' — ' + esc(p.note) : ''}`);
-  const mgmt = (s.management || []).map(p => `<b>${esc(p.name)}</b> (${esc(p.role)})${p.note ? ' — ' + esc(p.note) : ''}`);
+  const personLi = p => {
+    const nm = personName(p), role = esc(p.role || ''), note = p.note ? ' — ' + esc(p.note) : '';
+    return nm ? `<b>${esc(nm)}</b>${role ? ` (${role})` : ''}${note}` : `<b>${role || 'To be confirmed'}</b>${note}`;
+  };
+  const promoters = (s.promoters || []).map(personLi);
+  const mgmt = (s.management || []).map(personLi);
   const row = (label, body) => `<div class="mx-row"><div class="mx-row-l">${esc(label)}</div><div class="mx-row-b">${body}</div></div>`;
 
   return `
@@ -1375,7 +1396,11 @@ function renderFullReport(c) {
   const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
   const fy = (c.headline && c.headline.revenueLabel || '');
   const bullets = (s.businessBullets || []).map(b => `<li>${esc(b)}</li>`).join('');
-  const people = arr => (arr || []).map(p => `<div class="fr-person"><b>${esc(p.name)}</b><span>${esc(p.role)}</span>${p.note ? `<span class="nt">${esc(p.note)}</span>` : ''}</div>`).join('');
+  const people = arr => (arr || []).map(p => {
+    const nm = personName(p), role = esc(p.role || ''), note = p.note ? `<span class="nt">${esc(p.note)}</span>` : '';
+    const head = nm ? `<b>${esc(nm)}</b><span>${role}</span>` : `<b>${role || 'To be confirmed'}</b>`;
+    return `<div class="fr-person">${head}${note}</div>`;
+  }).join('');
   const own = (s.ownership || []).map(x => `<tr><td>${esc(x.holder)}</td><td class="num">${x.pct}%</td></tr>`).join('');
   // Auto-numbered so conditional sections (deep-dive, questions, comps, returns)
   // never leave a gap; template `${}` expressions evaluate in source order.
@@ -2060,13 +2085,15 @@ function renderDealFacts(c) {
 function renderPromoters(c) {
   const list = h('<div class="flex flex-col gap-3"></div>');
   (c.snapshot && c.snapshot.promoters || []).forEach(p => {
+    const nm = personName(p), role = p.role || '';
+    const primary = nm || role || 'To be confirmed';
     list.appendChild(h(`
       <div class="person-card flex items-start gap-3">
-        <span class="person-avatar">${esc(initials(p.name))}</span>
+        <span class="person-avatar">${esc(personAvatar(primary))}</span>
         <div class="min-w-0">
-          <div class="person-name">${esc(p.name)}</div>
-          <div class="person-role">${esc(p.role)}</div>
-          <div class="person-note">${esc(p.note)}</div>
+          <div class="person-name">${esc(primary)}</div>
+          ${nm && role ? `<div class="person-role">${esc(role)}</div>` : ''}
+          ${p.note ? `<div class="person-note">${esc(p.note)}</div>` : ''}
         </div>
       </div>`));
   });
