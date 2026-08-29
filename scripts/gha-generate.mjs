@@ -22,6 +22,10 @@ async function main() {
 
   // 1) Pull the pre-built prompt the Worker stashed for this job.
   const pr = await fetch(`${WORKER}/api/gha-payload?jobId=${encodeURIComponent(JOB_ID)}`, { headers: auth });
+  // A 404 means the payload was already consumed — a sibling run (same jobId, serialized by the
+  // concurrency group) built this deal and deleted the one-shot stash. That's success, not failure:
+  // exit cleanly so we don't report an error over a deal that already built.
+  if (pr.status === 404) { console.log('payload already consumed — job handled by a sibling run; exiting cleanly.'); return; }
   if (!pr.ok) throw new Error(`payload fetch failed: HTTP ${pr.status} ${(await pr.text()).slice(0, 200)}`);
   const { system, user, images = [] } = await pr.json();
   if (!system || !user) throw new Error('payload missing system/user prompt');

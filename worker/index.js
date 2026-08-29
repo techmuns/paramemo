@@ -300,6 +300,11 @@ async function handleGhaResult(request, env) {
   const p = raw ? JSON.parse(raw) : {};
   const jobMeta = { id: jobId, name: ((p.basics && p.basics.name) || '').trim() || 'New deal', sector: ((p.basics && p.basics.sector) || '').trim() };
   if (b.error) {
+    // A duplicate/late runner can report failure AFTER a sibling run already built this job (it lost the
+    // race for the one-shot payload). Never clobber a job that already completed — that would flip a good
+    // deal to "error" on the dashboard and stop its Deep Dive from auto-running.
+    const existing = (await readJobsMap(env))[jobId];
+    if (existing && existing.status === 'done' && existing.companyId) return json({ ok: true, recorded: 'ignored-already-done' });
     await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: String(b.error).slice(0, 300) });
     return json({ ok: true, recorded: 'error' });
   }
@@ -447,6 +452,9 @@ async function handleGenerate(request, env, ctx) {
   if (jobId && (await getGenMode(env)) === 'gha' && ghaConfigured(env)) {
     const jobMeta = { id: jobId, name: (basics.name || '').trim() || 'New deal', sector: (basics.sector || '').trim() };
     try {
+      // Dedupe: if a dispatch for this exact jobId is already in flight (its payload is still stashed),
+      // don't fire a second Action — a duplicate would only race the first and fail on the one-shot payload.
+      if (await env.DEALS.get(`ghajob:${jobId}`)) return json({ queued: true, jobId, mode: 'gha', duplicate: true });
       await env.DEALS.put(`ghajob:${jobId}`, JSON.stringify({ system, user, images: imPages, basics, imText, excelText, notesText }), { expirationTtl: 3600 });
       await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
       await dispatchGhaJob(env, jobId);
