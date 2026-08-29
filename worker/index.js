@@ -988,7 +988,8 @@ async function handleDeepDive(request, env, ctx) {
     'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY its visual IM DEEP-DIVE. ' +
     'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
     'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
-    'ACCURACY: every number, name, quote and label must come from the IM / banker notes / model provided — NEVER invent one to fill a chart. If a topic is only qualitative, use bullets / flow / keyvalue / timeline. Read the PAGE IMAGES for content not in the text (charts, market maps, logo walls).\n\n' +
+    'ACCURACY: every number, name, quote and label must come from the IM / banker notes / model provided — NEVER invent one to fill a chart. If a topic is only qualitative, use bullets / flow / keyvalue / timeline. Read the PAGE IMAGES for content not in the text (charts, market maps, logo walls).\n' +
+    'SOURCE PRECEDENCE: the company\'s OWN IM / deck is primary for facts about itself (team credentials, metrics, history); a banker call note is secondary and must NOT overwrite a specific IM fact. Do not repeat a note\'s sweeping claim (e.g. "founders are IIT 2016") over the IM team slide\'s per-person detail (e.g. a founder shown as "B.E. Chemical, BITS Pilani"); on a genuine conflict follow the IM.\n\n' +
     DEEP_DIVE_SPEC;
   const user =
     'Build the deepDive object. Copy this SHAPE exactly (a real example):\n```json\n' + example + '\n```\n' +
