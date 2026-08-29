@@ -1087,7 +1087,13 @@ function coerceReturns(o) {
   // Returns tab models returns at the price you would actually pay — not a generic multiple on a
   // possibly-different year. entryX := ask ÷ (entry metric on the chosen basis). Keeps the tab honest
   // (e.g. a ₹2,000 cr ask ⇒ ~8.9× FY25 revenue, entry EV ≈ the ask), regardless of the model's guess.
-  const askVal = isObj(o.transaction) ? num(o.transaction.valuationCr) : null;
+  let askVal = isObj(o.transaction) ? num(o.transaction.valuationCr) : null;
+  if (!(askVal > 0) && isObj(o.transaction) && typeof o.transaction.headline === 'string') {
+    // Fallback when the model omits the structured field: pull "₹2,000 cr … ask" from the deal
+    // headline (bounded to its clause so it never grabs the inbound / last-round figure instead).
+    const m = o.transaction.headline.match(/₹\s*([\d,]+(?:\.\d+)?)\s*cr[^.;]*\bask\b/i);
+    if (m) { const v = Number(m[1].replace(/,/g, '')); if (v > 0) askVal = v; }
+  }
   if (askVal > 0) {
     const em = defaults.entryBasis === 'revenue' ? at(revrow, entryYear)
              : defaults.entryBasis === 'pat'     ? at(patrow, entryYear)
