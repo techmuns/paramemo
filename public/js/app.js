@@ -624,6 +624,14 @@ async function startDeepDive(id, payload) {
     let d = {}; try { d = JSON.parse((buf.split('\n').pop() || '').trim()); } catch { /* leave as {} */ }
     const c = companyById(id);
     if (!c) return;
+    if (d && d.queued && d.deepdive) {
+      // GA mode: the deep dive builds in GitHub Actions (patiently waiting out Bedrock). Keep it
+      // pending; the poller merges it in when the worker stores it on the company.
+      c._deepDivePending = true; c._deepDiveFailed = false; c._ddPendingSince = Date.now();
+      ensureJobPolling();
+      if (ui.companyId === id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');
+      return;
+    }
     delete c._deepDivePending;
     if (d && d.deepDive) { c.deepDive = d.deepDive; c._deepDiveFailed = false; }
     else c._deepDiveFailed = (d && d.error) || true;
@@ -696,7 +704,7 @@ function hydrateServerJobs(list) {
  * pass/fail come from the server's record. Close the tab mid-build, come back, and
  * the card is still there and completes on its own. ------------------------------- */
 let _jobPollTO = null;
-const anyJobRunning = () => state.jobs.some(j => j.status === 'running');
+const anyJobRunning = () => state.jobs.some(j => j.status === 'running') || state.companies.some(c => c && c._deepDivePending);
 function ensureJobPolling() { if (!_jobPollTO && anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000); }
 async function pollJobsOnce() {
   _jobPollTO = null;
@@ -716,7 +724,23 @@ async function pollJobsOnce() {
 // is still running in THIS tab is owned by that stream — the poller won't race it.
 function reconcileJobsFromServer(d) {
   let changed = false;
-  if (Array.isArray(d.companies)) d.companies.forEach(c => { if (c && c.id && !companyById(c.id)) { addCompany(c); changed = true; } });
+  if (Array.isArray(d.companies)) d.companies.forEach(sc => {
+    if (!sc || !sc.id) return;
+    const local = companyById(sc.id);
+    if (!local) { addCompany(sc); changed = true; return; }
+    // A GA deep dive that finished server-side → merge it into the open dashboard and stop waiting.
+    if (local._deepDivePending && sc.deepDive) {
+      local.deepDive = sc.deepDive; delete local._deepDivePending; delete local._ddPendingSince; local._deepDiveFailed = false; changed = true;
+      if (ui.companyId === sc.id && parseHash().tab === 'deepdive') renderTabPanel(local, 'deepdive');
+    }
+  });
+  // A deep dive that never lands (e.g. Bedrock down for a long time) shouldn't spin forever.
+  state.companies.forEach(c => {
+    if (c && c._deepDivePending && c._ddPendingSince && Date.now() - c._ddPendingSince > 16 * 60 * 1000) {
+      delete c._deepDivePending; delete c._ddPendingSince; c._deepDiveFailed = true; changed = true;
+      if (ui.companyId === c.id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');
+    }
+  });
   const byId = {}; (Array.isArray(d.jobs) ? d.jobs : []).forEach(j => { if (j && j.id) byId[j.id] = j; });
   const norm = s => String(s || '').trim().toLowerCase();
   const now = Date.now();

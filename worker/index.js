@@ -298,6 +298,26 @@ async function handleGhaResult(request, env) {
   const jobId = String(b.jobId || '');
   const raw = env.DEALS ? await env.DEALS.get(`ghajob:${jobId}`) : null;
   const p = raw ? JSON.parse(raw) : {};
+
+  // Deep-dive job (dispatched by handleDeepDive in GA mode): merge the visual deep dive into the
+  // existing company. Best-effort + additive — there is no job card, so a failure just leaves the
+  // deal without a deep dive (the client can retry); it never flips the deal to "error".
+  if (p.kind === 'deepdive') {
+    let merged = false;
+    try {
+      if (!b.error) {
+        const obj = extractJson(String(b.text || ''));
+        const dd = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.deepDive));
+        if (dd && p.companyId) {
+          const r2 = await env.DEALS.get(`company:${p.companyId}`);
+          if (r2) { const cur = JSON.parse(r2); cur.deepDive = dd; await env.DEALS.put(`company:${p.companyId}`, JSON.stringify(cur)); merged = true; }
+        }
+      }
+    } catch (e) { console.error('deepdive merge failed:', e && e.message); }
+    try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
+    return json({ ok: true, kind: 'deepdive', merged });
+  }
+
   const jobMeta = { id: jobId, name: ((p.basics && p.basics.name) || '').trim() || 'New deal', sector: ((p.basics && p.basics.sector) || '').trim() };
   if (b.error) {
     // A duplicate/late runner can report failure AFTER a sibling run already built this job (it lost the
@@ -830,6 +850,18 @@ async function handleDeepDive(request, env, ctx) {
     (notesText.trim() ? '=== BANKER NOTES ===\n' + notesText + '\n' : '') +
     'SCOPE: produce 6–9 well-chosen sections covering the most important parts of the IM, each with a few focused blocks — thorough but tight. Be sure to ALSO capture, whenever the IM contains them (these are high-value and easily missed): the FOUNDING TEAM and their pedigree / track record; any COMPARABLE or PRECEDENT company the IM benchmarks itself against and what it implies; named CUSTOMER / ISSUER TESTIMONIALS or quotes; named DISTRIBUTION / CHANNEL PARTNERS; flagship CASE STUDIES; and the PRODUCT / EXPANSION ROADMAP. ' +
     'Return ONLY the deepDive JSON object { source, summary, sections }.';
+
+  // GITHUB-ACTIONS mode: hand the deep-dive to the Action too, so it PATIENTLY waits out Bedrock
+  // overload exactly like the core memo. The inline path below can't outlast a sustained rate-limit
+  // (the whole reason we moved generation to Actions), which is why deep dives were 502-ing.
+  if ((await getGenMode(env)) === 'gha' && ghaConfigured(env)) {
+    const ddJobId = 'dd_' + id + '_' + Date.now().toString(36);
+    try {
+      await env.DEALS.put(`ghajob:${ddJobId}`, JSON.stringify({ kind: 'deepdive', companyId: id, system, user, images: imPages }), { expirationTtl: 3600 });
+      await dispatchGhaJob(env, ddJobId);
+      return json({ queued: true, jobId: ddJobId, mode: 'gha', deepdive: true });
+    } catch (e) { console.error('gha deep-dive dispatch failed, falling back to inline:', e && e.message); /* fall through */ }
+  }
 
   // Stream keepalives (like /api/generate) so a multi-second build never trips the edge timeout.
   const { readable, writable } = new TransformStream();
