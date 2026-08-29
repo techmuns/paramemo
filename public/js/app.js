@@ -472,10 +472,10 @@ function startGeneration(payload) {   // payload: { files:{im,excel,notes}, basi
 // POST to /api/generate and read the streamed response. The worker emits keepalive spaces while it
 // works (so Cloudflare never 524s a long build) and a final JSON line; we read to the end, parse the
 // last line, and throw an error carrying its HTTP status so the caller can decide whether to retry.
-async function callGenerate(bodyObj, signal) {
+async function callGenerate(bodyObj, signal, path = 'generate') {
   let res, buf = '';
   try {
-    res = await fetch(apiUrl('generate'), {
+    res = await fetch(apiUrl(path), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(bodyObj), signal,
     });
@@ -593,6 +593,103 @@ async function runJob(job, payload) {
   } catch (err) {
     clearTimeout(writeTO);
     if (job._cancelled) return;   // cancelled mid-build — no error to show
+    console.error(err);
+    job._streaming = false;
+    job.status = 'error';
+    job.error = (err && err.message) || 'Something went wrong — please try again.';
+    job.finishedAt = Date.now();
+    emitJobs();
+  }
+}
+
+// ---- Attach report(s) to an EXISTING deal and rebuild its memo in place -------------------------
+// The deal's source text is stored server-side, so the browser only extracts the NEW report(s) and
+// posts them to /api/regenerate, which rebuilds the memo under the SAME deal id (replacing it, not
+// duplicating). Shows as a normal pipeline job; the existing Deep Dive is preserved server-side.
+function startRegeneration(company, files) {
+  const job = {
+    id: 'regen_' + Date.now().toString(36) + '_' + (++_jobSeq).toString(36) + Math.random().toString(36).slice(2, 6),
+    _abort: (typeof AbortController !== 'undefined') ? new AbortController() : null,
+    name: (company.shortName || company.name || 'Deal'), sector: company.sector || '',
+    status: 'running', stageIdx: 0, startedAt: Date.now(), finishedAt: null, company: null, error: null, seen: false,
+    _regen: true, _regenId: company.id,
+  };
+  state.jobs.push(job);
+  emitJobs();
+  ensureJobPolling();
+  runRegenJob(job, company, files);
+  return job;
+}
+
+async function runRegenJob(job, company, files) {
+  const stage = i => { if (job.status === 'running') { job.stageIdx = i; emitJobs(); } };
+  let writeTO = null;
+  job._streaming = true;
+  try {
+    stage(0);
+    try { await ensureUploadLibs(); }
+    catch { throw new Error("We couldn't load the file readers — please check your internet connection and try again."); }
+    // Pull text from every attached report (a valuation-comps / Private Circle export, an updated deck…).
+    let extraText = '';
+    for (const f of files) {
+      const nm = f.name || 'report';
+      try {
+        if (/pdf$/i.test(nm) || (f.type || '').includes('pdf'))                    extraText += `\n\n----- ${nm} -----\n` + await extractPdfText(f, 60000);
+        else if (/\.(xlsx|xls)$/i.test(nm))                                        { const r = await parseExcel(f); extraText += `\n\n----- ${nm} -----\n` + (r.excelText || ''); }
+        else if (/\.eml$/i.test(nm) || (f.type || '').includes('rfc822'))          extraText += `\n\n----- ${nm} -----\n` + await extractEmlText(f, 40000);
+        else if (/\.msg$/i.test(nm) || (f.type || '').includes('outlook'))         extraText += `\n\n----- ${nm} -----\n` + await extractMsgText(f, 40000);
+        else if (/\.docx$/i.test(nm) || /wordprocessingml/.test(f.type || ''))     extraText += `\n\n----- ${nm} -----\n` + await extractDocxText(f);
+        else if (/\.(txt|md|csv|json)$/i.test(nm) || (f.type || '').startsWith('text')) extraText += `\n\n----- ${nm} -----\n` + (await f.text()).slice(0, 60000);
+      } catch (_) { /* skip an unreadable report, never block the rebuild */ }
+    }
+    extraText = extraText.trim();
+    stage(1);
+    const extraImages = await renderAllDocImages(files, { maxImages: 5 });   // let Claude SEE the report pages (tables, charts)
+    if (!extraText && !extraImages.length) throw new Error("We couldn't read anything from that file. Please export it as a PDF or Excel and try again.");
+
+    stage(2);
+    const body = { id: company.id, jobId: job.id, extraText, extraImages };
+    writeTO = setTimeout(() => stage(3), 7000);
+    let data = null, lastErr = null;
+    for (let attempt = 0; attempt < 2 && job.status === 'running'; attempt++) {
+      try { data = await callGenerate(body, job._abort && job._abort.signal, 'regenerate'); lastErr = null; break; }
+      catch (e) {
+        lastErr = e;
+        const retriable = !e.status || e.status >= 500;
+        if (attempt === 0 && retriable) { await new Promise(r => setTimeout(r, 1500)); continue; }
+        break;
+      }
+    }
+    clearTimeout(writeTO);
+    if (job._cancelled) return;
+    if (!data) {
+      // GA mode returns before the memo is built (no company) and long builds can drop the stream —
+      // both surface here as a non-fatal miss. Hand the job to the poller, which reconciles the real
+      // outcome server-side (same id) and refreshes the deal. A definitive 4xx is surfaced instead.
+      if (lastErr && lastErr.serverReported) throw lastErr;
+      const st = lastErr && lastErr.status;
+      if (st && st >= 400 && st < 500 && st !== 404) throw lastErr;   // 404 = mid-flight id race; let the poller settle it
+      job._streaming = false;
+      job._awaitServer = true;
+      emitJobs();
+      ensureJobPolling();
+      return;
+    }
+
+    job.stageIdx = 3;
+    job.company = data.company;
+    job.status = 'done';
+    job._streaming = false;
+    job.finishedAt = Date.now();
+    if (data.company) {
+      addCompany(data.company);
+      if (ui.companyId === data.company.id) renderView();   // the deal is open → refresh it with the new comps
+      toast(`${job.name} updated with the report`);
+    }
+    emitJobs();
+  } catch (err) {
+    clearTimeout(writeTO);
+    if (job._cancelled) return;
     console.error(err);
     job._streaming = false;
     job.status = 'error';
@@ -724,6 +821,7 @@ async function pollJobsOnce() {
 // is still running in THIS tab is owned by that stream — the poller won't race it.
 function reconcileJobsFromServer(d) {
   let changed = false;
+  const scById = {}; if (Array.isArray(d.companies)) d.companies.forEach(sc => { if (sc && sc.id) scById[sc.id] = sc; });
   if (Array.isArray(d.companies)) d.companies.forEach(sc => {
     if (!sc || !sc.id) return;
     const local = companyById(sc.id);
@@ -749,10 +847,19 @@ function reconcileJobsFromServer(d) {
     if (j.status !== 'running' || j._streaming) return;   // a live stream in this tab owns its own job
     const sj = byId[j.id];
     if (sj && sj.status === 'error') { j.status = 'error'; j.error = sj.error || 'The build failed — please try again.'; j.finishedAt = sj.finishedAt || now; changed = true; return; }
-    if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); changed = true; return; }
+    if (sj && sj.status === 'done') {
+      j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now;
+      // A regenerate rebuilds an EXISTING deal in place — the local copy is now stale, so pull the
+      // server's fresh version in and re-render it if the partner is looking at it.
+      const fresh = scById[sj.companyId];
+      if (j._regen && fresh) { addCompany(fresh); if (ui.companyId === fresh.id) renderView(); }
+      j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); changed = true; return;
+    }
     // No decisive record yet. If the finished deal itself has shown up (matched by the name the
     // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
-    if (j.name && j.name !== 'New deal') {
+    // Skip this for a regenerate: its deal ALREADY exists by that name, so a name-match would falsely
+    // complete it against the stale copy — a regen only finishes on a decisive done/error record.
+    if (!j._regen && j.name && j.name !== 'New deal') {
       const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
       if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); changed = true; return; }
     }
@@ -2660,6 +2767,16 @@ const cTag  = l => `<span class="peer-tag ${l ? 'lst' : 'prv'}">${l ? 'Listed' :
 function renderComps(c) {
   const k = compsData(c);
   const wrap = h('<div class="space-y-5"></div>');
+  // Add-a-report action bar (uploaded deals only): drop a valuation-comps / Private Circle export to
+  // fill transaction comps for the private names, then the memo rebuilds in place.
+  if (!isSample(c)) {
+    const bar = h(`<div class="flex items-center justify-between gap-3 flex-wrap">
+      <div class="text-[12.5px] text-ink-hint">Have a valuation-comps / Private Circle export? Add it to complete transaction comps for the private names.</div>
+      <button class="hdr-btn" data-add-report type="button" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">${icon('plus', 'w-4 h-4')} Add report</button>
+    </div>`);
+    bar.querySelector('[data-add-report]').addEventListener('click', () => openAttachReportModal(c));
+    wrap.appendChild(bar);
+  }
   const hasTrading = hasRows(k.trading && k.trading.rows);
   const hasTxn     = hasRows(k.transactions && k.transactions.rows);
   const hasVal = hasTrading || hasTxn;
@@ -4335,6 +4452,74 @@ async function fileToBase64(file) {
   let bin = '';
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
+}
+
+/* ---- Attach report(s) to an EXISTING deal and rebuild its memo in place ----
+ * For adding a valuation-comps / Private Circle export (or an updated deck) to a deal WITHOUT
+ * re-uploading the IM + Excel. Extracts the new report client-side and posts to /api/regenerate,
+ * which rebuilds the memo under the same deal id. Progress shows as a normal pipeline job. */
+function openAttachReportModal(company) {
+  if (!company) return;
+  if (isSample(company)) { toast('This is a built-in sample — add your own deal to attach reports'); return; }
+  const root = $('#modal-root');
+  let sel = [];
+  const overlay = h(`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-label="Add a report">
+      <div class="modal">
+        <div class="flex items-start justify-between gap-4 px-6 pt-5 pb-4 border-b border-[#EEF1F6]">
+          <div>
+            <h2 class="font-display text-[18px] font-semibold text-ink">Add a report to ${esc(company.shortName || company.name)}</h2>
+            <p class="text-[13px] text-ink-muted mt-0.5">Attach a valuation-comps / Private Circle export (or an updated deck) — the memo rebuilds in place with the new comps &amp; checks. Your original IM &amp; model stay; you don't re-upload them.</p>
+          </div>
+          <button class="modal-close text-ink-hint hover:text-ink transition-colors -mr-1" aria-label="Close">${icon('x', 'w-5 h-5')}</button>
+        </div>
+        <div class="modal-scroll px-6 py-5" style="max-height:70vh;overflow-y:auto"></div>
+      </div>
+    </div>`);
+  const bodyEl = overlay.querySelector('.modal-scroll');
+  const input = h(`<div style="display:none"><input type="file" multiple accept=".pdf,application/pdf,.xlsx,.xls,.csv,.txt,.md,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/*,.eml,.msg,message/rfc822,application/vnd.ms-outlook"></div>`);
+  overlay.appendChild(input);
+  const fileInput = input.querySelector('input');
+
+  const close = () => { overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+
+  function render() {
+    const chips = sel.length ? `<div class="flex flex-wrap gap-2 mt-2">${sel.map((f, i) =>
+      `<span class="file-chip">${icon('fileText', 'w-3.5 h-3.5')}<span style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>` +
+      `<button type="button" data-rm="${i}" aria-label="Remove" style="line-height:1;color:var(--muted)">${icon('x', 'w-3.5 h-3.5')}</button></span>`).join('')}</div>` : '';
+    bodyEl.innerHTML = `
+      <button class="uz ${sel.length ? 'has-file' : ''}" type="button" data-pick>
+        <span class="uz-ico">${icon(sel.length ? 'check' : 'plus', 'w-4 h-4', sel.length ? 3 : 2)}</span>
+        <span class="uz-body">
+          <span class="uz-title">Report file(s)</span>
+          <span class="uz-sub">${sel.length ? `${sel.length} added — click to add more` : 'PrivateCircle / CapitalIQ / VCCEdge valuation-comps export, a term sheet, an updated deck, an email — PDF, Excel, CSV, image'}</span>
+        </span>
+      </button>${chips}
+      <div class="mt-3 text-[12px] text-ink-hint">Transaction &amp; trading comps and the Integrity checks are re-read from the report; the rest of the memo is rebuilt from the deal's stored IM &amp; model. Takes 1–3 minutes and runs in the background.</div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button class="hdr-btn" data-cancel type="button" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Cancel</button>
+        <button class="hdr-btn" data-go type="button" ${sel.length ? '' : 'disabled'} style="color:#fff;background:${sel.length ? BRAND.navy : '#9AA7BD'};border-color:${sel.length ? BRAND.navy : '#9AA7BD'}">${icon('refreshCw', 'w-4 h-4')} Add &amp; rebuild memo</button>
+      </div>`;
+    bodyEl.querySelector('[data-pick]').addEventListener('click', () => fileInput.click());
+    bodyEl.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { sel.splice(+b.dataset.rm, 1); render(); }));
+    bodyEl.querySelector('[data-cancel]').addEventListener('click', close);
+    const go = bodyEl.querySelector('[data-go]');
+    if (go && sel.length) go.addEventListener('click', () => {
+      const files = sel.slice();
+      close();
+      startRegeneration(company, files);
+      toast(`Rebuilding ${company.shortName || company.name} with your report — the 🔔 lights up when it's ready`);
+    });
+  }
+
+  fileInput.addEventListener('change', () => { sel = sel.concat([...fileInput.files]); fileInput.value = ''; render(); });
+  overlay.querySelector('.modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  document.addEventListener('keydown', onKey);
+  render();
+  root.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('show'));
 }
 
 /* ---- The real "Add a deal" modal: upload → AI → memo ----

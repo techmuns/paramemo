@@ -223,13 +223,15 @@ MediBuddy/Kenko/Seeking Care/etc.).
      `comps.transactions`. **The client's phrase "valuation report for different companies" = exactly
      these exports.**
 
-  **How to add reports on the dashboard:** click **"+ Add a deal"** → in the modal, under the required IM
-  + Excel, use **"Other documents (optional)"** (multi-file: PDF/XLSX/CSV/images) → drop the valuation /
-  transaction reports there → generate. The AI maps each export's rows into the Transaction Comps table
-  (date, target, buyer, seller, type, % sought, deal value, EV/EBITDA, EV/Revenue) with an auto median
-  row. To add reports to an EXISTING deal there's currently no "attach to this deal" button — you re-run
-  the deal with the export attached (a fresh upload replaces the memo). Adding a one-click
-  "attach & regenerate" is a candidate improvement if the user wants it.
+  **How to add reports on the dashboard — two ways:**
+  1. **New deal:** click **"+ Add a deal"** → under the required IM + Excel use **"Other documents
+     (optional)"** (multi-file: PDF/XLSX/CSV/images) → drop the valuation / transaction reports → generate.
+  2. **Existing deal (SHIPPED):** open the deal → **Comps tab** → **"Add report"** button (also in the
+     Comps action bar). Drop a valuation-comps / Private Circle export (or updated deck) and the memo
+     **rebuilds in place** — no need to re-upload the IM + Excel. See §10a for how it works.
+
+  Either way the AI maps each export's rows into the Transaction Comps table (date, target, buyer, seller,
+  type, % sought, deal value, EV/EBITDA, EV/Revenue) with an auto median row.
 
 **Provenance honesty rules baked into the prompt** (don't regress): trading multiples are labeled
 "Listed peers · indicative multiples (model estimate — verify)" and never "live" in the model output
@@ -277,8 +279,8 @@ Surfacing the *unused data itself* (the bullets above) can proceed if the user a
   ₹440–490 Cr last round, alongside the banker-note peers (MediBuddy/Kenko/Seeking Care).
 - **Authoritative path unchanged:** a valuation-comps export dropped in the "Other documents" upload slot
   is parsed directly into `comps.transactions` — the most reliable source for private names/deals.
-- **Possible follow-up (not built):** a one-click "attach a report to an EXISTING deal & regenerate" so
-  the user doesn't have to re-upload the IM+Excel to add a valuation export later.
+- **DONE — "attach a report to an existing deal & regenerate":** Comps tab → "Add report". Rebuilds the
+  deal in place (same id) from its stored source text + the new report, preserving the Deep Dive. See §10a.
 
 ### 9.3 Screener-via-Playwright scraper — only if needed
 The user offered Screener.in login creds (to add as GitHub Actions secrets) for a Playwright scrape.
@@ -307,6 +309,24 @@ do not run `playwright install`.)
 - **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean).
 - **`.github/workflows/generate.yml`** — the `generate-deal` workflow (concurrency `generate-${jobId}`).
 - **`wrangler.jsonc`** — Worker + assets + `DEALS` KV binding.
+
+### 10a. "Add report → regenerate a deal in place" (how it works)
+Adding a report to an existing deal rebuilds its memo under the SAME id, reusing the whole `/api/generate`
+path (system prompt, GA/inline, streaming) — no prompt duplication.
+- **Client:** Comps-tab "Add report" → `openAttachReportModal(company)` → `startRegeneration` → `runRegenJob`
+  extracts ONLY the new report(s) (text + page images) and POSTs `{id, jobId, extraText, extraImages}` to
+  `/api/regenerate` via `callGenerate(..., 'regenerate')`. Shows as a normal pipeline job.
+- **Server:** `handleRegenerate` — idempotency lock `regenlock:<jobId>` (callGenerate retries once; GA
+  returns before build) → loads `company:<id>` + `dealsrc:<id>` (stored `{imText,excelText,notesText}`) →
+  appends the report to `imText` under a header → forwards an internal Request to `handleGenerate` with
+  `reuseId:<id>`. `generateCompany`/`handleGhaResult` honor `reuseId` (skip `uniqueId`, overwrite in place)
+  and **preserve the existing `deepDive`** (the core pass omits it). IM-text cap raised to 160k so an
+  appended report never truncates.
+- **Refresh:** inline → `runRegenJob` replaces the company + re-renders. GA (default) → `reconcileJobsFromServer`
+  now replaces an existing company when its own `_regen` job completes (and the name-match fallback is
+  skipped for regen jobs, so it can't falsely complete against the stale copy).
+- **Gotcha for the next session:** a regen only completes on a decisive server done/error record — never
+  on name-match. If you touch the poller, keep the `j._regen` guards.
 
 ---
 

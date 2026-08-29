@@ -32,6 +32,7 @@ export default {
     try {
       // endsWith keeps the routes working even if the app is served under a sub-path.
       if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env, ctx);
+      if (request.method === 'POST'   && path.endsWith('/api/regenerate'))    return await handleRegenerate(request, env, ctx);
       if (request.method === 'POST'   && path.endsWith('/api/deepdive'))      return await handleDeepDive(request, env, ctx);
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
@@ -392,12 +393,16 @@ async function handleGhaResult(request, env) {
     await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: 'The memo came back unreadable from the model. Please try again.' });
     return json({ ok: false, error: 'unparseable' });
   }
-  const id = await uniqueId(slugify((p.basics && p.basics.name) || obj.name || 'company'), env);
+  const id = p.reuseId || await uniqueId(slugify((p.basics && p.basics.name) || obj.name || 'company'), env);   // regenerate → same id
   let company = normalizeCompany(obj, id, p.basics || {});
   company.generatedBy = b.model || 'github-actions';
   company.generatedAt = new Date().toISOString().slice(0, 10);
   company = await recheckFigures(company, {});
   try { await runGovernance(company, env); } catch (e) { console.error('governance skipped:', e && e.message); }
+  // Regenerate: keep the visual Deep Dive already built for this deal (the core-memo pass omits it).
+  if (p.reuseId && !company.deepDive) {
+    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc && pc.deepDive) company.deepDive = pc.deepDive; } } catch { /* best-effort */ }
+  }
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
@@ -414,10 +419,14 @@ async function handleGenerate(request, env, ctx) {
   try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
   const { sheetNames = [], notesText = '', basics = {}, imPdfBase64 = '' } = payload || {};
   const jobId = (typeof payload.jobId === 'string' && payload.jobId) ? payload.jobId.slice(0, 64) : '';
+  // reuseId (set by /api/regenerate): rebuild an EXISTING deal in place under the same id, rather than
+  // minting a fresh one — so adding a report to a deal replaces its memo instead of duplicating it.
+  const reuseId = (typeof payload.reuseId === 'string' && payload.reuseId) ? payload.reuseId.slice(0, 64) : '';
   const excelText = String(payload.excelText || '').slice(0, 55000);
   // Cap combined document text (IM + any extra docs the browser concatenated) so a big multi-doc
-  // upload can never overflow the model's context and trip a request-size error.
-  let imText = String(payload.imText || '').trim().slice(0, 100000);
+  // upload can never overflow the model's context and trip a request-size error. Roomy enough to hold
+  // the IM plus an appended valuation-comps / Private Circle report on a regenerate.
+  let imText = String(payload.imText || '').trim().slice(0, 160000);
   // The browser also renders the IM/deck pages to JPEGs so the vision model can read logo walls,
   // org charts and infographics that never appear in the extracted text. Cap defensively.
   const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 5);
@@ -535,7 +544,7 @@ async function handleGenerate(request, env, ctx) {
       // Dedupe: if a dispatch for this exact jobId is already in flight (its payload is still stashed),
       // don't fire a second Action — a duplicate would only race the first and fail on the one-shot payload.
       if (await env.DEALS.get(`ghajob:${jobId}`)) return json({ queued: true, jobId, mode: 'gha', duplicate: true });
-      await env.DEALS.put(`ghajob:${jobId}`, JSON.stringify({ system, user, images: imPages, basics, imText, excelText, notesText }), { expirationTtl: 3600 });
+      await env.DEALS.put(`ghajob:${jobId}`, JSON.stringify({ system, user, images: imPages, basics, imText, excelText, notesText, reuseId }), { expirationTtl: 3600 });
       await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
       await dispatchGhaJob(env, jobId);
       return json({ queued: true, jobId, mode: 'gha' });
@@ -559,7 +568,7 @@ async function handleGenerate(request, env, ctx) {
     if (jobId) await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
     let out;
     try {
-      const company = await generateCompany({ system, user, imPages, basics, env });
+      const company = await generateCompany({ system, user, imPages, basics, env, reuseId });
       out = { company };
       // Stash the deal's source TEXT so the Deep Dive can be (re)built server-side later — from any
       // device, after a reload — without re-uploading the files. Text only (cheap); images aren't kept.
@@ -577,6 +586,57 @@ async function handleGenerate(request, env, ctx) {
   })();
   if (ctx && ctx.waitUntil) ctx.waitUntil(run);   // keep the worker alive until the stream is fully written
   return new Response(readable, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+}
+
+// REGENERATE an existing deal in place, with one or more extra reports appended (a valuation-comps /
+// Private Circle export, an updated deck, an added email). Reuses the deal's STORED source text
+// (dealsrc) plus the new report(s) the browser extracted, then runs the EXACT same build path as a
+// fresh upload — same system prompt, GA/inline dispatch, streaming — but under the SAME deal id
+// (reuseId), so the memo is replaced, not duplicated. The existing Deep Dive is preserved.
+async function handleRegenerate(request, env, ctx) {
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet — please contact your administrator.");
+  let body; try { body = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
+  const id = String((body && body.id) || '').slice(0, 120);
+  if (!id) throw new ApiError(400, 'Missing deal id.');
+  const jobId = (typeof body.jobId === 'string' && body.jobId) ? body.jobId.slice(0, 64) : ('regen_' + Date.now().toString(36));
+
+  // Idempotency: the browser's callGenerate retries once on a transient failure, and GA mode returns
+  // before the memo is built — so a second POST with the same jobId must NOT append the report again.
+  // First one wins; later ones are answered as duplicates (the client then reconciles via the poller).
+  if (await env.DEALS.get(`regenlock:${jobId}`)) return json({ queued: true, jobId, mode: 'gha', duplicate: true });
+  try { await env.DEALS.put(`regenlock:${jobId}`, '1', { expirationTtl: 3600 }); } catch { /* best-effort */ }
+
+  const rawCompany = await env.DEALS.get(`company:${id}`);
+  if (!rawCompany) throw new ApiError(404, 'That deal no longer exists — reload and try again.');
+  const company = JSON.parse(rawCompany);
+
+  // Stored source text for this deal (saved at build time). Without it we cannot rebuild the memo.
+  let src = null;
+  try { src = JSON.parse((await env.DEALS.get(`dealsrc:${id}`)) || 'null'); } catch { /* none stored */ }
+  let imText = String((src && src.imText) || '');
+  const excelText = String((src && src.excelText) || '');
+  const notesText = String((src && src.notesText) || '');
+
+  const extraText = String((body && body.extraText) || '').slice(0, 120000);
+  const extraImages = (Array.isArray(body && body.extraImages) ? body.extraImages : []).filter(s => typeof s === 'string' && s).slice(0, 5);
+  if (!extraText && !extraImages.length) throw new ApiError(400, 'No readable report was attached to add.');
+  if (!imText && !excelText) throw new ApiError(400, 'This deal has no stored source to rebuild from — please re-add it as a new deal with the report attached.');
+
+  // Append the new report(s) to the IM text under a clear header, exactly as the upload flow folds in
+  // extra documents — the prompt then parses an attached valuation-comps / Private Circle export from here.
+  if (extraText) imText = (imText ? imText + '\n\n' : '') + '===== Added report(s) — parse valuation / transaction comps and governance from here =====\n' + extraText;
+
+  const basics = { name: company.name || company.shortName || '', sector: company.sector || '' };
+  // Persist the enriched source text so future regenerates keep this report too (belt-and-suspenders:
+  // the build path re-stashes dealsrc on success anyway, but this survives even a failed rebuild+retry).
+  try { await env.DEALS.put(`dealsrc:${id}`, JSON.stringify({ imText, excelText, notesText })); } catch { /* best-effort */ }
+
+  // Hand off to the SAME build path as a fresh upload, under reuseId so it overwrites this deal. The
+  // report's own page images ride along as imPages (the IM's original images aren't stored; the IM text
+  // we kept carries its content). A forwarded Request keeps the real origin so loadTemplate still works.
+  const fwd = { imText, excelText, notesText, basics, imPages: extraImages, reuseId: id, jobId };
+  const forwarded = new Request(request.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(fwd) });
+  return await handleGenerate(forwarded, env, ctx);
 }
 
 // The heavy lifting: call the model (with one repair retry), validate, normalize, persist. Returns
@@ -653,7 +713,7 @@ function rescaleToStatedUnit(c) {
 }
 
 // the finished company or throws an ApiError. Kept separate so handleGenerate can stream around it.
-async function generateCompany({ system, user, imPages, basics, env }) {
+async function generateCompany({ system, user, imPages, basics, env, reuseId }) {
   let ans = await callClaude({ system, user, images: imPages }, env);
   let obj = extractJson(ans.text);
   let problems = obj ? validateCompany(obj) : ['Response was not valid JSON.'];
@@ -671,7 +731,7 @@ async function generateCompany({ system, user, imPages, basics, env }) {
   }
 
   const base = slugify(basics.name || obj.name || obj.shortName || 'company');
-  const id = await uniqueId(base, env);
+  const id = reuseId || await uniqueId(base, env);   // regenerate → overwrite the same deal in place
   let company = normalizeCompany(obj, id, basics);
   company.generatedBy = ans.model;                          // which Bedrock model actually answered
   company.generatedAt = new Date().toISOString().slice(0, 10);
@@ -682,6 +742,12 @@ async function generateCompany({ system, user, imPages, basics, env }) {
 
   // Governance sweep (web + court cases) fills the Integrity checks. Best-effort: never block the memo.
   try { await runGovernance(company, env); } catch (e) { console.error('governance sweep skipped:', e && e.message); }
+
+  // On a regenerate (reuseId), carry over the visual Deep Dive already built for this deal — the
+  // core-memo pass omits it by design, so without this a regenerate would blank an existing deep dive.
+  if (reuseId && !company.deepDive) {
+    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc && pc.deepDive) company.deepDive = pc.deepDive; } } catch { /* best-effort */ }
+  }
 
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
