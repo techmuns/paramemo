@@ -587,9 +587,11 @@ async function runJob(job, payload) {
     // deal lands fast and no single build is long enough to be killed. Best-effort and additive.
     const stored = companyById(data.company.id);
     const ddInputs = { imText, imPages: [], excelText, sheetNames, notesText, basics: payload.basics };   // Deep Dive is TEXT-ONLY — the core memo already did the heavy vision pass; this keeps it fast enough to finish
-    if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; }   // cache inputs so the Deep Dive can be retried this session
+    const xaInputs = { excelText, sheetNames };   // Excel Analysis reads only the spreadsheet
+    if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; stored._excelPending = true; stored._xaInputs = xaInputs; stored._xaAutoTried = true; }   // cache inputs so both passes can be retried this session
     emitJobs();
     startDeepDive(data.company.id, ddInputs);
+    startExcelAnalysis(data.company.id, xaInputs);
   } catch (err) {
     clearTimeout(writeTO);
     if (job._cancelled) return;   // cancelled mid-build — no error to show
@@ -747,6 +749,50 @@ function maybeAutoDeepDive(c) {
   startDeepDive(c.id, c._ddInputs || {});
 }
 
+/* ---- Excel Analysis pass — a twin of the Deep Dive, pointed at the EXCEL model instead of the IM.
+ * Reuses the exact same background-build plumbing (GA-aware, poller-merged) and the same block
+ * renderer. Everything mirrors the deep-dive trio above; the only differences are the endpoint,
+ * the flags (_excelPending/_excelFailed/_xaPendingSince) and the stored field (c.excelAnalysis). */
+function retryExcelAnalysis(id) {
+  const c = companyById(id);
+  if (!c) return;
+  c._excelPending = true; c._excelFailed = false; c._xaAutoTried = true;
+  if (ui.companyId === id && parseHash().tab === 'excel') renderTabPanel(c, 'excel');
+  startExcelAnalysis(id, c._xaInputs || {});
+}
+
+async function startExcelAnalysis(id, payload) {
+  try {
+    const res = await fetch(apiUrl('excel-analysis'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, ...payload }) });
+    let buf = '';
+    if (res.body && res.body.getReader) { const rd = res.body.getReader(), dec = new TextDecoder(); for (;;) { const { done, value } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); } buf += dec.decode(); }
+    else buf = await res.text();
+    let d = {}; try { d = JSON.parse((buf.split('\n').pop() || '').trim()); } catch { /* leave as {} */ }
+    const c = companyById(id);
+    if (!c) return;
+    if (d && d.queued && d.excel) {
+      // GA mode: the analysis builds in GitHub Actions (patiently waiting out Bedrock). Keep it
+      // pending; the poller merges it in when the worker stores it on the company.
+      c._excelPending = true; c._excelFailed = false; c._xaPendingSince = Date.now();
+      ensureJobPolling();
+      if (ui.companyId === id && parseHash().tab === 'excel') renderTabPanel(c, 'excel');
+      return;
+    }
+    delete c._excelPending;
+    if (d && d.excelAnalysis) { c.excelAnalysis = d.excelAnalysis; c._excelFailed = false; }
+    else c._excelFailed = (d && d.error) || true;
+    if (ui.companyId === id && parseHash().tab === 'excel') renderTabPanel(c, 'excel');   // live-refresh if they're watching it
+  } catch (_) {
+    const c = companyById(id); if (c) { delete c._excelPending; c._excelFailed = true; }
+  }
+}
+
+function maybeAutoExcelAnalysis(c) {
+  if (!c || isSample(c) || c.excelAnalysis || c._excelPending || c._excelFailed) return;
+  c._xaAutoTried = true;
+  startExcelAnalysis(c.id, c._xaInputs || {});
+}
+
 // Cancel a build in progress: abort this tab's request, drop the card, and clear the server record.
 // (The server may still finish a build already in flight — if a deal lands anyway, it's removable.)
 function cancelJob(id) {
@@ -801,7 +847,7 @@ function hydrateServerJobs(list) {
  * pass/fail come from the server's record. Close the tab mid-build, come back, and
  * the card is still there and completes on its own. ------------------------------- */
 let _jobPollTO = null;
-const anyJobRunning = () => state.jobs.some(j => j.status === 'running') || state.companies.some(c => c && c._deepDivePending);
+const anyJobRunning = () => state.jobs.some(j => j.status === 'running') || state.companies.some(c => c && (c._deepDivePending || c._excelPending));
 function ensureJobPolling() { if (!_jobPollTO && anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000); }
 async function pollJobsOnce() {
   _jobPollTO = null;
@@ -831,12 +877,21 @@ function reconcileJobsFromServer(d) {
       local.deepDive = sc.deepDive; delete local._deepDivePending; delete local._ddPendingSince; local._deepDiveFailed = false; changed = true;
       if (ui.companyId === sc.id && parseHash().tab === 'deepdive') renderTabPanel(local, 'deepdive');
     }
+    // Same for a GA Excel analysis that finished server-side.
+    if (local._excelPending && sc.excelAnalysis) {
+      local.excelAnalysis = sc.excelAnalysis; delete local._excelPending; delete local._xaPendingSince; local._excelFailed = false; changed = true;
+      if (ui.companyId === sc.id && parseHash().tab === 'excel') renderTabPanel(local, 'excel');
+    }
   });
-  // A deep dive that never lands (e.g. Bedrock down for a long time) shouldn't spin forever.
+  // A deep dive / Excel analysis that never lands (e.g. Bedrock down for a long time) shouldn't spin forever.
   state.companies.forEach(c => {
     if (c && c._deepDivePending && c._ddPendingSince && Date.now() - c._ddPendingSince > 16 * 60 * 1000) {
       delete c._deepDivePending; delete c._ddPendingSince; c._deepDiveFailed = true; changed = true;
       if (ui.companyId === c.id && parseHash().tab === 'deepdive') renderTabPanel(c, 'deepdive');
+    }
+    if (c && c._excelPending && c._xaPendingSince && Date.now() - c._xaPendingSince > 16 * 60 * 1000) {
+      delete c._excelPending; delete c._xaPendingSince; c._excelFailed = true; changed = true;
+      if (ui.companyId === c.id && parseHash().tab === 'excel') renderTabPanel(c, 'excel');
     }
   });
   const byId = {}; (Array.isArray(d.jobs) ? d.jobs : []).forEach(j => { if (j && j.id) byId[j.id] = j; });
@@ -853,7 +908,7 @@ function reconcileJobsFromServer(d) {
       // server's fresh version in and re-render it if the partner is looking at it.
       const fresh = scById[sj.companyId];
       if (j._regen && fresh) { addCompany(fresh); if (ui.companyId === fresh.id) renderView(); }
-      j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); changed = true; return;
+      j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); maybeAutoExcelAnalysis(j.company); changed = true; return;
     }
     // No decisive record yet. If the finished deal itself has shown up (matched by the name the
     // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
@@ -861,7 +916,7 @@ function reconcileJobsFromServer(d) {
     // complete it against the stale copy — a regen only finishes on a decisive done/error record.
     if (!j._regen && j.name && j.name !== 'New deal') {
       const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
-      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); changed = true; return; }
+      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); maybeAutoExcelAnalysis(m); changed = true; return; }
     }
     // Only a build well past the worker's own limits (record never resolved) is treated as stuck.
     if (now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
@@ -900,6 +955,7 @@ const TABS = [
   { key: 'snapshot',   label: 'Snapshot',   icon: 'clipboard'  },
   { key: 'deepdive',   label: 'Deep Dive',  icon: 'bookOpen'   },
   { key: 'financials', label: 'Financials', icon: 'barChart'   },
+  { key: 'excel',      label: 'Excel Analysis', icon: 'gauge'  },
   { key: 'fit',        label: 'Fit',        icon: 'target'     },
   { key: 'integrity',  label: 'Integrity',  icon: 'shield'     },
   { key: 'questions',  label: 'Questions',  icon: 'help'       },
@@ -909,7 +965,7 @@ const TABS = [
 ];
 // All tabs are built; none carry a "coming soon" dot.
 // (renderComingSoon remains as a harmless fallback for any unknown tab key.)
-const LIVE_TABS = ['snapshot', 'deepdive', 'financials', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
+const LIVE_TABS = ['snapshot', 'deepdive', 'financials', 'excel', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
 const TAB_KEYS = TABS.map(t => t.key);
 const TAB_META = Object.fromEntries(TABS.map(t => [t.key, t]));
 
@@ -1586,6 +1642,7 @@ function renderFullReport(c) {
       </table>`)}
 
       ${hasDeepDive(c) ? sec('From the Information Memorandum — full briefing', frDeepDive(c), 'fr-sec-dd') : ''}
+      ${hasExcelAnalysis(c) ? sec('From the Excel model — analysis', frExcelAnalysis(c), 'fr-sec-dd') : ''}
 
       ${sec('Financials', `
         <div class="fr-cap">All figures in ₹ crore; tinted columns are forecast.</div>
@@ -2155,6 +2212,7 @@ function renderTabPanel(c, tab) {
   if (tab === 'snapshot')        node = renderSnapshot(c);
   else if (tab === 'deepdive')   node = renderDeepDive(c);
   else if (tab === 'financials') node = renderFinancials(c);
+  else if (tab === 'excel')      node = renderExcelAnalysis(c);
   else if (tab === 'fit')        node = renderFit(c);
   else if (tab === 'integrity')  node = renderIntegrity(c);
   else if (tab === 'questions')  node = renderQuestions(c);
@@ -3311,6 +3369,70 @@ function frDeepDive(c) {
     return `<div class="fr-dd-sec"><h3>${esc(s.title || ('Part ' + (i + 1)))}</h3>${s.summary ? `<p class="fr-cap">${esc(s.summary)}</p>` : ''}<div class="dd-blocks">${blocks}</div></div>`;
   }).filter(Boolean).join('');
   return secs ? (c.deepDive.summary ? `<p class="fr-note" style="margin-bottom:10px">${esc(c.deepDive.summary)}</p>` : '') + secs : '';
+}
+
+/* ---- 7g-bis. Excel Analysis tab — the whole Excel model turned into charts. Same generic block
+ * doc as the Deep Dive (source/summary/sections[].blocks[]), so it reuses renderDDSection /
+ * renderDDBlock verbatim; only the source field and the empty/pending copy differ. --------------- */
+function hasExcelAnalysis(c) {
+  return !!(c && c.excelAnalysis && Array.isArray(c.excelAnalysis.sections) &&
+    c.excelAnalysis.sections.some(s => s && Array.isArray(s.blocks) && s.blocks.some(x => x && x.type)));
+}
+
+function renderExcelAnalysis(c) {
+  const wrap = h('<div class="space-y-5"></div>');
+  if (!hasExcelAnalysis(c)) {
+    // First time the tab is opened for a real deal that has no analysis yet (e.g. one built before
+    // this feature existed) → kick the build once so it just appears, zero clicks. Guarded so it
+    // fires only once per session and never for the built-in sample or a failed/pending build.
+    if (!c._excelPending && !c._excelFailed && !isSample(c) && !c._xaAutoTried) {
+      c._xaAutoTried = true; c._excelPending = true; c._xaPendingSince = Date.now();
+      startExcelAnalysis(c.id, c._xaInputs || {});
+    }
+    if (c._excelPending) {
+      wrap.appendChild(h(`<div class="coming"><div class="cs-ico dd-prep-ic">${icon('loader', 'w-6 h-6')}</div>
+        <div class="text-[15px] font-semibold text-ink">Analysing the Excel model…</div>
+        <p class="text-[13px] text-ink-muted mt-1 max-w-md">We're reading the whole spreadsheet and turning its trends and breakdowns into charts. This usually takes a minute or two; it'll appear here on its own, and it's saved so you can come back to it.</p></div>`));
+      return wrap;
+    }
+    const failedMsg = typeof c._excelFailed === 'string' ? c._excelFailed : '';
+    const failed = !!c._excelFailed;
+    const needsReupload = /re-add|re-upload|no stored excel|no Excel/i.test(failedMsg);   // built before we stored the Excel — only a fresh upload can help
+    const canRetry = !isSample(c) && !needsReupload;
+    const body = failed
+      ? ('The core memo is ready — ' + (needsReupload
+          ? 'but this deal has no Excel saved for a rebuild, so please <b>re-add it once with the Excel attached</b> to build the analysis. New deals won’t need this.'
+          : (failedMsg ? esc(failedMsg) : 'the Excel analysis just couldn’t be built this time.') + (canRetry ? ' Try again below.' : '')))
+      : 'Add a deal with an Excel financial model and this tab turns the whole model — revenue and cost trends, margins, segment splits, unit economics, whatever the sheet breaks out — into colourful charts, so you never have to open the spreadsheet.';
+    const card = h(`<div class="coming"><div class="cs-ico">${icon('gauge', 'w-6 h-6')}</div>
+      <div class="text-[15px] font-semibold text-ink">${failed ? 'The Excel analysis didn’t finish' : 'The Excel analysis appears here'}</div>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">${body}</p>
+      ${canRetry ? `<button class="hdr-btn xa-retry-btn" type="button" style="margin-top:14px;color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('refreshCw', 'w-4 h-4')} ${failed ? 'Try the analysis again' : 'Build Excel analysis'}</button>` : ''}</div>`);
+    if (canRetry) card.querySelector('.xa-retry-btn').addEventListener('click', () => retryExcelAnalysis(c.id));
+    wrap.appendChild(card);
+    return wrap;
+  }
+  const xa = c.excelAnalysis;
+  const n = xa.sections.filter(s => s && Array.isArray(s.blocks) && s.blocks.length).length;
+  wrap.appendChild(h(`<div class="dd-hero">
+      <div class="dd-hero-ico">${icon('gauge', 'w-5 h-5')}</div>
+      <div><div class="dd-hero-t">The Excel model — unpacked into charts</div>
+        <div class="dd-hero-s">${esc(xa.source || 'From the uploaded Excel financial model')} · ${n} section${n === 1 ? '' : 's'}. You shouldn't need to open the spreadsheet.</div></div></div>`));
+  if (xa.summary) wrap.appendChild(h(`<div class="dd-execsum"><div class="dd-execsum-h">${icon('sparkles', 'w-3.5 h-3.5')} In a nutshell</div><p>${esc(xa.summary)}</p></div>`));
+  xa.sections.forEach((s, i) => { const node = renderDDSection(s, i); if (node) wrap.appendChild(node); });
+  return wrap;
+}
+
+// Print/export: same blocks, folded into the report's section styling (mirrors frDeepDive).
+function frExcelAnalysis(c) {
+  if (!hasExcelAnalysis(c)) return '';
+  const secs = c.excelAnalysis.sections.map((s, i) => {
+    if (!s || !Array.isArray(s.blocks)) return '';
+    const blocks = s.blocks.map(renderDDBlock).filter(Boolean).join('');
+    if (!blocks) return '';
+    return `<div class="fr-dd-sec"><h3>${esc(s.title || ('Part ' + (i + 1)))}</h3>${s.summary ? `<p class="fr-cap">${esc(s.summary)}</p>` : ''}<div class="dd-blocks">${blocks}</div></div>`;
+  }).filter(Boolean).join('');
+  return secs ? (c.excelAnalysis.summary ? `<p class="fr-note" style="margin-bottom:10px">${esc(c.excelAnalysis.summary)}</p>` : '') + secs : '';
 }
 
 /* ---- 7h. Returns tab — the real PE returns model (JRG/Bloom methodology) ------
