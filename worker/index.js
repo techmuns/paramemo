@@ -963,32 +963,92 @@ function normalizeCompany(o, id, basics = {}) {
   if (comps) o.comps = comps; else delete o.comps;
   const dd = coerceDeepDive(o.deepDive);   // optional generic IM deep-dive — keep only when it has real blocks
   if (dd) o.deepDive = dd; else delete o.deepDive;
-  ensureRevenueMix(o.financials);   // derive the latest-actual segment donut if the model omitted it
+  ensureDerivedFinancials(o.financials);   // fill any derivable-but-omitted rows so nothing renders blank
   o._uploaded = true;  // marker (UI can badge uploaded deals if desired)
   return o;
 }
 
-// If the model didn't give financials.revenueMix but there IS a segment breakdown, derive the
-// latest-actual-year mix so the "revenue by segment" donut always renders when the data exists.
-function ensureRevenueMix(fin) {
+// "Never blank when the data is actually there." The model sometimes gives the absolute rows
+// (revenue, EBITDA, segments) but omits the ratios/CAGR/mix that are computable from them, which
+// would leave empty cells on the dashboard even though the numbers exist. Derive each ONLY when it
+// is missing — purely additive, so a well-formed memo is untouched.
+function ensureDerivedFinancials(fin) {
   if (!isObj(fin)) return;
-  const mix = fin.revenueMix;
-  if (isObj(mix) && Array.isArray(mix.slices) && mix.slices.length) return;
-  const seg = fin.segments;
   const years = Array.isArray(fin.years) ? fin.years : [];
-  if (!isObj(seg) || !Array.isArray(seg.rows) || !seg.rows.length || !years.length) return;
-  let idx = years.indexOf(fin.actualsThrough); if (idx < 0) idx = years.length - 1;
-  const slices = [];
-  for (const r of seg.rows) {
-    const v = Array.isArray(r.values) ? Number(r.values[idx]) : NaN;
-    if (isFinite(v) && v > 0) slices.push({ name: String((r && r.name) || '').trim() || 'Segment', _v: v });
+  const n = years.length;
+  const rows = isObj(fin.rows) ? fin.rows : (fin.rows = {});
+  const arr = k => (Array.isArray(rows[k]) ? rows[k] : null);
+  const filled = a => Array.isArray(a) && a.length === n && a.some(v => typeof v === 'number' && isFinite(v));
+  const rev = arr('revenue');
+
+  if (n) {
+    // YoY revenue growth % (first year null)
+    if (rev && !filled(rows.growthPct)) {
+      rows.growthPct = rev.map((v, i) => {
+        const a = Number(rev[i - 1]), b = Number(v);
+        return (i > 0 && a > 0 && isFinite(b)) ? Math.round((b / a - 1) * 100) : null;
+      });
+    }
+    // margin % = absolute ÷ revenue × 100
+    const marginFrom = (numKey, pctKey) => {
+      const num = arr(numKey);
+      if (rev && num && !filled(rows[pctKey])) {
+        rows[pctKey] = rev.map((v, i) => {
+          const r = Number(v), x = Number(num[i]);
+          return (r > 0 && isFinite(x)) ? Math.round(x / r * 100) : null;
+        });
+      }
+    };
+    marginFrom('ebitda', 'ebitdaPct');
+    marginFrom('pat', 'patPct');
+
+    // CAGR — ensure a period label exists, then compute per metric over that span when missing.
+    let cols = Array.isArray(fin.cagrCols) ? fin.cagrCols.filter(Boolean) : [];
+    if (!cols.length && n >= 3 && Number(rev && rev[0]) > 0) {
+      cols = [String(years[0]).replace(/[A-Za-z]+$/, '') + '–' + String(years[n - 1]).replace(/[A-Za-z]+$/, '')];
+    }
+    if (cols.length) {
+      fin.cagrCols = cols;
+      const idxOf = num => years.findIndex(y => fyN(y) === num);
+      const span = label => {
+        const m = String(label).match(/(\d{2,4})/g);
+        if (!m || m.length < 2) return null;
+        const s = idxOf(fyN('FY' + m[0])), e = idxOf(fyN('FY' + m[m.length - 1]));
+        return (s >= 0 && e > s) ? [s, e] : null;
+      };
+      const cg = (a, s, e) => {
+        const x = Number(a && a[s]), y = Number(a && a[e]);
+        return (x > 0 && isFinite(y) && e > s) ? Math.pow(y / x, 1 / (e - s)) - 1 : null;
+      };
+      const cagr = isObj(fin.cagr) ? fin.cagr : (fin.cagr = {});
+      for (const key of ['revenue', 'ebitda', 'pat']) {
+        const cur = cagr[key];
+        if (Array.isArray(cur) && cur.length === cols.length && cur.some(v => typeof v === 'number')) continue;
+        cagr[key] = cols.map(c => { const sp = span(c); return sp ? cg(arr(key), sp[0], sp[1]) : null; });
+      }
+    }
   }
-  const tot = slices.reduce((s, x) => s + x._v, 0);
-  if (!slices.length || tot <= 0) return;
-  fin.revenueMix = {
-    label: 'Revenue by segment (' + (years[idx] || 'latest') + ')',
-    slices: slices.map(x => ({ name: x.name, pct: Math.round(x._v / tot * 100) })),
-  };
+
+  // revenue-by-segment donut for the latest actual year, from the segment breakdown
+  const mix = fin.revenueMix;
+  if (!(isObj(mix) && Array.isArray(mix.slices) && mix.slices.length)) {
+    const seg = fin.segments;
+    if (isObj(seg) && Array.isArray(seg.rows) && seg.rows.length && n) {
+      let idx = years.indexOf(fin.actualsThrough); if (idx < 0) idx = n - 1;
+      const slices = [];
+      for (const r of seg.rows) {
+        const v = Array.isArray(r.values) ? Number(r.values[idx]) : NaN;
+        if (isFinite(v) && v > 0) slices.push({ name: String((r && r.name) || '').trim() || 'Segment', _v: v });
+      }
+      const tot = slices.reduce((s, x) => s + x._v, 0);
+      if (slices.length && tot > 0) {
+        fin.revenueMix = {
+          label: 'Revenue by segment (' + (years[idx] || 'latest') + ')',
+          slices: slices.map(x => ({ name: x.name, pct: Math.round(x._v / tot * 100) })),
+        };
+      }
+    }
+  }
 }
 
 // The illustrative-returns block drives the Returns tab and returns math, so it must always be
