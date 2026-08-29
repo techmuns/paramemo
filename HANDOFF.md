@@ -20,9 +20,12 @@
      Excel/CIM but *not yet wired* into the dashboard (opex structure, unit economics, BU-level
      revenue split, clinic ramp, fund use). Partly gated on a **client (Faraz) decision** about a
      "Full Excel breakdown" view toggle — do NOT build the toggle until the user relays Faraz's reply.
-  2. **Transaction comps completion** — offer standing: seed the Transaction Comps tab from the CIM's
-     named benchmarks (One Medical/Amazon, Optum, CVS MinuteClinic) and support per-deal
-     valuation-comps exports. Trading comps are already live/complete.
+  2. **Transaction comps completion** — DONE at the prompt level ("exhaustive comps extraction",
+     see §7/§9.2): the model is now told to pull EVERY named comparable/deal from the whole
+     document (competitive-landscape, international-benchmark, "Acquired by X" captions, the target's own
+     rounds) into `peerBenchmark`/`comps.transactions`, Indian or global, listed or unlisted. It takes
+     effect on the **next fresh upload** of a deal. Per-deal valuation-comps exports remain the
+     authoritative path (drop them in the "Other documents" upload slot). Trading comps already live/complete.
 
 ---
 
@@ -206,12 +209,27 @@ MediBuddy/Kenko/Seeking Care/etc.).
   `app.js` `attachCompsLive` overwrites the model's estimates with live numbers and marks `_live=true`.
   Verified live (2026-08-29): APOLLOHOSP EV/Rev 5.08, EV/EBITDA 36.3, PE 60.9; FORTIS 7.7/36.3/66.6;
   MAXHEALTH 11.65/45.2/67.9.
-- **Transaction comps = ⚠️ illustrative only unless a deal-comps file is uploaded.** These are precedent
-  M&A deals ("acquirer paid X× for a comparable"). The generator already parses an attached
-  **valuation-comps export** (PrivateCircle / Capital IQ / VCCEdge / Tracxn "transaction comparables"
-  sheet — the same shape as Mitesh's `Rigid Packaging – Transactions` Excel) into `comps.transactions`.
-  Visit had none uploaded, so only AI-illustrative disclosed deals + Visit's own ₹440–490 Cr last round
-  show. **The client's phrase "valuation report for different companies" = exactly these exports.**
+- **Transaction comps = precedent M&A deals** ("acquirer paid X× for a comparable"). Two ways they fill:
+  1. **From the deal's own documents (exhaustive extraction — shipped).** The prompt now scans the WHOLE
+     document for every named deal/acquisition/round — competitive-landscape sections, international-
+     benchmark / case-study slides, any "Acquired by X" caption, and the target's OWN prior rounds/last
+     valuation — Indian or global, listed or unlisted, with honest provenance and null undisclosed
+     multiples. For Visit this means One Medical/Amazon, Optum, CVS MinuteClinic (CIM p.26) + Visit's own
+     ₹440–490 Cr last round now come through on a fresh upload; before this fix they were skipped because
+     they weren't in a section literally headed "transactions".
+  2. **From an uploaded valuation-comps export (authoritative).** A PrivateCircle / Capital IQ / VCCEdge /
+     Tracxn "transaction comparables" sheet (same shape as Mitesh's `Rigid Packaging – Transactions`
+     Excel), dropped in the **"Other documents"** slot of the "Add a deal" modal, is parsed directly into
+     `comps.transactions`. **The client's phrase "valuation report for different companies" = exactly
+     these exports.**
+
+  **How to add reports on the dashboard:** click **"+ Add a deal"** → in the modal, under the required IM
+  + Excel, use **"Other documents (optional)"** (multi-file: PDF/XLSX/CSV/images) → drop the valuation /
+  transaction reports there → generate. The AI maps each export's rows into the Transaction Comps table
+  (date, target, buyer, seller, type, % sought, deal value, EV/EBITDA, EV/Revenue) with an auto median
+  row. To add reports to an EXISTING deal there's currently no "attach to this deal" button — you re-run
+  the deal with the export attached (a fresh upload replaces the memo). Adding a one-click
+  "attach & regenerate" is a candidate improvement if the user wants it.
 
 **Provenance honesty rules baked into the prompt** (don't regress): trading multiples are labeled
 "Listed peers · indicative multiples (model estimate — verify)" and never "live" in the model output
@@ -251,12 +269,16 @@ view **toggle**: *Option 1* = current "Consolidated + IM" view vs *Option 2* = a
 view. **The user said "wait" for Faraz's reply. Do NOT build the toggle until the user relays the answer.**
 Surfacing the *unused data itself* (the bullets above) can proceed if the user asks, independent of the toggle.
 
-### 9.2 Transaction comps — completion
-- **Standing offer to the user:** seed the Transaction Comps tab from the CIM's already-named benchmarks
-  (One Medical/Amazon, Optum Health, CVS MinuteClinic), clearly labeled "per CIM / publicly reported,"
-  so the tab isn't empty before any export arrives. **Wait for the user's go-ahead** before building.
-- **General fix:** support one **valuation-comps export per deal** (already parsed into `comps.transactions`);
-  document for the user that dropping such a file in per deal is how transaction comps become fully real.
+### 9.2 Transaction comps — completion  (prompt fix SHIPPED)
+- **DONE:** exhaustive comps extraction is live in the prompt (worker) — every named comparable/deal from
+  the whole document now flows into `peerBenchmark`/`comps.transactions`, Indian or global, listed or
+  unlisted (competitive-landscape, international-benchmark, "Acquired by X", target's own rounds). Applies
+  on the **next fresh upload**. For Visit that surfaces One Medical/Amazon, Optum, CVS MinuteClinic + the
+  ₹440–490 Cr last round, alongside the banker-note peers (MediBuddy/Kenko/Seeking Care).
+- **Authoritative path unchanged:** a valuation-comps export dropped in the "Other documents" upload slot
+  is parsed directly into `comps.transactions` — the most reliable source for private names/deals.
+- **Possible follow-up (not built):** a one-click "attach a report to an EXISTING deal & regenerate" so
+  the user doesn't have to re-upload the IM+Excel to add a valuation export later.
 
 ### 9.3 Screener-via-Playwright scraper — only if needed
 The user offered Screener.in login creds (to add as GitHub Actions secrets) for a Playwright scrape.
