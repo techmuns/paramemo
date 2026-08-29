@@ -426,11 +426,15 @@ async function handleGenerate(request, env, ctx) {
     'Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
     'DEAL / TRANSACTION TERMS: fill "transaction" from the banker notes / IM deal section — not just the raise size. transaction.headline is the one-line deal summary a partner reads first, so LEAD WITH THE VALUATION whenever the documents state one. If there is a stated seller VALUATION ASK (e.g. "Seller Valuation Ask ~₹2,000 cr"), an INBOUND indication (e.g. "~₹1,800 cr inbound"), and/or a LAST-ROUND valuation, put them in the headline (e.g. "Primary raise at ~₹2,000 cr valuation ask; ~₹1,800 cr inbound already received; last round ~₹460 cr"). NEVER bury a stated valuation behind "amount TBD". transaction.amountCr = the primary raise cheque in ₹ cr IF a raise size is stated; if only a valuation (not a raise amount) is given, still surface that valuation in the headline and set transaction.amountSource to "banker notes" / "IM stated" accordingly. transaction.type reflects what is stated (Primary / Secondary / Primary + Secondary).\n\n' +
     'RETURNS (ALWAYS include — this is the ONE illustrative block: the entry/exit assumptions for a base-case returns model. The app computes the money multiple and IRR itself by pulling EBITDA and net debt for entryYear/exitYear straight from the financials you output, so pick sensible YEARS and MULTIPLES rather than pre-computing proceeds):\n' +
-    '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", entryYear:"<FYxx>", exitYear:"<FYxx>", defaults:{ entryX:<number>, exitX:<number>, growthPct:<number>, years:<number>, underdeliverPct:<number> } }. Every field is REQUIRED; numbers except the year strings. Never null, never omit.\n' +
+    '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", entryYear:"<FYxx>", exitYear:"<FYxx>", defaults:{ entryBasis:"ebitda"|"revenue"|"pat", exitBasis:"ebitda"|"revenue"|"pat", entryX:<number>, exitX:<number>, growthPct:<number>, years:<number>, underdeliverPct:<number> } }. Every field is REQUIRED; numbers except the year/basis strings. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected. ALSO set transaction.amountSource to exactly one of "IM stated" / "banker notes" / "assumption" so a partner can see whether the raise size is real or assumed — and if it is an assumption, keep it plausible against revenue (a growth-equity primary is rarely more than ~1× current revenue).\n' +
-    '• entryYear = a recent year with MEANINGFUL POSITIVE EBITDA to enter on (the latest actual, or the nearest forward year if the latest actual EBITDA is negligible/negative). startYear = entryYear and startEbitdaCr = that year\'s EBITDA in ₹ cr (positive, matching financials).\n' +
+    '• entryYear = a recent year to enter on: the latest actual (or nearest forward year) with a positive value on your chosen entryBasis — positive EBITDA for an EBITDA/PAT basis; any year with positive revenue for a revenue basis. startYear = entryYear and startEbitdaCr = that year\'s EBITDA in ₹ cr (still recorded even on a revenue basis; keep it positive and matching financials).\n' +
     '• exitYear = the LAST projected year in the model (the end of management\'s forecast horizon) — this is where the exit EBITDA comes from, so the model uses management\'s OWN projection for the exit, not a growth guess. Both entryYear and exitYear MUST be values that appear verbatim in financials.years.\n' +
-    '• defaults = standard PE assumptions, illustrative not extracted: entryX = entry EV/EBITDA multiple (typically 10–16×, sector-appropriate); exitBasis = "ebitda" by default, or "pe" when the deal is naturally valued on earnings (consumer/retail/financials — e.g. the peers block benchmarks on P/E); exitX = the exit multiple on that basis (an EV/EBITDA multiple like ~10–16×, or a P/E like ~15–30× when exitBasis is "pe"); growthPct = a plausible EBITDA growth % anchored to the model (kept for reference); years = hold period; underdeliverPct = 0 (the default management-case haircut; the partner raises it to stress-test).\n\n' +
+    '• defaults = illustrative PE assumptions. CRITICAL — choose the BASIS the deal is actually priced on so entryX/exitX stay SANE, readable multiples; NEVER output a distorted multiple like 40× or 122× EV/EBITDA to force-fit a valuation:\n' +
+    '   – "revenue" basis for a high-growth, thin- or early-EBITDA company priced on REVENUE (the classic case: the stated valuation ask works out to a clean revenue multiple — e.g. a ₹2,000 cr ask on ₹384 cr revenue ≈ 5× revenue — while the same ask on EBITDA would be an absurd 100×+; a banker/IM pricing the deal on revenue is the tell). Then entryX ≈ the ask\'s revenue multiple (~3–8×) and exitX ≈ a sensible, usually LOWER, forward revenue multiple (~2–5×).\n' +
+    '   – "pat" (P/E) basis when the deal is naturally valued on earnings (consumer/retail/financials, or the peers block benchmarks on P/E): entryX/exitX ~15–30×.\n' +
+    '   – "ebitda" basis for a normal profitable company: entryX/exitX ~10–16×.\n' +
+    '   RULE: if entering on EBITDA at the deal\'s stated valuation would require a multiple above ~30×, the deal is NOT EBITDA-priced — use "revenue" basis instead. When a valuation ask is stated, pick basis + entryX so the implied entry value is in the BALLPARK of that ask (entry metric × entryX ≈ the ask), not a generic multiple that ignores it. Set entryBasis and exitBasis to the same basis unless the deal clearly re-rates. growthPct = a plausible growth % anchored to the model; years = hold period; underdeliverPct = 0 (the partner raises it to stress-test).\n\n' +
     'CONSISTENCY: returns.startYear/startEbitdaCr, the fit rationale and the checklist notes must all agree with the ' +
     'financials you output (same years, same actual-vs-forecast split).';
 
@@ -958,8 +962,32 @@ function normalizeCompany(o, id, basics = {}) {
   if (comps) o.comps = comps; else delete o.comps;
   const dd = coerceDeepDive(o.deepDive);   // optional generic IM deep-dive — keep only when it has real blocks
   if (dd) o.deepDive = dd; else delete o.deepDive;
+  ensureRevenueMix(o.financials);   // derive the latest-actual segment donut if the model omitted it
   o._uploaded = true;  // marker (UI can badge uploaded deals if desired)
   return o;
+}
+
+// If the model didn't give financials.revenueMix but there IS a segment breakdown, derive the
+// latest-actual-year mix so the "revenue by segment" donut always renders when the data exists.
+function ensureRevenueMix(fin) {
+  if (!isObj(fin)) return;
+  const mix = fin.revenueMix;
+  if (isObj(mix) && Array.isArray(mix.slices) && mix.slices.length) return;
+  const seg = fin.segments;
+  const years = Array.isArray(fin.years) ? fin.years : [];
+  if (!isObj(seg) || !Array.isArray(seg.rows) || !seg.rows.length || !years.length) return;
+  let idx = years.indexOf(fin.actualsThrough); if (idx < 0) idx = years.length - 1;
+  const slices = [];
+  for (const r of seg.rows) {
+    const v = Array.isArray(r.values) ? Number(r.values[idx]) : NaN;
+    if (isFinite(v) && v > 0) slices.push({ name: String((r && r.name) || '').trim() || 'Segment', _v: v });
+  }
+  const tot = slices.reduce((s, x) => s + x._v, 0);
+  if (!slices.length || tot <= 0) return;
+  fin.revenueMix = {
+    label: 'Revenue by segment (' + (years[idx] || 'latest') + ')',
+    slices: slices.map(x => ({ name: x.name, pct: Math.round(x._v / tot * 100) })),
+  };
 }
 
 // The illustrative-returns block drives the Returns tab and returns math, so it must always be
@@ -975,15 +1003,23 @@ function coerceReturns(o) {
   const revrow = Array.isArray(rows.revenue) ? rows.revenue : [];
   const posEbitda = i => typeof ebitda[i] === 'number' && ebitda[i] > 0;
 
-  // defaults (entry/exit multiples, growth, hold) — keep the model's when sane, else PE-standard
+  // defaults (entry/exit basis + multiples, growth, hold) — keep the model's when sane, else PE-standard.
+  // Basis can be "ebitda" (EV/EBITDA), "revenue" (EV/Revenue, for revenue-priced growth deals) or
+  // "pat" (P/E). Legacy memos stored "pe" — map it to "pat". A basis-appropriate default multiple is
+  // used only when the model omits one.
+  const okBasis = b => (b === 'revenue' || b === 'ebitda' || b === 'pat') ? b : (b === 'pe' ? 'pat' : null);
   const din = isObj(r.defaults) ? r.defaults : {};
+  const entryBasis0 = okBasis(din.entryBasis) || 'ebitda';
+  const exitBasis0  = okBasis(din.exitBasis)  || entryBasis0;
+  const dfltMult = b => b === 'revenue' ? 4 : b === 'pat' ? 18 : 12;
   const defaults = {
-    entryX: num(din.entryX) > 0 ? din.entryX : 12,
-    exitX:  num(din.exitX)  > 0 ? din.exitX  : 13,
+    entryBasis: entryBasis0,
+    exitBasis:  exitBasis0,
+    entryX: num(din.entryX) > 0 ? din.entryX : dfltMult(entryBasis0),
+    exitX:  num(din.exitX)  > 0 ? din.exitX  : dfltMult(exitBasis0),
     growthPct: num(din.growthPct) != null ? din.growthPct : 18,
     years:  num(din.years) > 0 ? Math.round(din.years) : 5,
     underdeliverPct: num(din.underdeliverPct) >= 0 ? din.underdeliverPct : 0,   // management-case haircut on exit earnings
-    exitBasis: din.exitBasis === 'pe' ? 'pe' : 'ebitda',   // price the exit on EV/EBITDA (default) or P/E
   };
 
   // start year + starting EBITDA: prefer the model; else pick a year with meaningful positive EBITDA
@@ -1022,6 +1058,28 @@ function coerceReturns(o) {
   let exitYear = (typeof r.exitYear === 'string' && years.includes(r.exitYear)) ? r.exitYear : '';
   if (!exitYear) { for (let i = years.length - 1; i >= 0; i--) if (posEbitda(i)) { exitYear = years[i]; break; } }
   if (!exitYear || (num(exitYear) != null && fyN(exitYear) <= fyN(entryYear))) exitYear = years[years.length - 1] || entryYear;
+
+  // Guard: an absurd EV/EBITDA multiple (>40×) means the deal is really priced on REVENUE (thin/early
+  // EBITDA — e.g. a ₹2,000 cr ask on ₹16 cr EBITDA = 122×). Re-express entry (and exit) on a revenue
+  // basis, PRESERVING the valuation the model implied, so the Returns tab shows a readable ~5× revenue
+  // instead of 122× EBITDA. Deterministic backstop for when the model ignores the basis guidance.
+  const at = (arr, y) => num(arr[years.indexOf(y)]);
+  if (defaults.entryBasis === 'ebitda' && defaults.entryX > 40) {
+    const entryRev = at(revrow, entryYear);
+    if (entryRev > 0) {
+      const entryEV = defaults.entryX * (startEbitdaCr || at(ebitda, entryYear) || 0);
+      defaults.entryBasis = 'revenue';
+      defaults.entryX = Math.max(0.5, Math.round(entryEV / entryRev * 10) / 10);
+      if (defaults.exitBasis === 'ebitda') {
+        const exitRev = at(revrow, exitYear), exitEbd = at(ebitda, exitYear);
+        const exitEV = (exitEbd > 0 ? defaults.exitX * exitEbd : 0);
+        defaults.exitBasis = 'revenue';
+        defaults.exitX = (exitRev > 0 && exitEV > 0)
+          ? Math.max(0.5, Math.round(exitEV / exitRev * 10) / 10)
+          : Math.max(0.5, Math.round(defaults.entryX * 0.7 * 10) / 10);
+      }
+    }
+  }
 
   return { investmentCr, startEbitdaCr, startYear, entryYear, exitYear, defaults };
 }
