@@ -1707,7 +1707,8 @@ function printFinTable(c) {
     return gh + present.map(r => {
       const arr = fin.rows[r.key];
       const cells = years.map((y, i) => {
-        const v = arr[i], fc = i >= cut ? 'fc' : '';
+        let v = arr[i]; const fc = i >= cut ? 'fc' : '';
+        if (r.kind === 'pct' && !pctHasBase(fin.rows, r.key, i)) v = null;   // no base metric → "—", not "0%"
         if (v == null) return `<td class="${fc}">—</td>`;
         return `<td class="${fc} ${v < 0 ? 'neg' : ''}">${r.kind === 'pct' ? v + '%' : fmtNum(v)}</td>`;
       }).join('');
@@ -2494,6 +2495,11 @@ function renderFinControls(c) {
   return el;
 }
 
+// A margin / ratio % is only meaningful when its base metric exists for that year. If the base is
+// blank (e.g. the model has no PAT line at all), show "—" for the % too — never a misleading "0%".
+const PCT_BASE = { patPct: 'pat', ebitdaPct: 'ebitda', grossMarginPct: 'revenue', growthPct: 'revenue', roePct: 'netWorth', rocePct: 'netWorth' };
+const pctHasBase = (rows, key, i) => { const b = PCT_BASE[key]; if (!b) return true; const arr = rows && rows[b]; return Array.isArray(arr) && arr[i] != null; };
+
 // Hero summary table. Sticky first column + sticky header; forecast columns tinted.
 function renderFinTable(c) {
   const v = finView(c);
@@ -2528,7 +2534,8 @@ function renderFinTable(c) {
       let tr = `<tr class="${r.sub ? 'subrow' : ''}"><td class="rowhead">${esc(r.label)}</td>`;
       visible.forEach((val, i) => {
         const fcCls = (v.isForecast(i) ? 'fc' : '') + (i === v.actualsCut ? ' fc-start' : '');
-        tr += finCell(val, r, maxAbs, fcCls);
+        const cell = (r.kind === 'pct' && !pctHasBase(rows, r.key, i)) ? null : val;   // no base metric → "—", not "0%"
+        tr += finCell(cell, r, maxAbs, fcCls);
       });
       cagrCols.forEach((cc, ci) => tr += (r.kind === 'cr' && cagr[r.key]) ? cagrCell(cagr[r.key][ci]) : '<td class="val cagr muted"></td>');
       tbody.appendChild(h(tr + '</tr>'));
