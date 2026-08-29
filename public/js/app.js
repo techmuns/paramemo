@@ -2818,20 +2818,25 @@ function attachCompsLive(card, c, rows) {
       try {
         const res = await fetch(apiUrl('peer-multiple') + '?ticker=' + encodeURIComponent(r.ticker));
         const d = await res.json().catch(() => ({}));
-        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), evCr: _num(d.evCr), evEbitda: _num(d.evEbitda), evRevenue: _num(d.evRevenue), roe: _num(d.roe) };
+        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), evCr: _num(d.evCr), evEbitda: _num(d.evEbitda), evRevenue: _num(d.evRevenue), revenueCr: _num(d.revenueCr), ebitdaPct: _num(d.ebitdaPct), roe: _num(d.roe), via: d.via };
       } catch (_) { byTicker[r.ticker] = byTicker[r.ticker] || {}; }
     }));
     c._peerLive = { ts: nowLabel(), byTicker };
     // Backfill the trading table's blank cells (mkt cap, EV, and the multiples) from live data,
     // then re-render the tab so the median row + Returns hint recompute off the fresh multiples.
     let filled = false;
+    // For LISTED peers, live market data is authoritative — OVERWRITE the model's indicative estimates
+    // so every column shows real figures (a failed fetch leaves that peer's estimate untouched).
     listed.forEach(r => {
       const d = byTicker[r.ticker]; if (!d) return;
-      if (d.marketCapCr != null && r.marketCapCr == null) { r.marketCapCr = Math.round(d.marketCapCr); filled = true; }
-      if (d.evCr != null && r.evCr == null) { r.evCr = Math.round(d.evCr); filled = true; }
-      if (d.evEbitda != null && r.evEbitda == null) { r.evEbitda = d.evEbitda; filled = true; }
-      if (d.evRevenue != null && r.evRevenue == null) { r.evRevenue = d.evRevenue; filled = true; }
-      if (d.pe != null && r.pe == null) { r.pe = Math.round(d.pe * 10) / 10; filled = true; }
+      if (d.marketCapCr != null) { r.marketCapCr = Math.round(d.marketCapCr); filled = true; }
+      if (d.evCr != null) { r.evCr = Math.round(d.evCr); filled = true; }
+      if (d.revenueCr != null) { r.revenueCr = Math.round(d.revenueCr); filled = true; }
+      if (d.ebitdaPct != null) { r.ebitdaPct = Math.round(d.ebitdaPct); filled = true; }
+      if (d.evEbitda != null) { r.evEbitda = d.evEbitda; filled = true; }
+      if (d.evRevenue != null) { r.evRevenue = d.evRevenue; filled = true; }
+      if (d.pe != null) { r.pe = Math.round(d.pe * 10) / 10; filled = true; }
+      if (filled) r._live = true;
     });
     if (filled && box.isConnected) { renderTabPanel(c, 'comps'); return; }
     if (box.isConnected) renderPanel();

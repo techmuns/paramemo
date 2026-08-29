@@ -152,6 +152,14 @@ async function handlePeerMultiple(request, env) {
   try {
     const m = await peerViaMunshot(ticker, env);
     if (m && (m.pe != null || m.marketCapCr != null || m.evEbitda != null || m.evRevenue != null)) return json({ ticker, ok: true, via: 'munshot', ...m });
+  } catch (_) { /* fall through to Yahoo */ }
+
+  // 1b) Yahoo Finance — free, reliable, covers NSE tickers, returns the comp multiples directly. This is
+  //     what fills the live table now that scrape.do's monthly quota is exhausted (and Munshot lacks
+  //     many tickers). Purely additive; never throws.
+  try {
+    const y = await peerViaYahoo(ticker, env);
+    if (y && (y.pe != null || y.marketCapCr != null || y.evEbitda != null || y.evRevenue != null)) return json({ ticker, ok: true, via: 'yahoo', ...y });
   } catch (_) { /* fall through to the screener path */ }
 
   // 2) screener.in fallback (scrape.do when keyed, else direct — may be blocked for datacenter IPs).
@@ -221,6 +229,57 @@ async function peerViaMunshot(ticker, env) {
   const er = r2(gv('EV/Revenue')); if (er != null) out.evRevenue = er;
   const pb = r2(gv('Price-to-Book')); if (pb != null) out.pb = pb;
   const roe = gv('Return on Equity'); if (roe != null) out.roe = Math.round(roe);
+  return Object.keys(out).length ? out : null;
+}
+
+// Yahoo Finance quoteSummary for a listed peer — FREE, reliable, covers NSE ".NS" tickers, and returns
+// the comp multiples directly (market cap, trailing P/E, EV/EBITDA, EV/Revenue). Needs a one-time
+// crumb+cookie handshake (cached in KV ~20 min). No scraping proxy / quota, so it survives scrape.do
+// running out. Money comes back as absolute ₹ → convert to ₹ crore. Never throws to the caller.
+const YH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
+async function yahooCreds(env) {
+  try { const c = JSON.parse((env.DEALS ? await env.DEALS.get('yahoo:creds') : null) || 'null'); if (c && c.crumb && c.cookie) return c; } catch { /* refetch */ }
+  try {
+    const r1 = await fetch('https://fc.yahoo.com/', { headers: { 'user-agent': YH_UA }, signal: AbortSignal.timeout(10000) });
+    const setc = typeof r1.headers.getSetCookie === 'function' ? r1.headers.getSetCookie() : [r1.headers.get('set-cookie')].filter(Boolean);
+    const cookie = setc.map(s => String(s).split(';')[0]).filter(Boolean).join('; ');
+    if (!cookie) return null;
+    const r2 = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', { headers: { 'user-agent': YH_UA, cookie }, signal: AbortSignal.timeout(10000) });
+    const crumb = (await r2.text()).trim();
+    if (!crumb || crumb.length > 40 || /[<>{}\s]/.test(crumb)) return null;   // a crumb is a short opaque token, not an HTML error page
+    const creds = { crumb, cookie };
+    if (env.DEALS) { try { await env.DEALS.put('yahoo:creds', JSON.stringify(creds), { expirationTtl: 1200 }); } catch { /* best-effort */ } }
+    return creds;
+  } catch { return null; }
+}
+async function peerViaYahoo(ticker, env) {
+  const creds = await yahooCreds(env);
+  if (!creds) return null;
+  const sym = ticker.includes('.') ? ticker : ticker + '.NS';
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=summaryDetail,defaultKeyStatistics,financialData&crumb=${encodeURIComponent(creds.crumb)}`;
+  const res = await fetch(url, { headers: { 'user-agent': YH_UA, cookie: creds.cookie }, signal: AbortSignal.timeout(12000) });
+  if (!res.ok) {
+    // A stale crumb/cookie returns 401 — drop the cache so the next call re-handshakes and self-heals.
+    if (res.status === 401 && env.DEALS) { try { await env.DEALS.delete('yahoo:creds'); } catch { /* best-effort */ } }
+    return null;
+  }
+  let data; try { data = await res.json(); } catch { return null; }
+  const r = data && data.quoteSummary && Array.isArray(data.quoteSummary.result) && data.quoteSummary.result[0];
+  if (!r) return null;
+  const sd = r.summaryDetail || {}, ks = r.defaultKeyStatistics || {}, fd = r.financialData || {};
+  const raw = o => (o && typeof o.raw === 'number' && isFinite(o.raw)) ? o.raw : null;
+  const rnd = n => n == null ? null : Math.round(n * 100) / 100;
+  const toCr = n => n == null ? null : Math.round(n / 1e7);
+  const out = {};
+  const mc = raw(sd.marketCap) != null ? raw(sd.marketCap) : raw(ks.marketCap); if (mc != null) out.marketCapCr = toCr(mc);
+  const ev = raw(ks.enterpriseValue); if (ev != null) out.evCr = toCr(ev);
+  const pe = raw(sd.trailingPE) != null ? raw(sd.trailingPE) : raw(ks.trailingPE); if (pe != null) out.pe = rnd(pe);
+  const ee = raw(ks.enterpriseToEbitda); if (ee != null) out.evEbitda = rnd(ee);
+  const er = raw(ks.enterpriseToRevenue); if (er != null) out.evRevenue = rnd(er);
+  const rev = raw(fd.totalRevenue); if (rev != null) out.revenueCr = toCr(rev);
+  const em = raw(fd.ebitdaMargins); if (em != null) out.ebitdaPct = Math.round(em * 100);
+  // Backfill revenue from EV ÷ (EV/Revenue) when the revenue line itself is absent, so the column is never blank.
+  if (out.revenueCr == null && out.evCr != null && out.evRevenue) out.revenueCr = Math.round(out.evCr / out.evRevenue);
   return Object.keys(out).length ? out : null;
 }
 
