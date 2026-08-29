@@ -633,6 +633,15 @@ async function startDeepDive(id, payload) {
   }
 }
 
+// Kick off the Deep Dive for a deal that finished WITHOUT this tab running the build itself —
+// i.e. a GitHub-Actions (or any server-side) job we only saw complete via polling. The core memo
+// stored its IM text server-side, so startDeepDive({}) lets the worker rebuild the inputs. Best-
+// effort and idempotent: skips samples, deals that already have a Deep Dive, or one already running.
+function maybeAutoDeepDive(c) {
+  if (!c || isSample(c) || c.deepDive || c._deepDivePending || c._deepDiveFailed) return;
+  startDeepDive(c.id, c._ddInputs || {});
+}
+
 // Cancel a build in progress: abort this tab's request, drop the card, and clear the server record.
 // (The server may still finish a build already in flight — if a deal lands anyway, it's removable.)
 function cancelJob(id) {
@@ -716,12 +725,12 @@ function reconcileJobsFromServer(d) {
     if (j.status !== 'running' || j._streaming) return;   // a live stream in this tab owns its own job
     const sj = byId[j.id];
     if (sj && sj.status === 'error') { j.status = 'error'; j.error = sj.error || 'The build failed — please try again.'; j.finishedAt = sj.finishedAt || now; changed = true; return; }
-    if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; changed = true; return; }
+    if (sj && sj.status === 'done') { j.status = 'done'; j.error = null; j.finishedAt = sj.finishedAt || now; j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); changed = true; return; }
     // No decisive record yet. If the finished deal itself has shown up (matched by the name the
     // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
     if (j.name && j.name !== 'New deal') {
       const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
-      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); changed = true; return; }
+      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); changed = true; return; }
     }
     // Only a build well past the worker's own limits (record never resolved) is treated as stuck.
     if (now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
@@ -2104,12 +2113,17 @@ function renderManagement(c) {
   const scroll = h('<div class="table-scroll"></div>');
   const table = h(`<table class="mini-table"><thead><tr><th>Name</th><th>Role</th><th>Background</th></tr></thead><tbody></tbody></table>`);
   const tb = table.querySelector('tbody');
-  (c.snapshot && c.snapshot.management || []).forEach(m =>
+  (c.snapshot && c.snapshot.management || []).forEach(m => {
+    const nm = personName(m), role = m.role || '';
+    // No personal name on the slide → the role IS the identity; show it once, don't duplicate.
+    const nameCell = nm || role || '—';
+    const roleCell = nm ? role : '';
     tb.appendChild(h(`<tr>
-      <td class="font-semibold text-ink whitespace-nowrap">${esc(m.name)}</td>
-      <td class="text-navy font-medium whitespace-nowrap">${esc(m.role)}</td>
-      <td class="text-ink-muted">${esc(m.note)}</td>
-    </tr>`)));
+      <td class="font-semibold text-ink whitespace-nowrap">${esc(nameCell)}</td>
+      <td class="text-navy font-medium whitespace-nowrap">${esc(roleCell)}</td>
+      <td class="text-ink-muted">${m.note ? esc(m.note) : ''}</td>
+    </tr>`));
+  });
   scroll.appendChild(table);
   return sectionCard('Management', 'users', scroll);
 }
@@ -2631,7 +2645,7 @@ function renderComps(c) {
     wrap.appendChild(h(`
       <div class="comps-intro">
         <div class="section-title mb-0"><span class="sec-ico">${icon('scale', 'w-4 h-4')}</span>Valuation comps</div>
-        <p class="text-[12.5px] text-ink-muted mt-1">What comparable companies are worth — <b>trading comps</b> (listed peers' current multiples) and <b>transaction comps</b> (multiples paid in past M&amp;A / PE deals). Listed names refresh live; private names and deals come from a Private Circle / valuation export.</p>
+        <p class="text-[12.5px] text-ink-muted mt-1">What comparable companies are worth — <b>trading comps</b> (listed peers' current multiples) and <b>transaction comps</b> (multiples paid in past M&amp;A / PE deals). Listed multiples are indicative estimates (refreshed live where the market-data source returns them); private names and deals come from a Private Circle / valuation export.</p>
       </div>`));
     if (hasTrading) { wrap.appendChild(renderTradingComps(c, k.trading));    any = true; }
     if (hasTxn)     { wrap.appendChild(renderTransactionComps(c, k.transactions)); any = true; }
@@ -2646,7 +2660,7 @@ function renderComps(c) {
       <div class="coming">
         <div class="cs-ico">${icon('scale', 'w-6 h-6')}</div>
         <div class="text-[15px] font-semibold text-ink">No valuation comps yet</div>
-        <p class="text-[13px] text-ink-muted mt-1 max-w-md">Trading comps (listed peers) and transaction comps (past deals) appear here from the deal's listed peer set — refreshed live — or from a Private Circle / valuation export you add for the private names.</p>
+        <p class="text-[13px] text-ink-muted mt-1 max-w-md">Trading comps (listed peers) and transaction comps (past deals) appear here from the deal's listed peer set (multiples indicative, refreshed live where available) or from a Private Circle / valuation export you add for the private names.</p>
       </div>`));
   }
   return wrap;
@@ -2702,7 +2716,7 @@ function renderTradingComps(c, tr) {
         <thead><tr><th>Company</th><th class="num">Mkt cap</th><th class="num">EV</th><th class="num">Revenue</th><th class="num">EBITDA %</th><th class="num">EV/EBITDA</th><th class="num">EV/Revenue</th><th class="num">P/E</th></tr></thead>
         <tbody>${rows.map(line).join('')}${medRow}</tbody></table></div>
       <div data-comps-live class="mt-3"></div>
-      <p class="text-[11px] text-ink-hint mt-2">${esc(tr.asOf ? 'As of ' + tr.asOf + '. ' : '')}${esc(tr.source ? tr.source + '. ' : '')}Listed peers' multiples are public — shown here and refreshed live; the median feeds the entry-multiple hint on Returns.</p>
+      <p class="text-[11px] text-ink-hint mt-2">${esc(tr.asOf ? 'As of ' + tr.asOf + '. ' : '')}${esc(tr.source ? tr.source + '. ' : '')}Multiples shown are indicative estimates for the listed peer set — verify against a market terminal before use. The live pull below refreshes market cap / P·E where the data source returns them; the median feeds the entry-multiple hint on Returns.</p>
     </div>`);
   attachCompsLive(card, c, rows);
   return card;
