@@ -4530,6 +4530,31 @@ function _canvasToB64(c, quality) {
 // Back-compat single-file wrapper (IM-only path + tests).
 async function renderPdfPageImages(file, opts) { return renderAllDocImages([file], opts); }
 // Excel → CSV of the best financial sheet(s) via SheetJS (capped ~40k chars).
+// Wide financial models repeat every line across ~12 MONTHLY columns per year. On a big workbook
+// (Visit's has 90+ sheets) those monthly columns blow past the size cap and starve later summary
+// sheets — so some city / segment tabs never reach the model. Drop month-only columns (the ANNUAL /
+// FY columns carry the same figures), so far more sheets fit within the same budget. Falls back to
+// the full CSV when a sheet has no monthly columns (the common case), leaving ordinary models untouched.
+const MONTH_HEAD = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
+function sheetToCompactCsv(ws) {
+  let rows;
+  try { rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' }); }
+  catch { return window.XLSX.utils.sheet_to_csv(ws); }
+  if (!rows.length) return '';
+  const ncols = Math.max(...rows.map(r => r.length));
+  const keep = [];
+  for (let c = 0; c < ncols; c++) {
+    let monthly = false;
+    for (let r = 0; r < Math.min(8, rows.length); r++) {
+      const v = rows[r][c];
+      if (typeof v === 'string' && v.trim().length <= 9 && MONTH_HEAD.test(v.trim())) { monthly = true; break; }
+    }
+    if (!monthly) keep.push(c);
+  }
+  if (keep.length === ncols || keep.length === 0) return window.XLSX.utils.sheet_to_csv(ws);   // nothing to trim → unchanged
+  const esc = s => { s = s == null ? '' : String(s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return rows.map(r => keep.map(c => esc(r[c])).join(',')).join('\n').replace(/\n(?:,*\n)+/g, '\n');
+}
 async function parseExcel(file, cap = 100000) {
   const buf = await file.arrayBuffer();
   const wb = window.XLSX.read(buf, { type: 'array' });
@@ -4568,7 +4593,7 @@ async function parseExcel(file, cap = 100000) {
   };
   let csv = '';
   for (const n of chosen) {
-    const sheetCsv = window.XLSX.utils.sheet_to_csv(wb.Sheets[n]);
+    const sheetCsv = sheetToCompactCsv(wb.Sheets[n]);
     const unit = unitOf(sheetCsv);
     csv += `# Sheet: ${n}${unit ? ` — reporting unit: ${unit}` : ''}\n` + sheetCsv + '\n\n';
     if (csv.length > cap) break;
