@@ -424,7 +424,7 @@ async function handleGenerate(request, env, ctx) {
     'When that happens STILL list the person: put their title in "role", the education / prior-experience / tenure in "note", and set "name" to their ROLE/title itself — NEVER the string "To be confirmed". The role IS their identity. ' +
     'Only use a single "To be confirmed" entry (or an empty list) when the documents describe NO people at all — no names AND no roles/backgrounds. Never collapse several described co-founders into one "To be confirmed" line, and never invent a personal name, title or background that is not shown. ' +
     'Ownership percentages must sum to ~100% and only when the documents state them; otherwise use an ownershipNote.\n\n' +
-    'DEAL / TRANSACTION TERMS: fill "transaction" from the banker notes / IM deal section — not just the raise size. transaction.headline is the one-line deal summary a partner reads first, so LEAD WITH THE VALUATION whenever the documents state one. If there is a stated seller VALUATION ASK (e.g. "Seller Valuation Ask ~₹2,000 cr"), an INBOUND indication (e.g. "~₹1,800 cr inbound"), and/or a LAST-ROUND valuation, put them in the headline (e.g. "Primary raise at ~₹2,000 cr valuation ask; ~₹1,800 cr inbound already received; last round ~₹460 cr"). NEVER bury a stated valuation behind "amount TBD". transaction.amountCr = the primary raise cheque in ₹ cr IF a raise size is stated; if only a valuation (not a raise amount) is given, still surface that valuation in the headline and set transaction.amountSource to "banker notes" / "IM stated" accordingly. transaction.type reflects what is stated (Primary / Secondary / Primary + Secondary).\n\n' +
+    'DEAL / TRANSACTION TERMS: fill "transaction" from the banker notes / IM deal section — not just the raise size. transaction.headline is the one-line deal summary a partner reads first, so LEAD WITH THE VALUATION whenever the documents state one. If there is a stated seller VALUATION ASK (e.g. "Seller Valuation Ask ~₹2,000 cr"), an INBOUND indication (e.g. "~₹1,800 cr inbound"), and/or a LAST-ROUND valuation, put them in the headline (e.g. "Primary raise at ~₹2,000 cr valuation ask; ~₹1,800 cr inbound already received; last round ~₹460 cr"). NEVER bury a stated valuation behind "amount TBD". transaction.amountCr = the primary raise cheque in ₹ cr IF a raise size is stated; if only a valuation (not a raise amount) is given, still surface that valuation in the headline and set transaction.amountSource to "banker notes" / "IM stated" accordingly. transaction.type reflects what is stated (Primary / Secondary / Primary + Secondary). transaction.valuationCr = the stated primary ASK valuation in ₹ cr as a plain number (e.g. 2000 for a "~₹2,000 cr ask"; use the seller ask, not the inbound or last round), or 0 when the documents state no valuation — the Returns tab anchors the entry price to this so returns reflect the actual ask.\n\n' +
     'RETURNS (ALWAYS include — this is the ONE illustrative block: the entry/exit assumptions for a base-case returns model. The app computes the money multiple and IRR itself by pulling EBITDA and net debt for entryYear/exitYear straight from the financials you output, so pick sensible YEARS and MULTIPLES rather than pre-computing proceeds):\n' +
     '• returns = { investmentCr:<number>, startEbitdaCr:<number>, startYear:"<FYxx>", entryYear:"<FYxx>", exitYear:"<FYxx>", defaults:{ entryBasis:"ebitda"|"revenue"|"pat", exitBasis:"ebitda"|"revenue"|"pat", entryX:<number>, exitX:<number>, growthPct:<number>, years:<number>, underdeliverPct:<number> } }. Every field is REQUIRED; numbers except the year/basis strings. Never null, never omit.\n' +
     '• investmentCr = the equity cheque in ₹ cr. Use the IM\'s stated primary raise / fundraise ask if it gives one (the same figure as transaction.amountCr). If the IM states no amount, put a sensible round figure for a minority growth-equity stake scaled to the business — do NOT leave it null; this is the one place an assumption is expected. ALSO set transaction.amountSource to exactly one of "IM stated" / "banker notes" / "assumption" so a partner can see whether the raise size is real or assumed — and if it is an assumption, keep it plausible against revenue (a growth-equity primary is rarely more than ~1× current revenue).\n' +
@@ -737,7 +737,7 @@ async function loadTemplate(request, env) {
     const k = (data.companies || []).find(c => c.id === 'kusumgar');
     if (k) { const { deepDive, ...core } = k; return JSON.stringify(core, null, 2); }   // deepDive is a separate pass — keep it out of the core-memo schema
   } catch { /* fall through */ }
-  return '{ "name": "", "shortName": "", "sector": "", "sectorTag": "", "oneLiner": "", "origination": {"date":"","banker":""}, "transaction": {"headline":"","amountCr":0,"type":"","coInvestment":"TBD"}, "fit": {"verdict":"watch","reason":""}, "revenueSpark": {"unit":"₹ cr","years":[],"values":[],"actualsThrough":""}, "headline": {"revenueLabel":"","revenueCr":0,"ebitdaPct":0,"patPositive":true}, "snapshot": {}, "financials": {"unit":"₹ cr","years":[],"actualsThrough":"","cagrCols":[],"rows":{"revenue":[],"growthPct":[],"grossMarginPct":[],"ebitda":[],"ebitdaPct":[],"pat":[],"patPct":[],"capex":[],"operatingCashflow":[],"fcf":[],"roePct":[],"rocePct":[],"nwcDays":[],"cash":[],"netWorth":[],"debt":[]},"cagr":{"revenue":[],"ebitda":[],"pat":[]},"segments":{"unit":"₹ cr","note":"","rows":[]},"revenueMix":{"label":"","slices":[]}}, "fitChecklist": [], "integrity": [], "questions": [], "thesis": [], "concerns": [], "returns": {"investmentCr":0,"startEbitdaCr":0,"startYear":"","defaults":{"entryX":12,"exitX":14,"growthPct":18,"years":5}} }';
+  return '{ "name": "", "shortName": "", "sector": "", "sectorTag": "", "oneLiner": "", "origination": {"date":"","banker":""}, "transaction": {"headline":"","amountCr":0,"valuationCr":0,"type":"","coInvestment":"TBD"}, "fit": {"verdict":"watch","reason":""}, "revenueSpark": {"unit":"₹ cr","years":[],"values":[],"actualsThrough":""}, "headline": {"revenueLabel":"","revenueCr":0,"ebitdaPct":0,"patPositive":true}, "snapshot": {}, "financials": {"unit":"₹ cr","years":[],"actualsThrough":"","cagrCols":[],"rows":{"revenue":[],"growthPct":[],"grossMarginPct":[],"ebitda":[],"ebitdaPct":[],"pat":[],"patPct":[],"capex":[],"operatingCashflow":[],"fcf":[],"roePct":[],"rocePct":[],"nwcDays":[],"cash":[],"netWorth":[],"debt":[]},"cagr":{"revenue":[],"ebitda":[],"pat":[]},"segments":{"unit":"₹ cr","note":"","rows":[]},"revenueMix":{"label":"","slices":[]}}, "fitChecklist": [], "integrity": [], "questions": [], "thesis": [], "concerns": [], "returns": {"investmentCr":0,"startEbitdaCr":0,"startYear":"","defaults":{"entryBasis":"ebitda","exitBasis":"ebitda","entryX":12,"exitX":14,"growthPct":18,"years":5}} }';
 }
 
 /* ------------------------------------------------------------------ *
@@ -912,6 +912,7 @@ function coerceCompany(o, basics = {}) {
   if (!isObj(o.transaction)) o.transaction = {};
   o.transaction.headline = str(o.transaction.headline, basics.ask || 'TBD');
   if (o.transaction.amountCr != null) o.transaction.amountCr = num(o.transaction.amountCr);
+  if (o.transaction.valuationCr != null) o.transaction.valuationCr = num(o.transaction.valuationCr);
 
   if (!isObj(o.headline)) o.headline = {};
   o.headline.revenueCr = num(o.headline.revenueCr);
@@ -1001,6 +1002,7 @@ function coerceReturns(o) {
   const rows   = isObj(fin.rows) ? fin.rows : {};
   const ebitda = Array.isArray(rows.ebitda)  ? rows.ebitda  : [];
   const revrow = Array.isArray(rows.revenue) ? rows.revenue : [];
+  const patrow = Array.isArray(rows.pat)     ? rows.pat     : [];
   const posEbitda = i => typeof ebitda[i] === 'number' && ebitda[i] > 0;
 
   // defaults (entry/exit basis + multiples, growth, hold) — keep the model's when sane, else PE-standard.
@@ -1079,6 +1081,18 @@ function coerceReturns(o) {
           : Math.max(0.5, Math.round(defaults.entryX * 0.7 * 10) / 10);
       }
     }
+  }
+
+  // Anchor the entry to the STATED deal valuation (seller ask) when the documents give one, so the
+  // Returns tab models returns at the price you would actually pay — not a generic multiple on a
+  // possibly-different year. entryX := ask ÷ (entry metric on the chosen basis). Keeps the tab honest
+  // (e.g. a ₹2,000 cr ask ⇒ ~8.9× FY25 revenue, entry EV ≈ the ask), regardless of the model's guess.
+  const askVal = isObj(o.transaction) ? num(o.transaction.valuationCr) : null;
+  if (askVal > 0) {
+    const em = defaults.entryBasis === 'revenue' ? at(revrow, entryYear)
+             : defaults.entryBasis === 'pat'     ? at(patrow, entryYear)
+             : (startEbitdaCr || at(ebitda, entryYear));
+    if (em > 0) defaults.entryX = Math.max(0.5, Math.round(askVal / em * 10) / 10);
   }
 
   return { investmentCr, startEbitdaCr, startYear, entryYear, exitYear, defaults };
