@@ -37,6 +37,11 @@ export default {
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
       if (request.method === 'DELETE' && path.includes('/api/jobs/'))         return await handleJobDelete(request, env);
+      // GitHub-Actions generation mode (the reliable, no-timeout path). These are authenticated with GHA_SECRET.
+      if (request.method === 'GET'    && path.endsWith('/api/gha-payload'))    return await handleGhaPayload(request, env);
+      if (request.method === 'POST'   && path.endsWith('/api/gha-result'))     return await handleGhaResult(request, env);
+      if (request.method === 'GET'    && path.endsWith('/api/gen-mode'))       return json({ mode: await getGenMode(env) });
+      if (request.method === 'POST'   && path.endsWith('/api/gen-mode'))       return await handleSetGenMode(request, env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -240,6 +245,84 @@ async function handleDelete(request, env) {
 /* ------------------------------------------------------------------ *
  * POST /api/generate — the upload → AI → memo flow
  * ------------------------------------------------------------------ */
+/* ---- GitHub-Actions generation mode ------------------------------------------------------------
+ * Toggle with POST /api/gen-mode {mode:"gha"|"worker"} (default "worker"). In "gha" mode the Worker
+ * builds the prompt, stashes it, and fires a repository_dispatch; the Action calls Bedrock patiently
+ * (no 14-min wall, rides out rate-limits) and POSTs the raw output to /api/gha-result to be validated
+ * + stored. All three endpoints require the shared GHA_SECRET — the browser never sees any of it.  */
+async function getGenMode(env) {
+  try { const m = env.DEALS ? await env.DEALS.get('settings:genMode') : null; return m === 'gha' ? 'gha' : 'worker'; }
+  catch { return 'worker'; }
+}
+function ghaConfigured(env) {
+  return !!(pickSecret(env, 'GHA_SECRET') && pickSecret(env, 'GITHUB_DISPATCH_TOKEN') &&
+    (env.GH_OWNER || pickSecret(env, 'GH_OWNER')) && (env.GH_REPO || pickSecret(env, 'GH_REPO')));
+}
+function ghaAuthed(request, env) {
+  const want = pickSecret(env, 'GHA_SECRET');
+  const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  return !!want && got === want;
+}
+async function handleSetGenMode(request, env) {
+  if (!ghaAuthed(request, env)) throw new ApiError(401, 'unauthorized');
+  let b = {}; try { b = await request.json(); } catch { /* ignore */ }
+  const mode = b.mode === 'gha' ? 'gha' : 'worker';
+  if (env.DEALS) await env.DEALS.put('settings:genMode', mode);
+  return json({ ok: true, mode });
+}
+// Fire the repository_dispatch that starts the Action for this job.
+async function dispatchGhaJob(env, jobId) {
+  const token = pickSecret(env, 'GITHUB_DISPATCH_TOKEN');
+  const owner = env.GH_OWNER || pickSecret(env, 'GH_OWNER');
+  const repo = env.GH_REPO || pickSecret(env, 'GH_REPO');
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', 'User-Agent': 'paramemo-worker' },
+    body: JSON.stringify({ event_type: 'generate-deal', client_payload: { jobId } }),
+  });
+  if (!res.ok) throw new ApiError(502, `GitHub dispatch failed: ${res.status} ${(await res.text().catch(() => '')).slice(0, 160)}`);
+}
+// The Action fetches the pre-built prompt for a job.
+async function handleGhaPayload(request, env) {
+  if (!ghaAuthed(request, env)) throw new ApiError(401, 'unauthorized');
+  const jobId = new URL(request.url).searchParams.get('jobId') || '';
+  const raw = env.DEALS ? await env.DEALS.get(`ghajob:${jobId}`) : null;
+  if (!raw) throw new ApiError(404, 'no such job');
+  const p = JSON.parse(raw);
+  return json({ system: p.system, user: p.user, images: p.images || [] });
+}
+// The Action posts the raw model output (or an error) back; validate + store exactly like an inline run.
+async function handleGhaResult(request, env) {
+  if (!ghaAuthed(request, env)) throw new ApiError(401, 'unauthorized');
+  let b = {}; try { b = await request.json(); } catch { throw new ApiError(400, 'bad body'); }
+  const jobId = String(b.jobId || '');
+  const raw = env.DEALS ? await env.DEALS.get(`ghajob:${jobId}`) : null;
+  const p = raw ? JSON.parse(raw) : {};
+  const jobMeta = { id: jobId, name: ((p.basics && p.basics.name) || '').trim() || 'New deal', sector: ((p.basics && p.basics.sector) || '').trim() };
+  if (b.error) {
+    await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: String(b.error).slice(0, 300) });
+    return json({ ok: true, recorded: 'error' });
+  }
+  const obj = extractJson(String(b.text || ''));
+  if (!isObj(obj) || !isObj(obj.financials) || !Array.isArray(obj.financials.years) || !obj.financials.years.length) {
+    await setJob(env, { ...jobMeta, status: 'error', finishedAt: Date.now(), error: 'The memo came back unreadable from the model. Please try again.' });
+    return json({ ok: false, error: 'unparseable' });
+  }
+  const id = await uniqueId(slugify((p.basics && p.basics.name) || obj.name || 'company'), env);
+  let company = normalizeCompany(obj, id, p.basics || {});
+  company.generatedBy = b.model || 'github-actions';
+  company.generatedAt = new Date().toISOString().slice(0, 10);
+  company = await recheckFigures(company, {});
+  try { await runGovernance(company, env); } catch (e) { console.error('governance skipped:', e && e.message); }
+  const index = await readIndex(env);
+  await env.DEALS.put(`company:${id}`, JSON.stringify(company));
+  await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
+  try { await env.DEALS.put(`dealsrc:${id}`, JSON.stringify({ imText: p.imText || '', excelText: p.excelText || '', notesText: p.notesText || '' })); } catch { /* best-effort */ }
+  await setJob(env, { ...jobMeta, status: 'done', companyId: id, finishedAt: Date.now(), error: null });
+  try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
+  return json({ ok: true, id });
+}
+
 async function handleGenerate(request, env, ctx) {
   if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet — please contact your administrator.");
 
@@ -348,6 +431,23 @@ async function handleGenerate(request, env, ctx) {
     'financials you output (same years, same actual-vs-forecast split).';
 
   const user = buildUserPrompt({ imText, excelText, sheetNames, notesText, basics, template });
+
+  // GITHUB-ACTIONS MODE (the reliable, no-timeout path): stash the prompt, fire the Action, and return
+  // immediately. The Action calls Bedrock patiently (riding out rate-limits) and posts the result back
+  // to /api/gha-result; the dashboard polls /api/companies for it. If GHA isn't fully configured or the
+  // dispatch fails, we FALL THROUGH to inline generation, so uploads always work.
+  if (jobId && (await getGenMode(env)) === 'gha' && ghaConfigured(env)) {
+    const jobMeta = { id: jobId, name: (basics.name || '').trim() || 'New deal', sector: (basics.sector || '').trim() };
+    try {
+      await env.DEALS.put(`ghajob:${jobId}`, JSON.stringify({ system, user, images: imPages, basics, imText, excelText, notesText }), { expirationTtl: 3600 });
+      await setJob(env, { ...jobMeta, status: 'running', startedAt: Date.now(), finishedAt: null, error: null });
+      await dispatchGhaJob(env, jobId);
+      return json({ queued: true, jobId, mode: 'gha' });
+    } catch (e) {
+      console.error('gha dispatch failed, falling back to inline:', e && e.message);
+      // fall through to inline streaming generation below
+    }
+  }
 
   // A rich, vision-backed memo can take a few minutes — far longer than Cloudflare's ~100s edge
   // timeout (HTTP 524). So STREAM the response: return headers immediately and emit a keepalive

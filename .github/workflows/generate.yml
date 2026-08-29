@@ -1,0 +1,49 @@
+name: Generate deal memo
+
+# Fired by the Worker (repository_dispatch) when a partner uploads a deal in "GitHub Actions" mode.
+# The Worker has already built + stashed the prompt; this job calls Bedrock patiently (no 14-min wall)
+# and posts the result back to the Worker to store. Nothing sensitive is passed in the dispatch — only
+# the jobId; the prompt and the result move Worker <-> Action over authenticated endpoints.
+
+on:
+  repository_dispatch:
+    types: [generate-deal]
+
+# One run per job; don't cancel an in-flight generation if another fires.
+concurrency:
+  group: generate-${{ github.event.client_payload.jobId }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the runner script
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build the memo (patient Bedrock retries)
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          GHA_SECRET: ${{ secrets.GHA_SECRET }}
+          BEDROCK_API_KEY: ${{ secrets.BEDROCK_API_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          BEDROCK_MODEL_IDS: ${{ vars.BEDROCK_MODEL_IDS }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+        run: node scripts/gha-generate.mjs
+
+      - name: Report failure back to the dashboard
+        if: failure()
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          GHA_SECRET: ${{ secrets.GHA_SECRET }}
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+        run: |
+          curl -s -X POST "$WORKER_URL/api/gha-result" \
+            -H "Authorization: Bearer $GHA_SECRET" -H 'content-type: application/json' \
+            --data "{\"jobId\":\"$JOB_ID\",\"error\":\"The GitHub Actions build failed — see the workflow run logs.\"}" || true

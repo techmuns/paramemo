@@ -17,6 +17,12 @@
   // Secrets (BEDROCK_API_KEY, optional MISTRAL_API_KEY) are NOT set here — see README.
   "vars": {
     "AWS_REGION": "us-east-1",
-    "BEDROCK_MODEL_IDS": "anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    "BEDROCK_MODEL_IDS": "anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-5,us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+
+    // GitHub-Actions generation mode (optional; off until you POST /api/gen-mode {mode:"gha"}).
+    // Which repo holds .github/workflows/generate.yml — the Worker fires a repository_dispatch here.
+    // Secrets GHA_SECRET + GITHUB_DISPATCH_TOKEN are NOT set here (wrangler secret put …); see the setup notes.
+    "GH_OWNER": "techmuns",
+    "GH_REPO": "paramemo"
   }
 }
