@@ -34,6 +34,7 @@ export default {
       if (request.method === 'POST'   && path.endsWith('/api/generate'))      return await handleGenerate(request, env, ctx);
       if (request.method === 'POST'   && path.endsWith('/api/regenerate'))    return await handleRegenerate(request, env, ctx);
       if (request.method === 'POST'   && path.endsWith('/api/deepdive'))      return await handleDeepDive(request, env, ctx);
+      if (request.method === 'POST'   && path.endsWith('/api/excel-analysis')) return await handleExcelAnalysis(request, env, ctx);
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
@@ -378,6 +379,25 @@ async function handleGhaResult(request, env) {
     return json({ ok: true, kind: 'deepdive', merged });
   }
 
+  // Excel-analysis job (dispatched by handleExcelAnalysis in GA mode): merge the visual Excel-model
+  // analysis into the existing company. Same best-effort, additive shape as the deep dive above — a
+  // failure just leaves the deal without an Excel analysis (the client can retry); never an "error".
+  if (p.kind === 'excel') {
+    let merged = false;
+    try {
+      if (!b.error) {
+        const obj = extractJson(String(b.text || ''));
+        const xa = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.excelAnalysis));
+        if (xa && p.companyId) {
+          const r2 = await env.DEALS.get(`company:${p.companyId}`);
+          if (r2) { const cur = JSON.parse(r2); cur.excelAnalysis = xa; await env.DEALS.put(`company:${p.companyId}`, JSON.stringify(cur)); merged = true; }
+        }
+      }
+    } catch (e) { console.error('excel-analysis merge failed:', e && e.message); }
+    try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
+    return json({ ok: true, kind: 'excel', merged });
+  }
+
   const jobMeta = { id: jobId, name: ((p.basics && p.basics.name) || '').trim() || 'New deal', sector: ((p.basics && p.basics.sector) || '').trim() };
   if (b.error) {
     // A duplicate/late runner can report failure AFTER a sibling run already built this job (it lost the
@@ -399,9 +419,10 @@ async function handleGhaResult(request, env) {
   company.generatedAt = new Date().toISOString().slice(0, 10);
   company = await recheckFigures(company, {});
   try { await runGovernance(company, env); } catch (e) { console.error('governance skipped:', e && e.message); }
-  // Regenerate: keep the visual Deep Dive already built for this deal (the core-memo pass omits it).
-  if (p.reuseId && !company.deepDive) {
-    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc && pc.deepDive) company.deepDive = pc.deepDive; } } catch { /* best-effort */ }
+  // Regenerate: keep the visual Deep Dive AND Excel analysis already built for this deal (the
+  // core-memo pass omits both, so without this a regenerate would blank them).
+  if (p.reuseId && (!company.deepDive || !company.excelAnalysis)) {
+    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc) { if (pc.deepDive && !company.deepDive) company.deepDive = pc.deepDive; if (pc.excelAnalysis && !company.excelAnalysis) company.excelAnalysis = pc.excelAnalysis; } } } catch { /* best-effort */ }
   }
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
@@ -743,10 +764,10 @@ async function generateCompany({ system, user, imPages, basics, env, reuseId }) 
   // Governance sweep (web + court cases) fills the Integrity checks. Best-effort: never block the memo.
   try { await runGovernance(company, env); } catch (e) { console.error('governance sweep skipped:', e && e.message); }
 
-  // On a regenerate (reuseId), carry over the visual Deep Dive already built for this deal — the
-  // core-memo pass omits it by design, so without this a regenerate would blank an existing deep dive.
-  if (reuseId && !company.deepDive) {
-    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc && pc.deepDive) company.deepDive = pc.deepDive; } } catch { /* best-effort */ }
+  // On a regenerate (reuseId), carry over the visual Deep Dive AND Excel analysis already built for
+  // this deal — the core-memo pass omits both by design, so without this a regenerate would blank them.
+  if (reuseId && (!company.deepDive || !company.excelAnalysis)) {
+    try { const prev = await env.DEALS.get(`company:${id}`); if (prev) { const pc = JSON.parse(prev); if (pc) { if (pc.deepDive && !company.deepDive) company.deepDive = pc.deepDive; if (pc.excelAnalysis && !company.excelAnalysis) company.excelAnalysis = pc.excelAnalysis; } } } catch { /* best-effort */ }
   }
 
   const index = await readIndex(env);
@@ -1007,6 +1028,98 @@ async function handleDeepDive(request, env, ctx) {
       out = { deepDive: dd };
     } catch (e) {
       out = { error: (e && e.message) || 'The deep dive could not be built.', status: e instanceof ApiError ? e.status : 500 };
+    }
+    finished = true; clearInterval(ka);
+    try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
+    try { await writer.close(); } catch (_) {}
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(run);
+  return new Response(readable, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+}
+
+/* ------------------------------------------------------------------ *
+ * EXCEL ANALYSIS — a SECOND pass (POST /api/excel-analysis), twin of the Deep Dive but pointed at
+ * the EXCEL MODEL instead of the IM. The AI reads the whole spreadsheet and returns the SAME generic
+ * block structure (source/summary/sections[].blocks[]), so the frontend reuses the deep-dive renderer.
+ * Nothing about the model's content is hard-coded: whatever THIS Excel breaks out becomes the charts.
+ * ------------------------------------------------------------------ */
+const EXCEL_ANALYSIS_SPEC =
+  'This is a COMPLETE, visual analysis of the company\'s EXCEL FINANCIAL MODEL — every trend, driver and breakdown the spreadsheet actually contains, turned into charts a partner can skim without opening the file. Be TREND-HEAVY and VISUAL-HEAVY: lead with line/trend and bar charts, donuts for a mix, tables only when a chart cannot carry the detail.\n' +
+  '• SHAPE: { source:"<e.g. Company Excel model>", summary:"<2-3 sentence nutshell of what the model shows>", sections:[ { title, icon?, summary?, blocks:[ … ] } ] }.\n' +
+  '• SECTIONS ARE DYNAMIC — YOU decide them from THIS model\'s own sheets and rows; there is NO fixed list, and you must NOT force a section the model does not contain. Build a section only for data the Excel actually has. Typical sections WHEN THE MODEL HAS THEM: Revenue trajectory & growth; Cost / expense structure; Margins & profitability; Revenue by segment / business line / product; Volume & unit economics (per-unit / per-customer / per-store metrics); Capacity, ramp or rollout schedules; Cash flow & working capital; Balance sheet; Key assumptions & drivers; Scenario / sensitivity tabs. Cover WHATEVER this particular Excel breaks out — no more, no less.\n' +
+  '• Each section: title = short and specific; summary = one plain-English takeaway line; icon (optional) ONE of: trendingUp, coins, wallet, gauge, layers, factory, barChart, target, briefcase, sparkles, users, globe.\n' +
+  '• BLOCKS — the SAME fixed library as the deep dive (use the exact "type" strings and field names; unknown types are dropped). Lead with the charts:\n' +
+  '   – trend: { type:"trend", title?, caption?, x:[<year labels>], series:[ { name, values:[<numbers|null> aligned to x] } ] } — the PRIMARY block: anything the model shows over years (revenue, EBITDA, each cost line, margins, a segment\'s line). Put related series on ONE trend to tell the story.\n' +
+  '   – bars: { type:"bars", title?, unit?, items:[ { label, value:<number>, note? } ] } — compare quantities across categories, or one year\'s split.\n' +
+  '   – donut: { type:"donut", title?, center?, centerSub?, items:[ { label, value:<number> } ] } — a share / mix breakdown (cost split, revenue split) for a chosen year.\n' +
+  '   – kpis: { type:"kpis", title?, items:[ { label, value, sub?, unit?, delta? } ] } — headline numbers (a CAGR, the latest margin, a run-rate). value may be a number OR a formatted string ("29%","₹42 cr/mo").\n' +
+  '   – table: { type:"table", title?, caption?, columns:[<strings>], rows:[ [<cells>] ] } — a compact year-by-year grid when the detail itself matters (e.g. the full cost build-up).\n' +
+  '   – funnel / flow / keyvalue / callout / bullets — use where they fit (a driver tree, an assumptions fact-sheet, a key insight or risk the model implies).\n' +
+  '• MONEY in ₹ crore (convert from each sheet\'s own reporting unit: ₹ crore→as-is, ₹ million→÷10, ₹ lakh→÷100, ₹ thousand→÷10,000); percentages as plain numbers (18 = 18%). Align every trend/table to the SAME year labels the memo uses.\n' +
+  '• PREFER VISUALS over prose; keep each section to a few focused blocks so it tells ONE clear story. Aim for genuine coverage — often 5-9 sections for a rich model. NEVER invent a number to fill a chart; if the model does not contain something, leave it out.';
+
+async function handleExcelAnalysis(request, env, ctx) {
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
+  let payload;
+  try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
+  const id = String(payload.id || '').trim();
+  if (!id) throw new ApiError(400, 'Missing deal id.');
+  const raw = await env.DEALS.get(`company:${id}`);
+  if (!raw) throw new ApiError(404, 'That deal is no longer available.');
+  let company; try { company = JSON.parse(raw); } catch { throw new ApiError(500, 'The stored deal is unreadable.'); }
+
+  let excelText = String(payload.excelText || '').slice(0, 120000);
+  const sheetNames = (Array.isArray(payload.sheetNames) ? payload.sheetNames : []).filter(s => typeof s === 'string' && s).slice(0, 40);
+  // Retry / reload / other-device path: no Excel in the request → rebuild from the source we stashed
+  // when the memo was built (dealsrc), so this works after a reload and for deals built server-side.
+  if (!excelText.trim()) {
+    try { const s = JSON.parse((await env.DEALS.get(`dealsrc:${id}`)) || 'null'); if (s) excelText = String(s.excelText || '').slice(0, 120000); } catch { /* none stored */ }
+  }
+  if (!excelText.trim()) throw new ApiError(400, 'This deal has no stored Excel model to analyse — please re-add it with the Excel attached so we can build the analysis.');
+
+  const example = await loadDeepDiveExample(request, env);
+  const system =
+    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY a visual EXCEL-MODEL ANALYSIS. ' +
+    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
+    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
+    'ACCURACY: every number and label must come from the EXCEL MODEL provided — NEVER invent one to fill a chart. Read each sheet\'s own reporting unit and convert money to ₹ crore. Keep any headline figures CONSISTENT with the memo\'s financials shown below (same years, same ₹ crore).\n\n' +
+    EXCEL_ANALYSIS_SPEC;
+  const user =
+    'Build the Excel-analysis object. Copy this SHAPE exactly — it is a real example of the block STRUCTURE only; your CONTENT must come from the Excel below, not from this example:\n```json\n' + example + '\n```\n' +
+    'The core memo already computed these headline financials — any figures you show for the same lines MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
+    (sheetNames.length ? '=== EXCEL SHEETS ===\n' + sheetNames.join(', ') + '\n' : '') +
+    '=== EXCEL MODEL (CSV of the sheets) ===\n' + excelText + '\n' +
+    'Return ONLY the analysis JSON object { source, summary, sections }.';
+
+  // GITHUB-ACTIONS mode: hand this to the Action too, so it PATIENTLY waits out Bedrock overload —
+  // exactly like the core memo and the deep dive. Text-only (no page images): the Excel is CSV text.
+  if ((await getGenMode(env)) === 'gha' && ghaConfigured(env)) {
+    const xaJobId = 'xa_' + id + '_' + Date.now().toString(36);
+    try {
+      await env.DEALS.put(`ghajob:${xaJobId}`, JSON.stringify({ kind: 'excel', companyId: id, system, user, images: [] }), { expirationTtl: 3600 });
+      await dispatchGhaJob(env, xaJobId);
+      return json({ queued: true, jobId: xaJobId, mode: 'gha', excel: true });
+    } catch (e) { console.error('gha excel-analysis dispatch failed, falling back to inline:', e && e.message); /* fall through */ }
+  }
+
+  // Inline fallback: stream keepalives so a multi-second build never trips the edge timeout.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter(); const enc = new TextEncoder();
+  let finished = false;
+  const ka = setInterval(() => { if (!finished) writer.write(enc.encode(' ')).catch(() => {}); }, 5000);
+  const run = (async () => {
+    let out;
+    try {
+      const ans = await callClaude({ system, user, images: [], maxTokens: 10000 }, env);
+      const obj = extractJson(ans.text);
+      const xa = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.excelAnalysis));
+      if (!xa) throw new ApiError(502, "We couldn't build the Excel analysis from this model.");
+      let cur = company; try { const r2 = await env.DEALS.get(`company:${id}`); if (r2) cur = JSON.parse(r2); } catch { /* keep the copy we have */ }
+      cur.excelAnalysis = xa;
+      await env.DEALS.put(`company:${id}`, JSON.stringify(cur));
+      out = { excelAnalysis: xa };
+    } catch (e) {
+      out = { error: (e && e.message) || 'The Excel analysis could not be built.', status: e instanceof ApiError ? e.status : 500 };
     }
     finished = true; clearInterval(ka);
     try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
