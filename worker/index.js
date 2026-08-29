@@ -42,6 +42,7 @@ export default {
       if (request.method === 'POST'   && path.endsWith('/api/gha-result'))     return await handleGhaResult(request, env);
       if (request.method === 'GET'    && path.endsWith('/api/gen-mode'))       return json({ mode: await getGenMode(env) });
       if (request.method === 'POST'   && path.endsWith('/api/gen-mode'))       return await handleSetGenMode(request, env);
+      if (request.method === 'GET'    && path.endsWith('/api/gha-debug'))      return await handleGhaDebug(env);
     } catch (err) {
       const status = err instanceof ApiError ? err.status : 500;
       return json({ error: err.message || 'Something went wrong.' }, status);
@@ -269,6 +270,25 @@ async function handleSetGenMode(request, env) {
   const mode = b.mode === 'gha' ? 'gha' : 'worker';
   if (env.DEALS) await env.DEALS.put('settings:genMode', mode);
   return json({ ok: true, mode });
+}
+// TEMP diagnostic: proves what the Worker has at runtime WITHOUT revealing any secret.
+// Returns presence + length + a truncated SHA-256 (first 6 bytes) — a non-reversible fingerprint.
+async function handleGhaDebug(env) {
+  const fp = async (s) => {
+    if (!s) return '';
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return [...new Uint8Array(buf)].slice(0, 6).map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+  const want = pickSecret(env, 'GHA_SECRET');
+  const tok = pickSecret(env, 'GITHUB_DISPATCH_TOKEN');
+  return json({
+    ghaSecret: { present: !!want, len: want.length, fp: await fp(want) },
+    dispatchToken: { present: !!tok, len: tok.length },
+    ghOwner: env.GH_OWNER || pickSecret(env, 'GH_OWNER') || '',
+    ghRepo: env.GH_REPO || pickSecret(env, 'GH_REPO') || '',
+    ghaConfigured: ghaConfigured(env),
+    mode: await getGenMode(env),
+  });
 }
 // Fire the repository_dispatch that starts the Action for this job.
 async function dispatchGhaJob(env, jobId) {
