@@ -3123,8 +3123,10 @@ function ddBars(b) {
   const rows = items.map((it, i) => {
     const raw = ddField(it, 'value', 'v', 'val');
     const w = nums[i] == null ? 0 : Math.max(2, Math.abs(nums[i]) / max * 100);
-    return `<div class="dd-bar-row">
-      <div class="dd-bar-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</div>
+    const lab = ddField(it, 'label', 'name', 'k') || '';
+    const tip = esc(lab + (raw == null ? '' : ': ' + ddValue(raw, b.unit || it.unit)) + (it.note ? ' — ' + it.note : ''));
+    return `<div class="dd-bar-row" data-tip="${tip}">
+      <div class="dd-bar-lab">${esc(lab)}</div>
       <div class="dd-bar-track"><span class="dd-bar-fill" style="width:${w}%;background:${esc(it.color || ddColor(i))}"></span></div>
       <div class="dd-bar-val">${raw == null ? '' : ddValue(raw, b.unit || it.unit)}</div>${it.note ? `<div class="dd-bar-note">${esc(it.note)}</div>` : ''}</div>`;
   }).join('');
@@ -3159,7 +3161,13 @@ function ddTrend(b) {
     const col = s.color || ddColor(si);
     const pts = s.values.map((v, i) => { const y = ddToNum(v); return y == null ? null : `${X(i).toFixed(1)},${Y(y).toFixed(1)}`; }).filter(Boolean);
     if (!pts.length) return '';
-    const dots = s.values.map((v, i) => { const y = ddToNum(v); return y == null ? '' : `<circle cx="${X(i).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="3" fill="${esc(col)}"/>`; }).join('');
+    const nm = series.length > 1 ? (s.name || 'Series ' + (si + 1)) + ' · ' : '';
+    const dots = s.values.map((v, i) => {
+      const y = ddToNum(v); if (y == null) return '';
+      const tip = esc(nm + String(x[i] != null ? x[i] : i + 1) + ': ' + ddValue(v));
+      // visible dot + a larger transparent hover target so the value is easy to catch
+      return `<circle cx="${X(i).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="3" fill="${esc(col)}"/><circle cx="${X(i).toFixed(1)}" cy="${Y(y).toFixed(1)}" r="12" fill="transparent" data-tip="${tip}" style="cursor:pointer"/>`;
+    }).join('');
     const area = series.length === 1 ? `<polygon points="${X(0).toFixed(1)},${Y(lo).toFixed(1)} ${pts.join(' ')} ${X(n - 1).toFixed(1)},${Y(lo).toFixed(1)}" fill="${tint(col, .10)}"/>` : '';
     return `${area}<polyline points="${pts.join(' ')}" fill="none" stroke="${esc(col)}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
   }).join('');
@@ -3175,7 +3183,7 @@ function ddDonut(b) {
   const total = vals.reduce((a, c) => a + c, 0) || 1;
   const R = 58, TH = 24, C = 2 * Math.PI * R, cx = 80, cy = 80;
   let off = 0;
-  const arcs = items.map((it, i) => { const dash = vals[i] / total * C; const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${esc(it.color || ddColor(i))}" stroke-width="${TH}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`; off += dash; return seg; }).join('');
+  const arcs = items.map((it, i) => { const dash = vals[i] / total * C; const lab = ddField(it, 'label', 'name', 'k') || ''; const tip = esc(lab + ': ' + ddValue(ddField(it, 'value', 'v', 'val'), it.unit) + ' (' + Math.round(vals[i] / total * 100) + '%)'); const seg = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${esc(it.color || ddColor(i))}" stroke-width="${TH}" stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})" data-tip="${tip}" style="cursor:pointer"/>`; off += dash; return seg; }).join('');
   const center = b.center != null ? b.center : (b.total != null ? ddValue(b.total) : '');
   const ctext = center ? `<text x="${cx}" y="${cy - 2}" text-anchor="middle" class="dd-donut-c1">${esc(String(center))}</text>${b.centerSub ? `<text x="${cx}" y="${cy + 15}" text-anchor="middle" class="dd-donut-c2">${esc(b.centerSub)}</text>` : ''}` : '';
   const legend = items.map((it, i) => `<div class="dd-lg-item"><span class="dd-lg-dot" style="background:${esc(it.color || ddColor(i))}"></span><span class="dd-lg-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</span><span class="dd-lg-val">${ddValue(ddField(it, 'value', 'v', 'val'), it.unit)}</span><span class="dd-lg-pct">${Math.round(vals[i] / total * 100)}%</span></div>`).join('');
@@ -3191,7 +3199,9 @@ function ddFunnel(b) {
   const rows = items.map((it, i) => {
     const w = nums[i] == null ? 100 : Math.max(16, Math.abs(nums[i]) / max * 100);
     const col = ddColor(i);
-    return `<div class="dd-fn-row"><div class="dd-fn-bar" style="width:${w}%;background:linear-gradient(90deg,${tint(col, .92)},${tint(col, .6)})"><span class="dd-fn-lab">${esc(ddField(it, 'label', 'name', 'k') || '')}</span><span class="dd-fn-val">${ddValue(ddField(it, 'value', 'v', 'val'), it.unit)}</span></div>${it.note ? `<span class="dd-fn-note">${esc(it.note)}</span>` : ''}</div>`;
+    const lab = ddField(it, 'label', 'name', 'k') || '';
+    const tip = esc(lab + ': ' + ddValue(ddField(it, 'value', 'v', 'val'), it.unit) + (it.note ? ' — ' + it.note : ''));
+    return `<div class="dd-fn-row" data-tip="${tip}"><div class="dd-fn-bar" style="width:${w}%;background:linear-gradient(90deg,${tint(col, .92)},${tint(col, .6)})"><span class="dd-fn-lab">${esc(lab)}</span><span class="dd-fn-val">${ddValue(ddField(it, 'value', 'v', 'val'), it.unit)}</span></div>${it.note ? `<span class="dd-fn-note">${esc(it.note)}</span>` : ''}</div>`;
   }).join('');
   return `<div class="dd-funnel">${rows}</div>`;
 }
