@@ -858,6 +858,43 @@ async function pollJobsOnce() {
   } catch (_) { /* transient — keep watching */ }
   if (anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000);   // single owner of the timer
 }
+
+// Pull the latest deals from the server WITHOUT a hard refresh. Fixes two things the poll-only model
+// missed: (1) a deal changed outside this tab (a rebuild, another device) still showed the stale copy;
+// (2) a just-finished build occasionally needed a manual reload to surface. Runs when the tab regains
+// focus / becomes visible, throttled. Carefully preserves this tab's transient build flags so a
+// refresh can never clobber an in-flight Deep Dive / Excel Analysis pass.
+const stripUnderscore = c => { const o = {}; if (c) for (const k in c) if (k[0] !== '_') o[k] = c[k]; return o; };
+let _lastRefresh = Date.now();   // initial load just fetched — don't re-fetch on the first focus
+async function refreshCompaniesFromServer(force) {
+  if (!force && Date.now() - _lastRefresh < 6000) return;   // throttle bursts of focus events
+  _lastRefresh = Date.now();
+  let d;
+  try { const res = await fetch(apiUrl('companies'), { cache: 'no-cache' }); if (!res.ok) return; d = await res.json(); }
+  catch { return; }
+  if (!d || !Array.isArray(d.companies)) return;
+  const curId = ui.companyId;
+  const before = curId ? JSON.stringify(stripUnderscore(companyById(curId))) : null;
+  d.companies.forEach(sc => {
+    if (!sc || !sc.id) return;
+    const local = companyById(sc.id);
+    const flags = {}; if (local) for (const k in local) if (k[0] === '_') flags[k] = local[k];   // keep _deepDivePending / _excelPending / _ddInputs …
+    addCompany(sc);                                                                              // replace with the server's fresh copy
+    const fresh = companyById(sc.id);
+    if (fresh) {
+      Object.assign(fresh, flags);
+      if (sc.deepDive)       { delete fresh._deepDivePending; delete fresh._ddPendingSince; fresh._deepDiveFailed = false; }
+      if (sc.excelAnalysis)  { delete fresh._excelPending;    delete fresh._xaPendingSince; fresh._excelFailed    = false; }
+    }
+  });
+  if (Array.isArray(d.jobs)) reconcileJobsFromServer(d);
+  emitJobs();
+  // Re-render the open deal ONLY if its content actually changed — no flicker when nothing moved.
+  if (curId) { const c = companyById(curId); if (c && JSON.stringify(stripUnderscore(c)) !== before) renderTabPanel(c, parseHash().tab); }
+  ensureJobPolling();
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshCompaniesFromServer(); });
+window.addEventListener('focus', () => refreshCompaniesFromServer());
 // Fold the server's truth into the local job list: pull in any newly-finished deals and
 // flip each in-flight job to done / error based on its server record.
 // IMPORTANT: KV is eventually consistent — a build's record can take up to ~a minute to become
