@@ -396,8 +396,36 @@ function hardenCompany(c) {
   if (!(Number(c.returns.startEbitdaCr) > 0)) c.returns.startEbitdaCr = 10;   // avoid /0 in the returns math
   return c;
 }
-// Prepare any company entering state: harden its shape, then normalise year labels to FY__.
-const prepCompany = c => normalizeYears(hardenCompany(c));
+// Fill ratio rows the model sometimes leaves blank even though the inputs are right there in the
+// table, so the Financials tab never shows an empty row whose value is exactly computable from rows
+// it DOES carry. Purely additive and per-cell: only a missing cell that is computable gets filled;
+// any value the model gave is left untouched. Runs for every deal on the way into state (including
+// older stored memos), so nothing needs regenerating to pick this up.
+//   Return on equity = PAT ÷ net worth.  Only ROE is filled here — it needs no assumption. RoCE
+//   needs operating profit and capital employed, which we don't reliably carry, so it stays with
+//   the model rather than being approximated.
+function deriveFinancialRows(c) {
+  const f = c && c.financials;
+  if (!_o(f) || !_o(f.rows) || !Array.isArray(f.years) || !f.years.length) return c;
+  const rows = f.rows, n = f.years.length;
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && v !== '' && isFinite(+v) ? +v : null);
+  const pat = Array.isArray(rows.pat) ? rows.pat : null;
+  const nw  = Array.isArray(rows.netWorth) ? rows.netWorth : null;
+  if (pat && nw) {
+    const roe = Array.isArray(rows.roePct) ? rows.roePct.slice() : new Array(n).fill(null);
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (roe[i] != null && roe[i] !== '') continue;         // never overwrite a value the model gave
+      const p = num(pat[i]), w = num(nw[i]);
+      if (p != null && w != null && w > 0) { roe[i] = Math.round(p / w * 100); changed = true; }
+    }
+    if (changed) rows.roePct = roe;
+  }
+  return c;
+}
+// Prepare any company entering state: harden its shape, normalise year labels to FY__, then fill any
+// exactly-derivable ratio the model left blank.
+const prepCompany = c => deriveFinancialRows(normalizeYears(hardenCompany(c)));
 
 // Add or replace a company in local state + the dropdown (used after an upload).
 function addCompany(company) {

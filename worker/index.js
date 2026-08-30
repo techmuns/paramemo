@@ -1284,6 +1284,17 @@ function ensureDerivedFinancials(fin) {
     marginFrom('ebitda', 'ebitdaPct');
     marginFrom('pat', 'patPct');
 
+    // Return on equity = PAT ÷ net worth, when both rows are present but the ratio was omitted.
+    // Only ROE — RoCE needs operating profit + capital employed, which we don't reliably carry, so
+    // approximating it would risk a wrong number; leave that to the model.
+    if (arr('pat') && arr('netWorth') && !filled(rows.roePct)) {
+      const pat = arr('pat'), nw = arr('netWorth');
+      rows.roePct = years.map((_, i) => {
+        const p = Number(pat[i]), w = Number(nw[i]);
+        return (isFinite(p) && w > 0) ? Math.round(p / w * 100) : null;
+      });
+    }
+
     // CAGR — ensure a period label exists, then compute per metric over that span when missing.
     let cols = Array.isArray(fin.cagrCols) ? fin.cagrCols.filter(Boolean) : [];
     if (!cols.length && n >= 3 && Number(rev && rev[0]) > 0) {
