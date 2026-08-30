@@ -618,9 +618,11 @@ async function runJob(job, payload) {
     const xaInputs = { excelText, sheetNames };   // Excel Analysis reads only the spreadsheet
     if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; stored._excelPending = true; stored._xaInputs = xaInputs; stored._xaAutoTried = true; }   // cache inputs so both passes can be retried this session
     emitJobs();
-    // One combined GitHub-Actions run builds both passes (falls back to two separate runs if the
-    // server can't combine). Retry buttons still hit the individual passes, so nothing else changes.
-    startInsights(data.company.id, { ddInputs, xaInputs });
+    // This inline-success path only runs in WORKER mode (in GA mode /api/generate returns before the
+    // memo exists and the deal lands via the poller, where maybeAutoInsights fires the COMBINED run).
+    // Worker mode can't combine GA runs, so just fire the two passes directly.
+    startDeepDive(data.company.id, ddInputs);
+    startExcelAnalysis(data.company.id, xaInputs);
   } catch (err) {
     clearTimeout(writeTO);
     if (job._cancelled) return;   // cancelled mid-build — no error to show
@@ -854,6 +856,25 @@ async function startInsights(id, { ddInputs, xaInputs }) {
   } catch (_) { fallback(); }
 }
 
+// Poller / cross-device entry point for the two visual passes. In GitHub-Actions mode a deal builds
+// server-side and this tab only ever SEES it via polling — the inline post-memo path never runs — so
+// THIS is where the combined run has to fire for the one-spin-up saving to actually happen. Both
+// passes missing → one combined /api/insights run; only one missing (e.g. a half-finished retry) →
+// just that pass on its own, so a pass that already landed is never needlessly rebuilt.
+function maybeAutoInsights(c) {
+  if (!c || isSample(c)) return;
+  const needDD = !c.deepDive && !c._deepDivePending && !c._deepDiveFailed;
+  const needXA = !c.excelAnalysis && !c._excelPending && !c._excelFailed && !c._xaAutoTried;
+  if (needDD && needXA) {
+    c._deepDivePending = true; c._deepDiveFailed = false; c._ddPendingSince = Date.now();
+    c._excelPending = true; c._excelFailed = false; c._xaPendingSince = Date.now(); c._xaAutoTried = true;
+    startInsights(c.id, { ddInputs: c._ddInputs || {}, xaInputs: c._xaInputs || {} });
+  } else {
+    maybeAutoDeepDive(c);        // guards inside skip whichever pass isn't needed
+    maybeAutoExcelAnalysis(c);
+  }
+}
+
 /* ---- Self-audit pass — ON DEMAND (a "Run audit" button), never automatic. Reads the deal's stored
  * memo AND its source docs server-side, compares them, and returns a findings report. Same GA-aware,
  * poller-merged plumbing as the deep dive / excel analysis; flags _auditPending / _auditFailed /
@@ -892,7 +913,8 @@ async function startAudit(id, payload) {
     else c._auditFailed = (d && d.error) || true;
     if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit');
   } catch (_) {
-    const c = companyById(id); if (c) { delete c._auditPending; delete c._auPendingSince; c._auditFailed = true; }
+    const c = companyById(id);
+    if (c) { delete c._auditPending; delete c._auPendingSince; c._auditFailed = true; if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit'); }
   }
 }
 
@@ -1060,7 +1082,7 @@ function reconcileJobsFromServer(d) {
       // server's fresh version in and re-render it if the partner is looking at it.
       const fresh = scById[sj.companyId];
       if (j._regen && fresh) { addCompany(fresh); if (ui.companyId === fresh.id) renderView(); }
-      j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); maybeAutoExcelAnalysis(j.company); changed = true; return;
+      j.company = companyById(sj.companyId) || j.company; maybeAutoInsights(j.company); changed = true; return;
     }
     // No decisive record yet. If the finished deal itself has shown up (matched by the name the
     // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
@@ -1068,7 +1090,7 @@ function reconcileJobsFromServer(d) {
     // complete it against the stale copy — a regen only finishes on a decisive done/error record.
     if (!j._regen && j.name && j.name !== 'New deal') {
       const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
-      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); maybeAutoExcelAnalysis(m); changed = true; return; }
+      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoInsights(m); changed = true; return; }
     }
     // Only a build well past the worker's own limits (record never resolved) is treated as stuck.
     if (now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }

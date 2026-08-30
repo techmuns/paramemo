@@ -1306,7 +1306,11 @@ function coerceAudit(a) {
   findings.sort((x, y) => rank[x.severity] - rank[y.severity]);
   const strengths = (Array.isArray(a.strengths) ? a.strengths : []).map(s).filter(Boolean).slice(0, 24);
   if (!findings.length && !s(a.summary) && !strengths.length) return null;
-  let verdict = s(a.verdict).toLowerCase(); if (!['clean', 'minor', 'issues'].includes(verdict)) verdict = findings.some(f => f.severity === 'high' || f.severity === 'medium') ? 'issues' : (findings.length ? 'minor' : 'clean');
+  // Always DERIVE the verdict from the findings — never trust the model's own verdict, which can
+  // contradict them (e.g. "clean" alongside a high-severity error). A "verified" item is not a
+  // problem, so it doesn't move the verdict.
+  const problems = findings.filter(f => f.status !== 'verified');
+  const verdict = problems.some(f => f.severity === 'high' || f.severity === 'medium') ? 'issues' : (problems.length ? 'minor' : 'clean');
   return {
     source: s(a.source) || 'Memo vs. source documents',
     // Full timestamp (not just the date): the client tells a fresh re-run apart from the previous
@@ -1339,10 +1343,25 @@ async function handleAudit(request, env, ctx) {
     throw new ApiError(400, 'This deal has no stored source documents to audit against — please re-add it with the IM / Excel attached so we can compare the memo to them.');
   }
 
+  // Audit the SAME numbers the dashboard shows: fill any exactly-derivable ratio (e.g. RoE) the model
+  // left blank, so the audit doesn't flag a "blank RoE" that the dashboard actually renders. Mutates
+  // the in-memory copy only (we don't re-store the deal here) — purely for the memo view below.
+  ensureDerivedFinancials(company.financials);
+
+  // Tell the model EXACTLY which sources it was handed, so it can't report a comparison against a
+  // document it never saw (e.g. a scanned IM whose text came through empty).
+  const provided = [
+    imText && 'the Information Memorandum (text)',
+    imPages.length && 'IM page images',
+    excelText.trim() && 'the Excel model',
+    notesText.trim() && 'the banker notes',
+  ].filter(Boolean);
+
   const system =
     'You are a meticulous private-equity quality-control reviewer. You are given (1) a screening MEMO a dashboard is currently showing, and (2) the ORIGINAL source documents it was built from. AUDIT the memo against the documents and report every difference. ' +
     'Return STRICT JSON: a single object { "source", "summary", "verdict", "findings":[ … ], "strengths":[ … ] } and NOTHING else — no markdown, no commentary.\n\n' +
-    'WRITING: plain, simple English a busy partner can skim; all money in ₹ crore. Read any PAGE IMAGES for content not in the text (charts, team slides, logo walls).\n\n' +
+    'WRITING: plain, simple English a busy partner can skim; all money in ₹ crore. Read any PAGE IMAGES for content not in the text (charts, team slides, logo walls).\n' +
+    'SOURCE COVERAGE: you were given ONLY these sources — ' + (provided.join('; ') || 'none') + '. Judge the memo ONLY against what you were actually given; NEVER claim to have checked it against a document not in that list. If a source below reads "(none provided)", do not raise findings that assume you saw it — instead note the limited coverage in the summary.\n\n' +
     AUDIT_SPEC;
   const user =
     'Audit this memo against its source documents.\n\n' +

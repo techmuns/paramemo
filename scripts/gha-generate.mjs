@@ -38,19 +38,22 @@ async function main() {
     : [{ tag: null, system: payload.system, user: payload.user, images: payload.images || [] }];
   for (const st of steps) if (!st || !st.system || !st.user) throw new Error('payload step missing system/user prompt');
 
-  // 2) Call Bedrock — patiently — for each step. This is the whole point of moving to Actions. One
-  // step failing (Bedrock down for its entire patient window) must NOT lose a sibling step that
-  // succeeded, so a failure is recorded against that step rather than thrown.
-  const results = [];
-  for (const st of steps) {
+  // 2) Call Bedrock — patiently. This is the whole point of moving to Actions. Steps run CONCURRENTLY
+  // (a single job is just one step, so this is unchanged for it): sequential steps could take up to
+  // ~15 min EACH when Bedrock is overloaded, and nothing posts until the last finishes — long enough
+  // to blow the client's ~16-min pending timeout and make it give up while the run is still going.
+  // Running them together keeps total time at ~one step. One step failing (Bedrock down for its whole
+  // patient window) must NOT lose a sibling that succeeded, so a failure is recorded, not thrown.
+  // Promise.all preserves order, so results[i] still matches steps[i].
+  const results = await Promise.all(steps.map(async st => {
     try {
       const { text, model } = await callBedrock(st.system, st.user, st.images || []);
-      results.push({ tag: st.tag || null, text, model });
+      return { tag: st.tag || null, text, model };
     } catch (e) {
       console.error(`step ${st.tag || 'single'} failed:`, e.message);
-      results.push({ tag: st.tag || null, error: String((e && e.message) || 'failed') });
+      return { tag: st.tag || null, error: String((e && e.message) || 'failed') };
     }
-  }
+  }));
 
   // 3) Hand the raw output back to the Worker to validate + store (same path as an inline run). A
   // single, untagged job posts { text, model } EXACTLY as before — and rethrows a failure so the
