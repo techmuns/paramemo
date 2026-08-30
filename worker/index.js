@@ -1284,15 +1284,22 @@ function ensureDerivedFinancials(fin) {
     marginFrom('ebitda', 'ebitdaPct');
     marginFrom('pat', 'patPct');
 
-    // Return on equity = PAT ÷ net worth, when both rows are present but the ratio was omitted.
-    // Only ROE — RoCE needs operating profit + capital employed, which we don't reliably carry, so
-    // approximating it would risk a wrong number; leave that to the model.
-    if (arr('pat') && arr('netWorth') && !filled(rows.roePct)) {
+    // Return on equity = PAT ÷ net worth, filled per-cell for any year the model left blank where
+    // both inputs are present — supplied values are kept, and a missing PAT (null) is never read as
+    // a real 0 (Number(null) is 0, which would fabricate a 0% RoE). Only ROE: RoCE needs operating
+    // profit + capital employed, which we don't reliably carry, so approximating it would risk a
+    // wrong number; leave that to the model.
+    if (arr('pat') && arr('netWorth')) {
       const pat = arr('pat'), nw = arr('netWorth');
-      rows.roePct = years.map((_, i) => {
-        const p = Number(pat[i]), w = Number(nw[i]);
-        return (isFinite(p) && w > 0) ? Math.round(p / w * 100) : null;
-      });
+      const fnum = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && v !== '' && isFinite(+v) ? +v : null);
+      const roe = Array.isArray(rows.roePct) ? rows.roePct.slice() : new Array(years.length).fill(null);
+      let changed = false;
+      for (let i = 0; i < years.length; i++) {
+        if (roe[i] != null && roe[i] !== '') continue;         // keep any value the model gave
+        const p = fnum(pat[i]), w = fnum(nw[i]);
+        if (p != null && w != null && w > 0) { roe[i] = Math.round(p / w * 100); changed = true; }
+      }
+      if (changed) rows.roePct = roe;
     }
 
     // CAGR — ensure a period label exists, then compute per metric over that span when missing.
