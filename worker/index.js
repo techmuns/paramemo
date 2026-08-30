@@ -119,11 +119,16 @@ async function handleCompanies(env) {
   const peerLiveEnabled = true;
   if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy, jobs: [] });   // KV not bound yet → no uploads
   const index = await readIndex(env);
-  const companies = [];
-  for (const id of index) {
-    const raw = await env.DEALS.get(`company:${id}`);
-    if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
-  }
+  // Read each deal AND its audit (kept under its own `audit:<id>` key so an audit write never
+  // read-modify-writes the whole company and can't race a Deep Dive / Excel / insights write) in
+  // parallel, then merge the audit back onto the deal — so the client sees c.audit exactly as before.
+  const companies = (await Promise.all(index.map(async id => {
+    const [craw, araw] = await Promise.all([env.DEALS.get(`company:${id}`), env.DEALS.get(`audit:${id}`)]);
+    if (!craw) return null;
+    let c; try { c = JSON.parse(craw); } catch { return null; }
+    if (araw) { try { c.audit = JSON.parse(araw); } catch { /* ignore a corrupt audit */ } }
+    return c;
+  }))).filter(Boolean);
   // Running / failed builds, so the UI can show their outcome. A build stuck "running" well past
   // the Worker's own limit was almost certainly killed mid-flight (no done/error was ever written)
   // — surface it as a failure instead of a forever-spinner, and persist that so it stays resolved.
@@ -300,6 +305,7 @@ async function handleDelete(request, env) {
   }
   await env.DEALS.delete(`company:${id}`);
   try { await env.DEALS.delete(`dealsrc:${id}`); } catch { /* best-effort */ }
+  try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ }
   const index = await readIndex(env);
   await env.DEALS.put('index', JSON.stringify(index.filter(x => x !== id)));
   return json({ ok: true, id });
@@ -442,8 +448,9 @@ async function handleGhaResult(request, env) {
         const obj = extractJson(String(b.text || ''));
         const au = coerceAudit(obj && (Array.isArray(obj.findings) || obj.summary ? obj : obj.audit));
         if (au && p.companyId) {
-          const r2 = await env.DEALS.get(`company:${p.companyId}`);
-          if (r2) { const cur = JSON.parse(r2); cur.audit = au; await env.DEALS.put(`company:${p.companyId}`, JSON.stringify(cur)); merged = true; }
+          // Own key — never a whole-company read-modify-write, so this can't race a Deep Dive /
+          // Excel / insights write completing at the same time. handleCompanies merges it back.
+          await env.DEALS.put(`audit:${p.companyId}`, JSON.stringify(au)); merged = true;
         }
       }
     } catch (e) { console.error('audit merge failed:', e && e.message); }
@@ -480,6 +487,7 @@ async function handleGhaResult(request, env) {
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
+  if (p.reuseId) { try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ } }   // a regenerated memo makes any prior audit stale
   try { await env.DEALS.put(`dealsrc:${id}`, JSON.stringify({ imText: p.imText || '', excelText: p.excelText || '', notesText: p.notesText || '' })); } catch { /* best-effort */ }
   await setJob(env, { ...jobMeta, status: 'done', companyId: id, finishedAt: Date.now(), error: null });
   try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
@@ -828,6 +836,7 @@ async function generateCompany({ system, user, imPages, basics, env, reuseId }) 
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
+  if (reuseId) { try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ } }   // a regenerated memo makes any prior audit stale
   return company;
 }
 
@@ -1394,9 +1403,7 @@ async function handleAudit(request, env, ctx) {
       const obj = extractJson(ans.text);
       const au = coerceAudit(obj && (Array.isArray(obj.findings) || obj.summary ? obj : obj.audit));
       if (!au) throw new ApiError(502, "We couldn't build the audit from these documents.");
-      let cur = company; try { const r2 = await env.DEALS.get(`company:${id}`); if (r2) cur = JSON.parse(r2); } catch { /* keep the copy we have */ }
-      cur.audit = au;
-      await env.DEALS.put(`company:${id}`, JSON.stringify(cur));
+      await env.DEALS.put(`audit:${id}`, JSON.stringify(au));   // own key (see handleCompanies) — no whole-company write
       out = { audit: au };
     } catch (e) {
       out = { error: (e && e.message) || 'The audit could not be built.', status: e instanceof ApiError ? e.status : 500 };

@@ -3704,6 +3704,13 @@ function renderAudit(c) {
       ${isSample(c) ? '' : `<button class="hdr-btn au-run-btn" type="button" style="margin-left:auto;align-self:center;flex:none">${icon('refreshCw', 'w-4 h-4')} Re-run</button>`}</div>`);
   const hb = hero.querySelector('.au-run-btn'); if (hb) hb.addEventListener('click', () => retryAudit(c.id));
   wrap.appendChild(hero);
+  // A re-run that failed while a previous report is still on screen: say so, don't pass the old
+  // report off as fresh. (On a first-ever audit there's no retained report, so this can't fire.)
+  if (c._auditFailed) {
+    wrap.appendChild(h(`<div class="surface-card" style="padding:11px 14px;border-left:3px solid ${BRAND.gold};display:flex;gap:8px;align-items:flex-start">
+      <span style="color:${BRAND.gold};flex:none">${icon('refreshCw', 'w-4 h-4')}</span>
+      <div class="text-[13px] text-ink-muted"><b class="text-ink">The latest re-run didn’t finish.</b> Showing your previous audit${when ? ' from ' + esc(when) : ''} — its findings may be out of date. Use <b>Re-run</b> above to try again.</div></div>`));
+  }
   if (a.summary) wrap.appendChild(h(`<div class="dd-execsum"><div class="dd-execsum-h">${icon('sparkles', 'w-3.5 h-3.5')} In a nutshell</div><p>${esc(a.summary)}</p></div>`));
   if (!findings.length) {
     wrap.appendChild(h(`<div class="surface-card p-5"><p class="text-[13px] text-ink-muted">No differences found — the memo matches its documents on the points we checked.</p></div>`));
