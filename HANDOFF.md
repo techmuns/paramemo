@@ -3,7 +3,12 @@
 > **Purpose of this file.** A working-context handoff so a *fresh* Claude Code session on this
 > repo can continue exactly where the previous session left off, with no memory of the prior chat.
 > Read this top to bottom first, then read the "OPEN / PENDING WORK" section — that's what to do next.
-> Last updated: 2026-08-29.
+> Last updated: 2026-08-31.
+>
+> **Keep this file current.** Whatever we build or change, update this handoff in the SAME change (the
+> TL;DR, the pending-work section, the code-locations map, and the commit list). A stale handoff is
+> worse than none — it once told a fresh session that already-shipped work was still "pending". Treat
+> updating it as part of finishing any piece of work, not an afterthought.
 
 ---
 
@@ -11,21 +16,28 @@
 
 - The dashboard is **built, deployed, and working**. Live at **https://paramemo.tech-441.workers.dev**
   (Visit Health deal at `#visit-health`).
-- All bug-fix and feature work from the last session is **committed and pushed to `main`** (Cloudflare
-  auto-deploys from `main`). Latest commit at handoff: `6d78d08`.
-- We just finished a long **explanation phase** (no code): explaining the Returns tab, the Comps tabs,
-  data provenance, and correcting a peer-naming claim. See §6–§8.
-- **Immediate next things the user wants** (see §9 for detail):
-  1. **The "detailed Excel analysis" workstream** — surface the rich data that's in the uploaded
-     Excel/CIM but *not yet wired* into the dashboard (opex structure, unit economics, BU-level
-     revenue split, clinic ramp, fund use). Partly gated on a **client (Faraz) decision** about a
-     "Full Excel breakdown" view toggle — do NOT build the toggle until the user relays Faraz's reply.
-  2. **Transaction comps completion** — DONE at the prompt level ("exhaustive comps extraction",
-     see §7/§9.2): the model is now told to pull EVERY named comparable/deal from the whole
-     document (competitive-landscape, international-benchmark, "Acquired by X" captions, the target's own
-     rounds) into `peerBenchmark`/`comps.transactions`, Indian or global, listed or unlisted. It takes
-     effect on the **next fresh upload** of a deal. Per-deal valuation-comps exports remain the
-     authoritative path (drop them in the "Other documents" upload slot). Trading comps already live/complete.
+- Everything below is **merged to `main` and live** (Cloudflare auto-deploys from `main`). Latest
+  commit: `6982927` (PR #9). The pipeline is nine merged PRs (#1–#9) — see §12.
+- **The dashboard now has 11 tabs**: Snapshot · Deep Dive · Financials · **Excel Analysis** · Fit ·
+  Integrity · Questions · Thesis · Comps · Returns · **Audit**. The last two of these (Excel Analysis,
+  Audit) were built AFTER this handoff was first written — an earlier version of this file wrongly still
+  listed Excel Analysis as "pending", which is the whole reason for the "keep this current" rule above.
+- **Recently shipped** (see §9 for detail):
+  1. **Excel Analysis tab** (PR #1/#3/#7) — a second AI pass reads the whole Excel model and turns it
+     into charts (revenue/cost trends, margins, segment splits, unit economics, ramps). Generic: whatever
+     the model breaks out becomes the visuals. This IS the "detailed Excel analysis" workstream — DONE.
+  2. **PR #9** (`6982927`) — three things: (a) auto-derive **Return on Equity** when the model leaves it
+     blank but PAT ÷ net worth is computable (per-cell, additive); (b) **combine Deep Dive + Excel
+     Analysis into ONE GitHub-Actions run** (`/api/insights`, two steps, one runner spin-up) with a clean
+     fallback to the two separate passes; (c) a new on-demand **Audit tab** — a "Run audit" button that
+     re-reads the memo AND the source documents and lists every difference (wrong / missing / unsupported
+     / assumption / verified) with a suggested fix. Audit **reports only — it never edits the deal**.
+  3. **Exhaustive comps extraction** (prompt-level, §7/§9.2) — the model pulls EVERY named comparable /
+     deal from the whole document into `peerBenchmark` / `comps.transactions`. Takes effect on a fresh
+     upload; valuation-comps exports in the "Other documents" slot remain the authoritative path.
+- **Still pending:** nothing on the dev side. Only (a) the **"Full Excel breakdown" view TOGGLE**, still
+  gated on a **client (Faraz) decision** — do NOT build it until the user relays his answer; and (b) a few
+  **optional** deferred follow-ups from PR #9's review (see §9.4). Trading comps are already live/complete.
 
 ---
 
@@ -39,8 +51,8 @@ You upload a deal's documents (Investment Memorandum / CIM PDF, an Excel financi
 notes `.eml`, optionally a transcript and valuation-comps exports). A Cloudflare Worker sends them to
 Claude (on Amazon Bedrock), which returns a structured JSON memo. The Worker post-processes it
 deterministically (returns math, ratios, provenance) and stores it in KV. The front-end renders a
-multi-tab dashboard: Memo, Financials, **Returns**, **Comps** (Peer Benchmarking + Valuation Comps),
-Deep Dive, Integrity.
+multi-tab dashboard: Snapshot, Deep Dive, Financials, **Excel Analysis**, Fit, Integrity, Questions,
+Thesis, **Comps** (Peer Benchmarking + Valuation Comps), **Returns**, and **Audit**.
 
 The flagship live deal is **Visit Health** (a.k.a. "Budget Health" in the notes) — an Indian B2B2C
 primary-care / OPD-benefits platform.
@@ -53,10 +65,13 @@ primary-care / OPD-benefits platform.
   on every push to `main` (~30–90s). There is **no `wrangler deploy` step you run** and the deploy is
   **NOT** done by GitHub Actions. Config: `wrangler.jsonc` (entry `worker/index.js`, static assets in
   `public/`, KV namespace binding `DEALS`).
-- **Work on `main`.** Despite an original task instruction naming a `claude/...` develop branch, the
-  entire project history and the user's workflow are on `main` — because (a) Cloudflare deploys from
-  `main`, and (b) the GitHub Actions workflow only runs from the default branch. The user has endorsed
-  push-to-main. Continue on `main` unless the user says otherwise.
+- **How changes reach `main` (current workflow — this changed).** Early work was pushed straight to
+  `main`; the recent workstream (PRs #1–#9) uses a **feature branch → PR → squash-merge to `main`**
+  flow, which triggers the Cloudflare deploy on merge and lets an automated reviewer (Codex) comment
+  first. Cloudflare also builds a **preview URL per PR**. The GitHub Actions *generation* workflow
+  (`generate.yml`) still only runs from the default branch, and `repository_dispatch` always runs
+  `main`'s runner — so a Worker change and its runner change must land together at merge. Match whatever
+  branch the user points you at; if none is given, a PR into `main` is the safe default.
 - **Secrets are NOT in the repo.** `GHA_SECRET`, `BEDROCK_API_KEY`, `AWS_REGION`, `BEDROCK_MODEL_IDS`,
   `WORKER_URL` live in **GitHub Actions repo secrets/vars** and the **Cloudflare Worker env**. Never
   paste secret values into committed files. (If you ever need to confirm the Worker's `GHA_SECRET`
@@ -88,9 +103,20 @@ primary-care / OPD-benefits platform.
   beat Bedrock overload.**
 - **`worker` (fallback):** the old inline path — Worker calls Bedrock directly and streams. Fast when
   Bedrock is calm; dies on overload. **"Go to fallback" = `POST /api/gen-mode {mode:"worker"}`.**
-- **Deep Dive** also routes through GA when mode is `gha` (same overload reason) — a `dd_<id>_<ts>`
-  job with `kind:"deepdive"`; `/api/gha-result` has a deep-dive branch that merges into
-  `company:<id>.deepDive`.
+- **Second-pass "insights" also route through GA** when mode is `gha` (same overload reason). There are
+  **three** of them, each its own focused Bedrock call, merged additively onto the stored deal (a failure
+  never flips the deal to "error" — the client can retry):
+  - **Deep Dive** (`POST /api/deepdive`, job `dd_<id>_<ts>`, `kind:"deepdive"`) → `company:<id>.deepDive`.
+  - **Excel Analysis** (`POST /api/excel-analysis`, job `xa_<id>_<ts>`, `kind:"excel"`) → `company:<id>.excelAnalysis`.
+  - **Audit** (`POST /api/audit`, job `au_<id>_<ts>`, `kind:"audit"`) → its OWN key `audit:<id>` (so an
+    audit write never clobbers a Deep Dive / Excel write racing it); `GET /api/companies` merges it back
+    onto the deal as `c.audit`. Audit is **on-demand** (a "Run audit" button), never automatic.
+  - **PR #9 combined Deep Dive + Excel into ONE GA run** (`/api/insights`, a `steps[]` payload the runner
+    loops) so a fresh build does one runner spin-up instead of two; the client falls straight back to the
+    two separate passes whenever the server can't combine. `/api/gha-result` has a branch per `kind`.
+- **`/api/regenerate`** rebuilds an existing deal in place (same id) from its stored source text plus a new
+  report — used by the Comps-tab "Add report" button. It preserves the existing Deep Dive / Excel Analysis
+  and deletes any now-stale `audit:<id>`.
 
 **GA-mode hardening already in place** (don't regress these):
 - Duplicate `repository_dispatch` of the same jobId is a **no-op** (dedupe on `ghajob:<jobId>`).
@@ -254,22 +280,20 @@ Accurate position:
 
 ## 9. OPEN / PENDING WORK (what to do next)
 
-### 9.1 "Detailed Excel analysis" — surface currently-unused rich data  ← the user's main next want
-The dashboard uses the Excel only for the raw financial series. A lot of high-value data sits in the
-uploaded docs but is **not wired into any tab**. Candidate items to surface (Visit example):
-- **Cost / opex structure** by year (Direct Expenses, Employee Benefits, Other Expenses — in the table §5).
-- **Unit economics** (₹5,000/employee, ₹600/consultation, gross margins 25% / 35–37% / blended 30%,
-  EBITDA run-rate ₹5 Cr/mo).
-- **Revenue by business unit** (Retail / Employee benefits / Prepolicy checkup / Affinity / Clinics —
-  FY26 and FY31 splits, §5).
-- **City-clinic ramp** (50 clinics across Bangalore 12 / Mumbai 10 / Delhi NCR 18 / Hyderabad 5 / Pune 5).
-- **Fund utilisation** (₹300 Cr: clinics + working capital + lab insourcing/intl + AI tech, CIM p.38).
-- **International pilots** (Philippines HMO pilot, Indonesia; BCG supporting strategy).
+### 9.1 "Detailed Excel analysis" — SHIPPED as the Excel Analysis tab
+This WAS the user's main next want; it is now **DONE**. The **Excel Analysis tab** (PR #1, refined in
+#3/#7, combined into one GA run in #9) is a second AI pass that reads the whole Excel model and turns
+whatever it breaks out — cost/opex structure, unit economics, revenue by segment/BU, capacity/ramp,
+cash flow, assumptions — into charts (trend / bars / donut / kpis / table). It's **generic**: sections
+are decided per-model from the sheet's own rows, using the SAME typed-block renderer as the Deep Dive.
+Code: `handleExcelAnalysis` (worker) + `renderExcelAnalysis` (app.js). So the "surface currently-unused
+rich Excel data" goal is met by this tab — no separate wiring needed.
 
-**Gate:** part of this is tied to a **client decision** the user forwarded to Faraz — whether to add a
-view **toggle**: *Option 1* = current "Consolidated + IM" view vs *Option 2* = a **full Excel breakdown**
-view. **The user said "wait" for Faraz's reply. Do NOT build the toggle until the user relays the answer.**
-Surfacing the *unused data itself* (the bullets above) can proceed if the user asks, independent of the toggle.
+**Still gated (the ONE open item here):** a **client decision** the user forwarded to Faraz — whether to
+add a view **TOGGLE**: *Option 1* = current "Consolidated + IM" view vs *Option 2* = a **full Excel
+breakdown** view. **The user said "wait" for Faraz's reply. Do NOT build the toggle until the user relays
+the answer.** The Excel Analysis tab already surfaces the breakdown data; the toggle is about how the
+*core Financials tab* presents consolidated-vs-full, which is what needs Faraz's call.
 
 ### 9.2 Transaction comps — completion  (prompt fix SHIPPED)
 - **DONE:** exhaustive comps extraction is live in the prompt (worker) — every named comparable/deal from
@@ -288,25 +312,56 @@ The user offered Screener.in login creds (to add as GitHub Actions secrets) for 
 a ticker Yahoo doesn't carry. (Chromium is pre-installed in the env; `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`;
 do not run `playwright install`.)
 
+### 9.4 Audit tab — SHIPPED (PR #9); a few optional follow-ups deferred
+The on-demand **Audit** tab is live: `handleAudit` (worker) + `renderAudit` (app.js). It re-reads the
+memo AND the stored source docs (`dealsrc:<id>`), compares them, and returns findings tagged
+**wrong / missing / unsupported / assumption / verified**, each with document-vs-dashboard and a suggested
+fix, plus a **deal-scope vs app-scope** tag. `coerceAudit` normalises + orders findings and **derives the
+verdict from them** (never trusts the model's own). Reports only — it never edits the deal. See §10b.
+
+PR #9's review (Codex bot) raised a few **P2** items the author consciously **deferred** with public
+replies — all minor, none blocking. Pick them up only if the user asks:
+- **Persist the pass "pending" markers across a page reload** so a live spinner (Deep Dive / Excel /
+  Audit) survives a refresh. Today the RESULT always survives (it re-hydrates on focus), but the live
+  spinner and single-run guard are client-only, so a reload mid-run can allow a duplicate run.
+- **Persist a server-side FAILURE marker** for the GA passes so the client fails fast instead of waiting
+  out its 16-min pending timeout on a known GA error. (Same gap for Deep Dive / Excel / Audit — a shared
+  pass-lifecycle change is the clean fix.)
+- **Version-guard an in-flight audit** against a concurrent regenerate (a narrow, self-correcting race).
+
+These three are grouped as a single "shared pass-lifecycle" follow-up; do them together if at all.
+
 ---
 
 ## 10. Key code locations (fast navigation)
 
+> Line numbers drift as the file grows (`worker/index.js` is ~1960 lines now, `app.js` ~5330) — search
+> by function name rather than trusting a number. `node --check` both files before pushing.
 - **`worker/index.js`**
-  - `coerceReturns(o)` — returns model: basis, entry-anchored-to-ask, exit illustrative, >40× guard. (~line 1156)
-  - `normalizeCompany` / `ensureDerivedFinancials(fin)` — fills only-when-missing ratios/CAGR/revenueMix.
-  - `handleGenerate` — GA dispatch branch + dedupe.
-  - `handleGhaResult` — validates/stores model output; has the **deepdive** branch + don't-clobber-done guard.
-  - `handleDeepDive` — routes deep dive through GA when mode is `gha`.
-  - `handlePeerMultiple` / `yahooCreds(env)` / `peerViaYahoo(ticker,env)` — live trading comps.
-  - The big **prompt** (system/user) — comps provenance rules, year-span rule, deal-terms rule, returns
-    basis guidance. Search for `RETURNS (ALWAYS include` (~line 512) and the provenance/PROVENANCE rules.
+  - `coerceReturns(o)` — returns model: basis, entry-anchored-to-ask, exit illustrative, >40× guard.
+  - `normalizeCompany` / `ensureDerivedFinancials(fin)` — fills only-when-missing ratios/CAGR/revenueMix,
+    incl. **RoE = PAT ÷ net worth** (per-cell, additive; PR #9). RoCE deliberately left to the model.
+  - `handleGenerate` — GA dispatch branch + dedupe. `handleRegenerate` — rebuild-in-place (§10b/#10a).
+  - `handleGhaResult` — validates/stores model output; branches per `kind` (**deepdive / excel / audit**)
+    + don't-clobber-done guard.
+  - `handleDeepDive` / `handleExcelAnalysis` / `handleAudit` — the three GA-patient second passes.
+    `coerceDeepDive` (shared by deep dive + excel) / `coerceAudit` (findings + derived verdict).
+  - `handlePeerMultiple` / `peerViaMunshot` / `yahooCreds(env)` / `peerViaYahoo(ticker,env)` — live comps
+    (Munshot → Yahoo → screener.in). `runGovernance` — Integrity web/court sweep.
+  - The big **prompt** (system/user) — comps provenance, year-span, deal-terms, returns basis. Search
+    `RETURNS (ALWAYS include` and the `PROVENANCE` rules. Audit prompt: search `AUDIT_SPEC`.
 - **`public/js/app.js`**
   - `personName(p)` / `personAvatar(s)` — role-as-identity when a slide gives no personal name.
   - `renderManagement` / `renderPromoters` / `renderMemoExact` — people rendering.
   - `attachCompsLive` — client-side live comps fetch + overwrite of listed-peer columns.
-  - `startDeepDive` / `reconcileJobsFromServer` / `ensureJobPolling` — deep-dive + job polling (GA-aware).
-- **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean).
+  - `reconcileJobsFromServer` / `ensureJobPolling` / `refreshCompaniesFromServer` — GA-aware job polling +
+    focus/visibility refresh; carefully preserves in-flight `_deepDivePending` / `_excelPending` /
+    `_auditPending` flags across a server refresh.
+  - `startDeepDive` / `startExcelAnalysis` / `startAudit` (+ their `retry*` / `maybeAuto*`) — the passes.
+  - `renderExcelAnalysis` (reuses the `renderDDSection` / `renderDDBlock` deep-dive renderer) /
+    `renderAudit` + `auditFindingCard` — the two newest tabs.
+- **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean,
+  loops a `steps[]` payload for the combined insights run).
 - **`.github/workflows/generate.yml`** — the `generate-deal` workflow (concurrency `generate-${jobId}`).
 - **`wrangler.jsonc`** — Worker + assets + `DEALS` KV binding.
 
@@ -328,6 +383,26 @@ path (system prompt, GA/inline, streaming) — no prompt duplication.
 - **Gotcha for the next session:** a regen only completes on a decisive server done/error record — never
   on name-match. If you touch the poller, keep the `j._regen` guards.
 
+### 10b. Audit tab — on-demand self-audit (how it works)
+A "Run audit" button (Audit tab of an uploaded deal) checks the memo against its source documents and
+lists differences. **Reports only — never edits the deal.** Same GA-patient, poller-merged plumbing as
+the Deep Dive / Excel passes.
+- **Client:** `renderAudit(c)` → `retryAudit(id)` → `startAudit(id, inputs)` POSTs `{id, …source text}`
+  to `/api/audit`. Flags `_auditPending` (spinner) → poller merges the new report → re-render. Re-runnable:
+  it stamps `_auPrevAt` with the current audit's timestamp and only accepts a report with a NEWER
+  `generatedAt`, so a re-run never stops on the previous one.
+- **Server:** `handleAudit` loads `company:<id>` + `dealsrc:<id>`, runs `ensureDerivedFinancials` on the
+  memo copy FIRST (so a derivable-but-blank ratio like RoE isn't falsely flagged), tells the model
+  EXACTLY which sources it was handed (so it can't claim to have checked a doc it never saw — e.g. an
+  empty scanned IM), calls Bedrock via GA (`kind:'audit'`), and stores the report under its **own key**
+  `audit:<id>`. `coerceAudit` normalises findings, orders them most-severe-first, and **derives the
+  verdict** (`clean` / `minor` / `issues`) from the findings — the model's own verdict is ignored.
+- **Findings shape:** `{ severity: high|medium|low, status: wrong|missing|unsupported|assumption|verified,
+  scope: deal|app, area, title, finding, memo, source_says, fix }`. `strengths[]` = things verified correct.
+- **Lifecycle:** a regenerate deletes `audit:<id>` (stale). Deleting a deal deletes `audit:<id>` too.
+  `GET /api/companies` reads `company:<id>` + `audit:<id>` in parallel and merges the audit back as
+  `c.audit`, so the client sees it exactly as before. Sample deals can't be audited (no source docs).
+
 ---
 
 ## 11. Gotchas / operational notes
@@ -345,8 +420,17 @@ path (system prompt, GA/inline, streaming) — no prompt duplication.
 
 ---
 
-## 12. Commit history this session (all on `main`)
+## 12. Commit history (on `main`)
 
+**PR era (feature branch → PR → squash-merge to `main`; latest first):**
+`6982927` (#9) RoE fill · combine Deep Dive + Excel into one run · on-demand Audit tab ·
+`be6c125` (#8) auto-refresh deals on tab focus · `682eafd` (#7) hover tooltips on every chart ·
+`1ef0456` (#6) prompt source-precedence + anchor returns to priced-on year · `b67fbf1` (#5) classify
+founders as promoters · `413974c` (#4) source-precedence rule (note can't override IM) · `0a7781a` (#3)
+Excel extraction drops month-only columns · `8f0bfdd` (#2) "—" instead of "0%" for absent-base margins ·
+`0382dad` (#1) **Add Excel Analysis tab**.
+
+**Pre-PR era (pushed straight to `main`):**
 `36c6e25` GA mode · `383979f` fingerprint diag · `17d5a29` role-as-identity ·
 `dbfd6ad` extraction/formatting bug batch · `6675b76` year-span · `51bf569` returns revenue basis+guard ·
 `b66f813` anchor entry to ask · `fa0c0fc` anchor from headline · `9274fef` derive ratios/CAGR/mix ·
