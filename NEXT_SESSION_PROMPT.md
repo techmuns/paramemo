@@ -12,20 +12,22 @@ logic, what's built, and what's pending). Then read section "9. OPEN / PENDING W
 Quick orientation so you know who I am and how we work:
 - This is Paramemo, a screening-memo dashboard for Paragon Partners (PE). Live at
   https://paramemo.tech-441.workers.dev (flagship deal: Visit Health, #visit-health).
-- Deploy = git push to main (Cloudflare auto-deploys the Worker; NOT wrangler, NOT GitHub Actions).
-  Work on main. Secrets live in GitHub Actions + Cloudflare env — never commit secret values.
-- Generation runs through GitHub Actions ("gha" mode) because Bedrock overloads on the inline path.
-  Fallback to inline = POST /api/gen-mode {mode:"worker"}.
+- Deploy = a merge to main (Cloudflare auto-deploys the Worker on push to main; NOT wrangler, NOT the
+  generate.yml Action). Recent work lands via feature branch → PR → squash-merge to main; each PR gets a
+  Cloudflare preview URL. Secrets live in GitHub Actions + Cloudflare env — never commit secret values.
+- Generation and the three second passes (Deep Dive, Excel Analysis, Audit) run through GitHub Actions
+  ("gha" mode) because Bedrock overloads on the inline path. Fallback to inline = POST /api/gen-mode {mode:"worker"}.
 
-What I want to pick up now: the "detailed Excel analysis" work — surfacing the rich data that's in the
-uploaded Excel/CIM but not yet wired into the dashboard (opex structure, unit economics, revenue-by-BU,
-clinic ramp, fund use — all listed in HANDOFF §9.1). Note: the "Full Excel breakdown" VIEW TOGGLE is
-still waiting on the client (Faraz) — don't build the toggle until I tell you his answer, but we can
-work on surfacing the unused data itself.
+Current state (as of the last session): everything is merged to main and live through PR #9. The
+dashboard has 11 tabs including Excel Analysis and the new on-demand Audit tab. There is NO pending
+dev task — the "detailed Excel analysis" work is DONE (it shipped as the Excel Analysis tab). The only
+things still open are (a) the "Full Excel breakdown" VIEW TOGGLE, which is GATED on the client (Faraz)
+— do NOT build it until I relay his answer — and (b) a few optional deferred follow-ups from PR #9's
+review (HANDOFF §9.4). So don't assume a task; ask me what to pick up.
 
-Start by reading HANDOFF.md and then tell me: (1) a one-paragraph confirmation you've got the context,
-and (2) a short proposed plan for the detailed-Excel-analysis work, so I can point you at the first piece.
-Don't change any code until I confirm the plan.
+Start by reading HANDOFF.md and then tell me: (1) a one-paragraph confirmation you've got the context
+and the current state, and (2) ask me what I'd like to work on next (or, if I've already told you,
+propose a short plan for it). Don't change any code until I confirm.
 ```
 
 ---
