@@ -1309,9 +1309,9 @@ function initHeader() {
   brand.addEventListener('click', goHome);
   brand.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 
-  // Export → the Full report (comprehensive, every tab in one document). This is now a single
-  // one-click action. The Memo replica (renderMemoExact) is kept in the code but no longer offered
-  // in the UI — to bring it back, restore the two-item dropdown menu here and re-wire openEx/closeEx.
+  // Export → the Full report. Clicking it opens a section picker (openExportModal) so the partner
+  // chooses which sections go into the download (Faraz). The Memo replica (renderMemoExact) is kept in
+  // the code but no longer offered in the UI — to bring it back, restore the dropdown menu here.
   const exportBtn = $('#export-btn');
   exportBtn.classList.remove('is-disabled');
   exportBtn.removeAttribute('data-tip');
@@ -1320,7 +1320,7 @@ function initHeader() {
   const exMenu = $('#export-menu');
   if (exMenu) { exMenu.innerHTML = ''; exMenu.classList.add('hidden'); }   // no dropdown any more
   const exChev = $('#export-chev'); if (exChev) exChev.style.display = 'none';   // single action → drop the caret
-  exportBtn.addEventListener('click', e => { e.stopPropagation(); exportPdf('report'); });
+  exportBtn.addEventListener('click', e => { e.stopPropagation(); const c = companyById(ui.companyId); if (!c) { toast('Open a company first, then export it'); return; } openExportModal(c); });
 }
 
 /* ---- Export ---------------------------------------------------------------
@@ -1437,11 +1437,71 @@ function openPrintPreview(c, doc, body, html) {
   requestAnimationFrame(() => overlay.classList.add('show'));
 }
 
-function exportPdf(kind) {
+// "Download report" — a section picker (Faraz: choose what goes into the export; e.g. skip Key
+// questions once the mgmt meeting has happened). All present sections start ticked; Download builds
+// the report with only the ticked ones.
+function openExportModal(c) {
+  const secs = reportSections(c);
+  if (!secs.length) { exportPdf('report'); return; }   // nothing to choose → just export everything
+  const root = $('#modal-root');
+  const rows = secs.map(s => `
+    <label style="display:flex;align-items:center;gap:11px;padding:9px 8px;border-radius:9px;cursor:pointer">
+      <input type="checkbox" data-sec="${s.key}" checked style="width:16px;height:16px;accent-color:${BRAND.navy};cursor:pointer;flex:none">
+      <span class="text-[13.5px]" style="color:${BRAND.ink};font-weight:500">${esc(s.label)}</span>
+    </label>`).join('');
+  const overlay = h(`
+    <div class="modal-overlay" role="dialog" aria-modal="true" aria-label="Download report">
+      <div class="modal" style="max-width:468px">
+        <div class="px-6 pt-5 pb-1">
+          <h2 class="font-display text-[17px] font-semibold text-ink">Download report</h2>
+          <p class="text-[13px] text-ink-muted mt-1.5 leading-relaxed">Pick the sections to include — untick anything you don't need (e.g. skip <b>Key questions</b> if that meeting has already happened).</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:13px">
+            <div style="display:flex;gap:6px">
+              <button data-all class="link-btn" type="button">Select all</button>
+              <button data-none class="link-btn" type="button">Clear all</button>
+            </div>
+            <span data-count class="text-[12px] text-ink-hint"></span>
+          </div>
+          <div style="margin-top:6px;max-height:46vh;overflow:auto;border:1px solid ${BRAND.border};border-radius:11px;padding:5px">${rows}</div>
+        </div>
+        <div class="flex items-center justify-end gap-2.5 px-6 pb-5 pt-4">
+          <button data-cancel class="hdr-btn" style="color:${BRAND.ink};background:#F2F5FB;border-color:${BRAND.border}">Cancel</button>
+          <button data-download class="hdr-btn" style="color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('download', 'w-4 h-4')} Download</button>
+        </div>
+      </div>
+    </div>`);
+  const boxes = () => Array.from(overlay.querySelectorAll('[data-sec]'));
+  const dlBtn = overlay.querySelector('[data-download]');
+  const cnt = overlay.querySelector('[data-count]');
+  const refresh = () => {
+    const all = boxes(), n = all.filter(b => b.checked).length;
+    cnt.textContent = `${n} of ${all.length} sections`;
+    dlBtn.disabled = n === 0; dlBtn.style.opacity = n === 0 ? '.5' : ''; dlBtn.style.cursor = n === 0 ? 'not-allowed' : '';
+  };
+  let done = false;
+  const close = () => { if (done) return; done = true; overlay.classList.remove('show'); setTimeout(() => overlay.remove(), 200); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.addEventListener('change', e => { if (e.target.matches('[data-sec]')) refresh(); });
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+  overlay.querySelector('[data-all]').addEventListener('click', () => { boxes().forEach(b => b.checked = true); refresh(); });
+  overlay.querySelector('[data-none]').addEventListener('click', () => { boxes().forEach(b => b.checked = false); refresh(); });
+  dlBtn.addEventListener('click', () => {
+    const include = new Set(boxes().filter(b => b.checked).map(b => b.dataset.sec));
+    if (!include.size) return;
+    close();
+    exportPdf('report', include);
+  });
+  document.addEventListener('keydown', onKey);
+  root.appendChild(overlay);
+  requestAnimationFrame(() => { overlay.classList.add('show'); refresh(); if (dlBtn) dlBtn.focus(); });
+}
+
+function exportPdf(kind, include) {
   const c = companyById(ui.companyId);
   if (!c) { toast('Open a company first, then export it'); return; }
   const doc = kind === 'report' ? 'report' : 'memo';
-  const body = doc === 'report' ? renderFullReport(c) : renderMemoExact(c);
+  const body = doc === 'report' ? renderFullReport(c, include) : renderMemoExact(c);
 
   // Keep #print-root loaded either way: it's what a plain Ctrl+P prints.
   const root = $('#print-root');
@@ -1778,7 +1838,26 @@ function frFiguresAudit(c) {
   if (!warns.length) return '';
   return `<div class="fr-audit warn"><b>⚠ Figures to verify before circulating:</b><ul>${warns.map(i => `<li>${esc(i.text)}</li>`).join('')}</ul></div>`;
 }
-function renderFullReport(c) {
+// Sections offered in the "Download report" picker (Faraz: choose what goes into the export — e.g.
+// skip Key questions once the mgmt meeting has happened). present(c) decides which are offered for a
+// given deal; renderFullReport(c, include) then emits only the keys in the `include` Set.
+const REPORT_SECTIONS = [
+  { key: 'overview',   label: 'Business overview',         present: () => true },
+  { key: 'deal',       label: 'The deal',                  present: () => true },
+  { key: 'deepdive',   label: 'IM deep-dive briefing',     present: c => hasDeepDive(c) },
+  { key: 'excel',      label: 'Excel model analysis',      present: c => hasExcelAnalysis(c) },
+  { key: 'financials', label: 'Financials',                present: () => true },
+  { key: 'fit',        label: 'Fit assessment',            present: () => true },
+  { key: 'integrity',  label: 'Integrity & governance',    present: () => true },
+  { key: 'questions',  label: 'Key questions',             present: c => Array.isArray(c.questions) && c.questions.length > 0 },
+  { key: 'thesis',     label: 'Investment thesis & risks', present: () => true },
+  { key: 'comps',      label: 'Peers & comparables',       present: c => hasComps(c) || hasPeers(c) },
+  { key: 'returns',    label: 'Illustrative returns',      present: c => !!c.returns },
+];
+function reportSections(c) { return REPORT_SECTIONS.filter(s => s.present(c)); }
+
+function renderFullReport(c, include) {
+  const inc = include instanceof Set ? include : new Set(REPORT_SECTIONS.map(s => s.key));   // default: every section
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
   const s = c.snapshot || {}, t = c.transaction || {}, o = c.origination || {};
   const fy = (c.headline && c.headline.revenueLabel || '');
@@ -1792,7 +1871,7 @@ function renderFullReport(c) {
   // Auto-numbered so conditional sections (deep-dive, questions, comps, returns)
   // never leave a gap; template `${}` expressions evaluate in source order.
   let _sn = 0;
-  const sec = (title, body, cls) => `<section class="fr-sec${cls ? ' ' + cls : ''}"><h2><span class="fr-n">${++_sn}</span>${esc(title)}</h2>${body}</section>`;
+  const sec = (key, title, body, cls) => inc.has(key) ? `<section class="fr-sec${cls ? ' ' + cls : ''}"><h2><span class="fr-n">${++_sn}</span>${esc(title)}</h2>${body}</section>` : '';
 
   return `
     <div class="fr">
@@ -1813,7 +1892,7 @@ function renderFullReport(c) {
         </div>
       </div>
 
-      ${sec('Business overview', `
+      ${sec('overview', 'Business overview', `
         <p>${esc(s.whatTheyDo || c.oneLiner || '')}</p>
         ${bullets ? `<ul class="fr-ul">${bullets}</ul>` : ''}
         <div class="fr-people-grid">
@@ -1823,7 +1902,7 @@ function renderFullReport(c) {
         ${own ? `<h3 style="margin-top:12px">Ownership</h3><table class="fr-facts">${own}</table>` : (s.ownershipNote ? `<p class="fr-note">${esc(s.ownershipNote)}</p>` : '')}
       `)}
 
-      ${sec('The deal', `<table class="fr-facts">
+      ${sec('deal', 'The deal', `<table class="fr-facts">
         <tr><td>Ask</td><td class="num">${esc(t.headline || '—')}</td></tr>
         <tr><td>Type</td><td class="num">${esc(t.type || '—')}</td></tr>
         <tr><td>Co-investment</td><td class="num">${esc(t.coInvestment || 'TBU')}</td></tr>
@@ -1832,35 +1911,35 @@ function renderFullReport(c) {
         <tr><td>Origination date</td><td class="num">${esc(fmtDate(o.date) || '—')}</td></tr>
       </table>`)}
 
-      ${hasDeepDive(c) ? sec('From the Information Memorandum — full briefing', frDeepDive(c), 'fr-sec-dd') : ''}
-      ${hasExcelAnalysis(c) ? sec('From the Excel model — analysis', frExcelAnalysis(c), 'fr-sec-dd') : ''}
+      ${hasDeepDive(c) ? sec('deepdive', 'From the Information Memorandum — full briefing', frDeepDive(c), 'fr-sec-dd') : ''}
+      ${hasExcelAnalysis(c) ? sec('excel', 'From the Excel model — analysis', frExcelAnalysis(c), 'fr-sec-dd') : ''}
 
-      ${sec('Financials', `
+      ${sec('financials', 'Financials', `
         <div class="fr-cap">All figures in ₹ crore; tinted columns are forecast.</div>
         ${printFinTable(c)}
         ${printSegments(c)}
       `)}
 
-      ${sec('Fit assessment', `
+      ${sec('fit', 'Fit assessment', `
         <div class="fr-fitline"><span class="fr-verdict sm fr-${esc(c.fit ? c.fit.verdict : 'watch')}"><span class="dot"></span>${fit.label}</span><span>${esc(c.fit ? c.fit.reason : '')}</span></div>
         ${printChecklist(c)}
       `)}
 
-      ${sec('Integrity & governance', printIntegrity(c))}
+      ${sec('integrity', 'Integrity & governance', printIntegrity(c))}
 
-      ${Array.isArray(c.questions) && c.questions.length ? sec('Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
+      ${Array.isArray(c.questions) && c.questions.length ? sec('questions', 'Key questions', memoQuestions(c).replace(/mx-q/g, 'fr-q')) : ''}
 
-      ${sec('Investment thesis & risks', `
+      ${sec('thesis', 'Investment thesis & risks', `
         <div class="fr-cols">
           <div><h3>Why we'd invest</h3>${(c.thesis || []).map(x => `<div class="fr-point"><b>${esc(x.point)}</b><span>${esc(x.detail)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
           <div><h3>What worries us</h3>${(c.concerns || []).map(x => `<div class="fr-point"><b>${esc(x.issue)}</b><span>${esc(x.detail)}</span><span class="mit">Mitigant: ${esc(x.mitigant)}</span></div>`).join('') || '<p class="fr-note">TBU</p>'}</div>
         </div>
       `)}
 
-      ${hasComps(c) ? sec('Peers & comparables', frComps(c))
-        : (hasPeers(c) ? sec('Peers & comparables', frPeerComps(c)) : '')}
+      ${hasComps(c) ? sec('comps', 'Peers & comparables', frComps(c))
+        : (hasPeers(c) ? sec('comps', 'Peers & comparables', frPeerComps(c)) : '')}
 
-      ${c.returns ? sec('Illustrative returns',
+      ${c.returns ? sec('returns', 'Illustrative returns',
         `<div class="fr-cap">Base case built on management’s own projections — illustrative, not a recommendation.</div>${frReturns(c)}`) : ''}
 
       <div class="fr-foot">Paragon Partners · Screening Report · Private &amp; Confidential</div>

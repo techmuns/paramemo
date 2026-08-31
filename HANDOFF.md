@@ -339,6 +339,21 @@ replies — all minor, none blocking. Pick them up only if the user asks:
 
 These three are grouped as a single "shared pass-lifecycle" follow-up; do them together if at all.
 
+### 9.5 Client feedback (Faraz, via WhatsApp) — export section-picker + returns mixed-basis
+Faraz's screening-flow feedback, being worked through (PR #12):
+- **Returns: entry on Revenue, exit on EBITDA/PAT (SHIPPED).** The UI already supported independent
+  `entryBasis` / `exitBasis` dropdowns (switching a basis resets that leg's multiple to the comps median
+  — an earlier Faraz ask, see `recomputeReturns`). Added: the core-memo **prompt now DEFAULTS to a mixed
+  basis** — enter on revenue, exit on EBITDA (or PAT) — when a revenue-entered company is solidly
+  profitable by the exit year, so the partner no longer has to flip it by hand. Fresh upload / regenerate.
+- **Export: choose which sections to download (SHIPPED).** The Export button now opens a **section
+  picker** (`openExportModal`) — a checkbox per report section (all ticked by default) — so the partner
+  drops sections he doesn't need (his example: skip **Key questions** once the mgmt meeting has happened).
+  `renderFullReport(c, include)` emits only the chosen keys; `REPORT_SECTIONS` is the offered list.
+  (This subsumes his earlier "toggle Excel on/off on export" ask into a per-section toggle.)
+- **NOTE — more feedback likely incoming.** The user was sharing Faraz's WhatsApp notes in batches, so
+  check for further items before assuming this list is complete.
+
 ---
 
 ## 10. Key code locations (fast navigation)
@@ -358,8 +373,9 @@ These three are grouped as a single "shared pass-lifecycle" follow-up; do them t
     `appFindings` app-scope; verdict from deal-scope only).
   - `handlePeerMultiple` / `peerViaMunshot` / `yahooCreds(env)` / `peerViaYahoo(ticker,env)` — live comps
     (Munshot → Yahoo → screener.in). `runGovernance` — Integrity web/court sweep.
-  - The big **prompt** (system/user) — comps provenance, year-span, deal-terms, returns basis. Search
-    `RETURNS (ALWAYS include` and the `PROVENANCE` rules. Audit prompt: search `AUDIT_SPEC`.
+  - The big **prompt** (system/user) — comps provenance, year-span, deal-terms, returns basis (entry/exit
+    basis may DIFFER — mixed-basis default, Faraz §9.5). Search `RETURNS (ALWAYS include` and the
+    `PROVENANCE` rules. Audit prompt: search `AUDIT_SPEC`.
 - **`public/js/app.js`**
   - `personName(p)` / `personAvatar(s)` — role-as-identity when a slide gives no personal name.
   - `renderManagement` / `renderPromoters` / `renderMemoExact` — people rendering.
@@ -372,6 +388,8 @@ These three are grouped as a single "shared pass-lifecycle" follow-up; do them t
     `renderAudit` + `auditFindingCard` — the two newest tabs. Audit shows deal-scope findings only
     (app-scope behind `IS_DEV` = `?dev=1`); `applyAuditFix` / `auditFixDirective` drive the one-click
     "Apply this fix" (a correction-only `startRegeneration(company, [], {correction})`).
+  - `renderFullReport(c, include)` + `REPORT_SECTIONS` / `reportSections(c)` / `openExportModal` — the
+    PDF/report export and its **section picker** (Faraz, §9.5). Export button → picker modal → `exportPdf`.
 - **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean,
   loops a `steps[]` payload for the combined insights run).
 - **`.github/workflows/generate.yml`** — the `generate-deal` workflow (concurrency `generate-${jobId}`).
