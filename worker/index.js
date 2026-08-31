@@ -703,7 +703,10 @@ async function handleRegenerate(request, env, ctx) {
 
   const extraText = String((body && body.extraText) || '').slice(0, 120000);
   const extraImages = (Array.isArray(body && body.extraImages) ? body.extraImages : []).filter(s => typeof s === 'string' && s).slice(0, 5);
-  if (!extraText && !extraImages.length) throw new ApiError(400, 'No readable report was attached to add.');
+  // A "correction" directive comes from the Audit tab's "Apply this fix" button — one flagged
+  // discrepancy to re-examine and correct against the source, not a new report to fold in.
+  const correction = String((body && body.correction) || '').trim().slice(0, 8000);
+  if (!extraText && !extraImages.length && !correction) throw new ApiError(400, 'No readable report or correction was provided.');
   if (!imText && !excelText) throw new ApiError(400, 'This deal has no stored source to rebuild from — please re-add it as a new deal with the report attached.');
 
   // Append the new report(s) to the IM text under a clear header, exactly as the upload flow folds in
@@ -711,14 +714,23 @@ async function handleRegenerate(request, env, ctx) {
   if (extraText) imText = (imText ? imText + '\n\n' : '') + '===== Added report(s) — parse valuation / transaction comps and governance from here =====\n' + extraText;
 
   const basics = { name: company.name || company.shortName || '', sector: company.sector || '' };
-  // Persist the enriched source text so future regenerates keep this report too (belt-and-suspenders:
-  // the build path re-stashes dealsrc on success anyway, but this survives even a failed rebuild+retry).
+  // Persist the enriched source text so future regenerates keep this report too. NOTE: a one-off audit
+  // correction is deliberately NOT persisted here (it's a transient instruction, not new source) — it's
+  // folded into promptImText below, for this build only.
   try { await env.DEALS.put(`dealsrc:${id}`, JSON.stringify({ imText, excelText, notesText })); } catch { /* best-effort */ }
+
+  // Fold an audit correction in for THIS build's prompt only: re-read the source and fix ONLY this
+  // point, leaving the rest as-is. Grounded in the documents (the fix cites what the source says), and
+  // never written back to dealsrc, so it can't re-apply or pollute a later rebuild.
+  let promptImText = imText;
+  if (correction) promptImText = (promptImText ? promptImText + '\n\n' : '') +
+    '===== CORRECTION TO APPLY (from a self-audit of this memo) =====\n' +
+    'A quality check compared this memo to the source documents and flagged the item below. Re-read the source documents, CORRECT this specific point, and keep the rest of the memo unchanged unless the documents contradict it. Do not introduce changes beyond this fix.\n' + correction;
 
   // Hand off to the SAME build path as a fresh upload, under reuseId so it overwrites this deal. The
   // report's own page images ride along as imPages (the IM's original images aren't stored; the IM text
   // we kept carries its content). A forwarded Request keeps the real origin so loadTemplate still works.
-  const fwd = { imText, excelText, notesText, basics, imPages: extraImages, reuseId: id, jobId };
+  const fwd = { imText: promptImText, excelText, notesText, basics, imPages: extraImages, reuseId: id, jobId };
   const forwarded = new Request(request.url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(fwd) });
   return await handleGenerate(forwarded, env, ctx);
 }
@@ -1282,7 +1294,7 @@ const AUDIT_SPEC =
   '  – scope: "app" when it looks like a TOOL issue that would recur across deals (a whole computed row blank though its inputs exist, a units / formatting problem, a metric the tool should derive); "deal" when it is specific to THIS memo\'s content. When unsure, use "deal".\n' +
   '• Order findings MOST-SEVERE FIRST. Be thorough but do not pad — report the genuine differences (often 3–15), never filler.\n' +
   '• verdict: "clean" (nothing material), "minor" (only small / low items), or "issues" (at least one high or medium).\n' +
-  '• summary: 2–3 plain sentences on the overall state of the memo versus its documents.';
+  '• summary: 2–3 plain sentences on the overall state of the memo versus its documents. Write it for the DEAL PARTNER — focus on the memo-vs-document differences he can act on; do not dwell on tool / formatting issues (those belong in findings with scope:"app").';
 
 // The memo as the dashboard shows it, minus the heavy derived views (deep dive / excel analysis /
 // a previous audit) — those are downstream renders, not facts to audit against the source.
@@ -1298,26 +1310,32 @@ function coerceAudit(a) {
   const SEV = new Set(['high', 'medium', 'low']);
   const STATUS = new Set(['wrong', 'missing', 'unsupported', 'assumption', 'verified']);
   const s = v => String(v == null ? '' : v).trim();
-  const findings = [];
+  const all = [];
   for (const f of (Array.isArray(a.findings) ? a.findings : [])) {
     if (!isObj(f)) continue;
     const title = s(f.title), finding = s(f.finding || f.detail);
     if (!title && !finding) continue;
     let sev = s(f.severity).toLowerCase(); if (sev === 'med') sev = 'medium'; if (!SEV.has(sev)) sev = 'medium';
     let status = s(f.status).toLowerCase(); if (!STATUS.has(status)) status = 'wrong';
-    findings.push({
+    all.push({
       severity: sev, status, scope: (s(f.scope).toLowerCase() === 'app' ? 'app' : 'deal'),
       area: s(f.area), title: title || finding.slice(0, 60), finding,
       memo: s(f.memo || f.dashboard), source_says: s(f.source_says || f.sourceSays || f.source), fix: s(f.fix || f.suggestion),
     });
   }
   const rank = { high: 0, medium: 1, low: 2 };
-  findings.sort((x, y) => rank[x.severity] - rank[y.severity]);
+  const bySev = (x, y) => rank[x.severity] - rank[y.severity];
+  // Split findings by WHO can act on them. DEAL findings are the partner's to fix — shown in the app
+  // with an "Apply this fix" button. APP findings are tool bugs only the builder can fix in code — the
+  // partner has no code/admin access, so telling him to "fix the app" is meaningless. They're kept
+  // (never lost) under appFindings for the dev/Munshot team; renderAudit shows them only behind a dev flag.
+  const findings = all.filter(f => f.scope !== 'app').sort(bySev);
+  const appFindings = all.filter(f => f.scope === 'app').sort(bySev);
   const strengths = (Array.isArray(a.strengths) ? a.strengths : []).map(s).filter(Boolean).slice(0, 24);
-  if (!findings.length && !s(a.summary) && !strengths.length) return null;
-  // Always DERIVE the verdict from the findings — never trust the model's own verdict, which can
-  // contradict them (e.g. "clean" alongside a high-severity error). A "verified" item is not a
-  // problem, so it doesn't move the verdict.
+  if (!findings.length && !appFindings.length && !s(a.summary) && !strengths.length) return null;
+  // DERIVE the verdict from what the PARTNER sees + can act on (deal-scope problems) — never trust the
+  // model's own verdict, and don't let a tool bug (which he can't fix) drive his verdict. A "verified"
+  // item is not a problem, so it doesn't move the verdict.
   const problems = findings.filter(f => f.status !== 'verified');
   const verdict = problems.some(f => f.severity === 'high' || f.severity === 'medium') ? 'issues' : (problems.length ? 'minor' : 'clean');
   return {
@@ -1325,7 +1343,7 @@ function coerceAudit(a) {
     // Full timestamp (not just the date): the client tells a fresh re-run apart from the previous
     // audit by this value, so it must change every run, even two on the same day.
     summary: s(a.summary), verdict, generatedAt: new Date().toISOString(),
-    findings, strengths,
+    findings, appFindings, strengths,
   };
 }
 

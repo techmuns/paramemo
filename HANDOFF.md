@@ -312,12 +312,20 @@ The user offered Screener.in login creds (to add as GitHub Actions secrets) for 
 a ticker Yahoo doesn't carry. (Chromium is pre-installed in the env; `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`;
 do not run `playwright install`.)
 
-### 9.4 Audit tab — SHIPPED (PR #9); a few optional follow-ups deferred
+### 9.4 Audit tab — SHIPPED (PR #9); audience reworked (PR #11); a few optional follow-ups deferred
 The on-demand **Audit** tab is live: `handleAudit` (worker) + `renderAudit` (app.js). It re-reads the
 memo AND the stored source docs (`dealsrc:<id>`), compares them, and returns findings tagged
 **wrong / missing / unsupported / assumption / verified**, each with document-vs-dashboard and a suggested
-fix, plus a **deal-scope vs app-scope** tag. `coerceAudit` normalises + orders findings and **derives the
-verdict from them** (never trusts the model's own). Reports only — it never edits the deal. See §10b.
+fix. `coerceAudit` normalises + orders findings and **derives the verdict from them** (never trusts the
+model's own). See §10b.
+
+**PR #11 reworked who sees / fixes what** (client feedback: the partner has no code access, so "fix the
+app" was meaningless to him):
+- **Deal-scope findings** are the only ones the partner sees, each now with a one-click **"Apply this
+  fix"** (re-runs the deal with a correction directive; §10b).
+- **App-scope findings** (tool bugs) are hidden from the partner and shown only behind a dev flag
+  (`?dev=1`) as "Tool issues — for the Munshot team". **These are our running backlog to fix in code** —
+  as we improve the tool, the corresponding class of app-scope finding should stop appearing.
 
 PR #9's review (Codex bot) raised a few **P2** items the author consciously **deferred** with public
 replies — all minor, none blocking. Pick them up only if the user asks:
@@ -341,11 +349,13 @@ These three are grouped as a single "shared pass-lifecycle" follow-up; do them t
   - `coerceReturns(o)` — returns model: basis, entry-anchored-to-ask, exit illustrative, >40× guard.
   - `normalizeCompany` / `ensureDerivedFinancials(fin)` — fills only-when-missing ratios/CAGR/revenueMix,
     incl. **RoE = PAT ÷ net worth** (per-cell, additive; PR #9). RoCE deliberately left to the model.
-  - `handleGenerate` — GA dispatch branch + dedupe. `handleRegenerate` — rebuild-in-place (§10b/#10a).
+  - `handleGenerate` — GA dispatch branch + dedupe. `handleRegenerate` — rebuild-in-place (§10a); also
+    accepts a one-off `correction` directive (Audit "Apply this fix", §10b), folded into the prompt only.
   - `handleGhaResult` — validates/stores model output; branches per `kind` (**deepdive / excel / audit**)
     + don't-clobber-done guard.
   - `handleDeepDive` / `handleExcelAnalysis` / `handleAudit` — the three GA-patient second passes.
-    `coerceDeepDive` (shared by deep dive + excel) / `coerceAudit` (findings + derived verdict).
+    `coerceDeepDive` (shared by deep dive + excel) / `coerceAudit` (splits `findings` deal-scope vs
+    `appFindings` app-scope; verdict from deal-scope only).
   - `handlePeerMultiple` / `peerViaMunshot` / `yahooCreds(env)` / `peerViaYahoo(ticker,env)` — live comps
     (Munshot → Yahoo → screener.in). `runGovernance` — Integrity web/court sweep.
   - The big **prompt** (system/user) — comps provenance, year-span, deal-terms, returns basis. Search
@@ -359,7 +369,9 @@ These three are grouped as a single "shared pass-lifecycle" follow-up; do them t
     `_auditPending` flags across a server refresh.
   - `startDeepDive` / `startExcelAnalysis` / `startAudit` (+ their `retry*` / `maybeAuto*`) — the passes.
   - `renderExcelAnalysis` (reuses the `renderDDSection` / `renderDDBlock` deep-dive renderer) /
-    `renderAudit` + `auditFindingCard` — the two newest tabs.
+    `renderAudit` + `auditFindingCard` — the two newest tabs. Audit shows deal-scope findings only
+    (app-scope behind `IS_DEV` = `?dev=1`); `applyAuditFix` / `auditFixDirective` drive the one-click
+    "Apply this fix" (a correction-only `startRegeneration(company, [], {correction})`).
 - **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean,
   loops a `steps[]` payload for the combined insights run).
 - **`.github/workflows/generate.yml`** — the `generate-deal` workflow (concurrency `generate-${jobId}`).
@@ -385,8 +397,9 @@ path (system prompt, GA/inline, streaming) — no prompt duplication.
 
 ### 10b. Audit tab — on-demand self-audit (how it works)
 A "Run audit" button (Audit tab of an uploaded deal) checks the memo against its source documents and
-lists differences. **Reports only — never edits the deal.** Same GA-patient, poller-merged plumbing as
-the Deep Dive / Excel passes.
+lists differences. Findings are **split by who can act on them** (PR #11): the partner sees only the
+ones he can fix; tool bugs are kept for the builder. Same GA-patient, poller-merged plumbing as the
+Deep Dive / Excel passes.
 - **Client:** `renderAudit(c)` → `retryAudit(id)` → `startAudit(id, inputs)` POSTs `{id, …source text}`
   to `/api/audit`. Flags `_auditPending` (spinner) → poller merges the new report → re-render. Re-runnable:
   it stamps `_auPrevAt` with the current audit's timestamp and only accepts a report with a NEWER
@@ -395,13 +408,25 @@ the Deep Dive / Excel passes.
   memo copy FIRST (so a derivable-but-blank ratio like RoE isn't falsely flagged), tells the model
   EXACTLY which sources it was handed (so it can't claim to have checked a doc it never saw — e.g. an
   empty scanned IM), calls Bedrock via GA (`kind:'audit'`), and stores the report under its **own key**
-  `audit:<id>`. `coerceAudit` normalises findings, orders them most-severe-first, and **derives the
-  verdict** (`clean` / `minor` / `issues`) from the findings — the model's own verdict is ignored.
+  `audit:<id>`. `coerceAudit` normalises findings and **splits them by scope**: `findings` (deal-scope,
+  shown to the partner) and `appFindings` (app-scope tool bugs). Verdict (`clean`/`minor`/`issues`) is
+  derived from the DEAL findings only — the model's own verdict, and tool bugs the partner can't fix,
+  don't drive it.
+- **Deal vs app — who sees / fixes what (PR #11):**
+  - **Deal-scope** = wrong/missing content in THIS memo → shown to the partner, each with an **"Apply
+    this fix"** button. Clicking it (`applyAuditFix` → `startRegeneration(company, [], {correction})`)
+    re-runs the deal via `/api/regenerate` with a one-off `correction` directive folded into the prompt
+    (NOT persisted to `dealsrc`), rebuilding in place (preserves Deep Dive / Excel). The rebuild clears
+    the now-stale `audit:<id>`; the partner re-runs the audit to confirm the fix is gone.
+  - **App-scope** = a tool bug that recurs across deals → the partner has NO code/admin access, so it's
+    **hidden from him**. `appFindings` are kept (never lost) and shown only behind the **dev flag**
+    (`IS_DEV`: `?dev=1` in the URL, sticky via `localStorage 'paramemo:dev'`) in a "Tool issues — for the
+    Munshot team" section. These are OUR backlog to fix in code (§9.4).
 - **Findings shape:** `{ severity: high|medium|low, status: wrong|missing|unsupported|assumption|verified,
   scope: deal|app, area, title, finding, memo, source_says, fix }`. `strengths[]` = things verified correct.
-- **Lifecycle:** a regenerate deletes `audit:<id>` (stale). Deleting a deal deletes `audit:<id>` too.
-  `GET /api/companies` reads `company:<id>` + `audit:<id>` in parallel and merges the audit back as
-  `c.audit`, so the client sees it exactly as before. Sample deals can't be audited (no source docs).
+- **Lifecycle:** a regenerate (incl. an "Apply this fix") deletes `audit:<id>` (stale). Deleting a deal
+  deletes `audit:<id>` too. `GET /api/companies` reads `company:<id>` + `audit:<id>` in parallel and
+  merges the audit back as `c.audit`. Sample deals can't be audited / fixed (no source docs).
 
 ---
 
