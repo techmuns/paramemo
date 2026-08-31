@@ -316,6 +316,16 @@ const API_BASE = (() => {
 })();
 const apiUrl = p => { try { return new URL(p, API_BASE).href; } catch (_) { return 'api/' + p; } };
 
+// Dev flag — turns on builder-only views (e.g. the Audit tab's "fix the app" tool-issues list, which
+// the partner never sees). Set with ?dev=1 in the URL (sticks via localStorage); clear with ?dev=0.
+const IS_DEV = (() => {
+  try {
+    const m = /[?&]dev=([01])(?:&|$)/.exec(location.search || '');
+    if (m) { if (m[1] === '1') { localStorage.setItem('paramemo:dev', '1'); return true; } localStorage.removeItem('paramemo:dev'); return false; }
+    return localStorage.getItem('paramemo:dev') === '1';
+  } catch (_) { return /[?&]dev=1(?:&|$)/.test(location.search || ''); }
+})();
+
 // CDN libraries for the upload flow, lazy-loaded on first use (see ensureUploadLibs).
 const PDFJS_SRC    = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
 const PDFJS_WORKER = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -639,7 +649,7 @@ async function runJob(job, payload) {
 // The deal's source text is stored server-side, so the browser only extracts the NEW report(s) and
 // posts them to /api/regenerate, which rebuilds the memo under the SAME deal id (replacing it, not
 // duplicating). Shows as a normal pipeline job; the existing Deep Dive is preserved server-side.
-function startRegeneration(company, files) {
+function startRegeneration(company, files, opts = {}) {
   const job = {
     id: 'regen_' + Date.now().toString(36) + '_' + (++_jobSeq).toString(36) + Math.random().toString(36).slice(2, 6),
     _abort: (typeof AbortController !== 'undefined') ? new AbortController() : null,
@@ -650,38 +660,44 @@ function startRegeneration(company, files) {
   state.jobs.push(job);
   emitJobs();
   ensureJobPolling();
-  runRegenJob(job, company, files);
+  runRegenJob(job, company, files, opts);
   return job;
 }
 
-async function runRegenJob(job, company, files) {
+async function runRegenJob(job, company, files, opts = {}) {
   const stage = i => { if (job.status === 'running') { job.stageIdx = i; emitJobs(); } };
   let writeTO = null;
   job._streaming = true;
   try {
     stage(0);
-    try { await ensureUploadLibs(); }
-    catch { throw new Error("We couldn't load the file readers — please check your internet connection and try again."); }
-    // Pull text from every attached report (a valuation-comps / Private Circle export, an updated deck…).
-    let extraText = '';
-    for (const f of files) {
-      const nm = f.name || 'report';
-      try {
-        if (/pdf$/i.test(nm) || (f.type || '').includes('pdf'))                    extraText += `\n\n----- ${nm} -----\n` + await extractPdfText(f, 60000);
-        else if (/\.(xlsx|xls)$/i.test(nm))                                        { const r = await parseExcel(f); extraText += `\n\n----- ${nm} -----\n` + (r.excelText || ''); }
-        else if (/\.eml$/i.test(nm) || (f.type || '').includes('rfc822'))          extraText += `\n\n----- ${nm} -----\n` + await extractEmlText(f, 40000);
-        else if (/\.msg$/i.test(nm) || (f.type || '').includes('outlook'))         extraText += `\n\n----- ${nm} -----\n` + await extractMsgText(f, 40000);
-        else if (/\.docx$/i.test(nm) || /wordprocessingml/.test(f.type || ''))     extraText += `\n\n----- ${nm} -----\n` + await extractDocxText(f);
-        else if (/\.(txt|md|csv|json)$/i.test(nm) || (f.type || '').startsWith('text')) extraText += `\n\n----- ${nm} -----\n` + (await f.text()).slice(0, 60000);
-      } catch (_) { /* skip an unreadable report, never block the rebuild */ }
+    let extraText = '', extraImages = [];
+    // A correction-only rebuild (Audit "Apply this fix") carries no files, so skip the file-reader libs
+    // and extraction entirely — they're only needed to read attached reports, and loading them could
+    // otherwise fail an apply that doesn't need them.
+    if (files && files.length) {
+      try { await ensureUploadLibs(); }
+      catch { throw new Error("We couldn't load the file readers — please check your internet connection and try again."); }
+      // Pull text from every attached report (a valuation-comps / Private Circle export, an updated deck…).
+      for (const f of files) {
+        const nm = f.name || 'report';
+        try {
+          if (/pdf$/i.test(nm) || (f.type || '').includes('pdf'))                    extraText += `\n\n----- ${nm} -----\n` + await extractPdfText(f, 60000);
+          else if (/\.(xlsx|xls)$/i.test(nm))                                        { const r = await parseExcel(f); extraText += `\n\n----- ${nm} -----\n` + (r.excelText || ''); }
+          else if (/\.eml$/i.test(nm) || (f.type || '').includes('rfc822'))          extraText += `\n\n----- ${nm} -----\n` + await extractEmlText(f, 40000);
+          else if (/\.msg$/i.test(nm) || (f.type || '').includes('outlook'))         extraText += `\n\n----- ${nm} -----\n` + await extractMsgText(f, 40000);
+          else if (/\.docx$/i.test(nm) || /wordprocessingml/.test(f.type || ''))     extraText += `\n\n----- ${nm} -----\n` + await extractDocxText(f);
+          else if (/\.(txt|md|csv|json)$/i.test(nm) || (f.type || '').startsWith('text')) extraText += `\n\n----- ${nm} -----\n` + (await f.text()).slice(0, 60000);
+        } catch (_) { /* skip an unreadable report, never block the rebuild */ }
+      }
+      extraText = extraText.trim();
+      stage(1);
+      extraImages = await renderAllDocImages(files, { maxImages: 5 });   // let Claude SEE the report pages (tables, charts)
     }
-    extraText = extraText.trim();
-    stage(1);
-    const extraImages = await renderAllDocImages(files, { maxImages: 5 });   // let Claude SEE the report pages (tables, charts)
-    if (!extraText && !extraImages.length) throw new Error("We couldn't read anything from that file. Please export it as a PDF or Excel and try again.");
+    if (!extraText && !extraImages.length && !opts.correction) throw new Error("We couldn't read anything from that file. Please export it as a PDF or Excel and try again.");
 
     stage(2);
     const body = { id: company.id, jobId: job.id, extraText, extraImages };
+    if (opts.correction) body.correction = opts.correction;   // Audit "Apply this fix" → rebuild with this one correction
     writeTO = setTimeout(() => stage(3), 7000);
     let data = null, lastErr = null;
     for (let attempt = 0; attempt < 2 && job.status === 'running'; attempt++) {
@@ -716,8 +732,8 @@ async function runRegenJob(job, company, files) {
     job.finishedAt = Date.now();
     if (data.company) {
       addCompany(data.company);
-      if (ui.companyId === data.company.id) renderView();   // the deal is open → refresh it with the new comps
-      toast(`${job.name} updated with the report`);
+      if (ui.companyId === data.company.id) renderView();   // the deal is open → refresh it with the new comps / fix
+      toast(`${job.name} ${opts.correction ? '— fix applied' : 'updated with the report'}`);
     }
     emitJobs();
   } catch (err) {
@@ -3639,18 +3655,21 @@ const AUDIT_SEV = {
 const AUDIT_STATUS = { wrong: 'Wrong', missing: 'Missing', unsupported: 'Unsupported', assumption: 'Assumption', verified: 'Verified' };
 const _auChip = (bg, fg) => `display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.5;background:${bg};color:${fg}`;
 
-function auditFindingCard(f) {
+function auditFindingCard(f, opts = {}) {
   const sev = AUDIT_SEV[f.severity] || AUDIT_SEV.medium;
   const statusLabel = AUDIT_STATUS[f.status] || 'Note';
-  const scopeChip = f.scope === 'app'
-    ? `<span style="${_auChip('rgba(46,111,214,.12)', '#2E6FD6')}">Fix the app</span>`
-    : `<span style="${_auChip('rgba(12,48,120,.08)', BRAND.navy)}">Fix this deal</span>`;
+  // Deal cards carry no scope chip — every card the partner sees is his to fix. The dev-only
+  // tool-issues list flags each as a code fix instead.
+  const scopeChip = opts.dev ? `<span style="${_auChip('rgba(46,111,214,.12)', '#2E6FD6')}">Tool bug — fix in code</span>` : '';
   const cmp = (f.source_says || f.memo)
     ? `<div style="margin-top:9px;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;font-size:12.5px">
         ${f.source_says ? `<div style="padding:6px 10px;background:rgba(16,185,129,.06)"><span style="font-weight:600;color:#0f9d6e">Document</span> <span class="text-ink-muted">${esc(f.source_says)}</span></div>` : ''}
         ${f.memo ? `<div style="padding:6px 10px;border-top:${f.source_says ? '1px solid ' + BRAND.border : '0'}"><span style="font-weight:600;color:${BRAND.navy}">Dashboard</span> <span class="text-ink-muted">${esc(f.memo)}</span></div>` : ''}
       </div>` : '';
   const fix = f.fix ? `<div style="margin-top:9px;font-size:12.5px"><span style="font-weight:600;color:${BRAND.gold}">${icon('sparkles', 'w-3.5 h-3.5')} Fix</span> <span class="text-ink">${esc(f.fix)}</span></div>` : '';
+  // "Apply this fix" — only on the partner's deal findings, and only when there's a concrete fix to
+  // apply. Wired to applyAuditFix in renderAudit. Never on the dev tool-issues list (those are code fixes).
+  const applyBtn = (!opts.dev && f.fix) ? `<button class="hdr-btn au-fix-btn" type="button" style="margin-top:11px;color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon('sparkles', 'w-4 h-4')} Apply this fix</button>` : '';
   return h(`<div class="surface-card" style="padding:0;overflow:hidden;display:flex">
     <div style="width:4px;flex:none;background:${sev.color}"></div>
     <div style="padding:13px 15px;flex:1;min-width:0">
@@ -3662,8 +3681,28 @@ function auditFindingCard(f) {
       </div>
       <div class="text-[14px] font-semibold text-ink">${esc(f.title || '')}</div>
       ${f.finding ? `<p class="text-[13px] text-ink-muted mt-1">${esc(f.finding)}</p>` : ''}
-      ${cmp}${fix}
+      ${cmp}${fix}${applyBtn}
     </div></div>`);
+}
+
+// "Apply this fix" — turn one audit finding into a correction directive and re-run the deal with it
+// applied. Reuses the rebuild-in-place path (same id, preserves Deep Dive / Excel Analysis); the now
+// stale audit is cleared server-side, so the partner re-runs the audit afterwards to confirm the fix.
+function auditFixDirective(f) {
+  const p = [];
+  const head = [f.area, f.title].filter(Boolean).join(' — ');
+  if (head) p.push('Issue: ' + head + '.');
+  if (f.finding) p.push(f.finding);
+  if (f.source_says) p.push('What the source document says: ' + f.source_says);
+  if (f.memo) p.push('What the memo currently (wrongly) shows: ' + f.memo);
+  if (f.fix) p.push('The fix to apply: ' + f.fix);
+  return p.join('\n');
+}
+function applyAuditFix(company, f, btn) {
+  if (!company || isSample(company) || !f) return;
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; btn.style.cursor = 'default'; btn.textContent = 'Applying…'; }
+  startRegeneration(company, [], { correction: auditFixDirective(f) });
+  toast('Applying the fix — rebuilding this deal (~1–2 min).');
 }
 
 function renderAudit(c) {
@@ -3716,13 +3755,26 @@ function renderAudit(c) {
     wrap.appendChild(h(`<div class="surface-card p-5"><p class="text-[13px] text-ink-muted">No differences found — the memo matches its documents on the points we checked.</p></div>`));
   } else {
     const list = h('<div class="space-y-3"></div>');
-    findings.forEach(f => list.appendChild(auditFindingCard(f)));
+    findings.forEach(f => {
+      const card = auditFindingCard(f);
+      const btn = card.querySelector('.au-fix-btn');
+      if (btn) btn.addEventListener('click', () => applyAuditFix(c, f, btn));
+      list.appendChild(card);
+    });
     wrap.appendChild(sectionCard(`Findings (${findings.length})`, 'search', list));
   }
   if (Array.isArray(a.strengths) && a.strengths.length) {
     const ul = h('<ul class="space-y-1.5"></ul>');
     a.strengths.forEach(sTxt => ul.appendChild(h(`<li class="flex gap-2 text-[13px] text-ink"><span style="color:#10B981;flex:none">${icon('check', 'w-4 h-4')}</span><span>${esc(sTxt)}</span></li>`)));
     wrap.appendChild(sectionCard('Checked and correct', 'check', ul));
+  }
+  // Dev-only: the "fix the app" tool bugs are hidden from the partner (he has no code access). They're
+  // shown here for the Munshot team when the dev flag is on (?dev=1 in the URL, or localStorage 'paramemo:dev').
+  const appFindings = Array.isArray(a.appFindings) ? a.appFindings : [];
+  if (IS_DEV && appFindings.length) {
+    const list = h('<div class="space-y-3"></div>');
+    appFindings.forEach(f => list.appendChild(auditFindingCard(f, { dev: true })));
+    wrap.appendChild(sectionCard(`Tool issues — for the Munshot team (${appFindings.length})`, 'alert', list));
   }
   return wrap;
 }
