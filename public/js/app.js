@@ -396,8 +396,36 @@ function hardenCompany(c) {
   if (!(Number(c.returns.startEbitdaCr) > 0)) c.returns.startEbitdaCr = 10;   // avoid /0 in the returns math
   return c;
 }
-// Prepare any company entering state: harden its shape, then normalise year labels to FY__.
-const prepCompany = c => normalizeYears(hardenCompany(c));
+// Fill ratio rows the model sometimes leaves blank even though the inputs are right there in the
+// table, so the Financials tab never shows an empty row whose value is exactly computable from rows
+// it DOES carry. Purely additive and per-cell: only a missing cell that is computable gets filled;
+// any value the model gave is left untouched. Runs for every deal on the way into state (including
+// older stored memos), so nothing needs regenerating to pick this up.
+//   Return on equity = PAT ÷ net worth.  Only ROE is filled here — it needs no assumption. RoCE
+//   needs operating profit and capital employed, which we don't reliably carry, so it stays with
+//   the model rather than being approximated.
+function deriveFinancialRows(c) {
+  const f = c && c.financials;
+  if (!_o(f) || !_o(f.rows) || !Array.isArray(f.years) || !f.years.length) return c;
+  const rows = f.rows, n = f.years.length;
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && v !== '' && isFinite(+v) ? +v : null);
+  const pat = Array.isArray(rows.pat) ? rows.pat : null;
+  const nw  = Array.isArray(rows.netWorth) ? rows.netWorth : null;
+  if (pat && nw) {
+    const roe = Array.isArray(rows.roePct) ? rows.roePct.slice() : new Array(n).fill(null);
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      if (roe[i] != null && roe[i] !== '') continue;         // never overwrite a value the model gave
+      const p = num(pat[i]), w = num(nw[i]);
+      if (p != null && w != null && w > 0) { roe[i] = Math.round(p / w * 100); changed = true; }
+    }
+    if (changed) rows.roePct = roe;
+  }
+  return c;
+}
+// Prepare any company entering state: harden its shape, normalise year labels to FY__, then fill any
+// exactly-derivable ratio the model left blank.
+const prepCompany = c => deriveFinancialRows(normalizeYears(hardenCompany(c)));
 
 // Add or replace a company in local state + the dropdown (used after an upload).
 function addCompany(company) {
@@ -590,6 +618,9 @@ async function runJob(job, payload) {
     const xaInputs = { excelText, sheetNames };   // Excel Analysis reads only the spreadsheet
     if (stored) { stored._deepDivePending = true; stored._ddInputs = ddInputs; stored._excelPending = true; stored._xaInputs = xaInputs; stored._xaAutoTried = true; }   // cache inputs so both passes can be retried this session
     emitJobs();
+    // This inline-success path only runs in WORKER mode (in GA mode /api/generate returns before the
+    // memo exists and the deal lands via the poller, where maybeAutoInsights fires the COMBINED run).
+    // Worker mode can't combine GA runs, so just fire the two passes directly.
     startDeepDive(data.company.id, ddInputs);
     startExcelAnalysis(data.company.id, xaInputs);
   } catch (err) {
@@ -793,6 +824,100 @@ function maybeAutoExcelAnalysis(c) {
   startExcelAnalysis(c.id, c._xaInputs || {});
 }
 
+/* ---- Combined pass: fire the Deep Dive AND the Excel Analysis as ONE GitHub-Actions run ----------
+ * Saves a whole runner spin-up vs firing them separately. The server merges each result onto the deal
+ * independently, and the poller already watches _deepDivePending / _excelPending on their own, so the
+ * two tabs still fill in as each lands. Whenever the server can't combine (worker mode, GA not set up,
+ * nothing to build, or any error), we fall straight back to the two separate passes — so nothing can
+ * regress; the combined run is a pure speed-up on top of the existing behaviour. */
+async function startInsights(id, { ddInputs, xaInputs }) {
+  const union = { ...(ddInputs || {}), ...(xaInputs || {}) };   // imText/imPages/notesText (DD) + excelText/sheetNames (XA)
+  const fallback = () => { startDeepDive(id, ddInputs || {}); startExcelAnalysis(id, xaInputs || {}); };
+  try {
+    const res = await fetch(apiUrl('insights'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, ...union }) });
+    let d = {}; try { d = await res.json(); } catch { /* leave as {} */ }
+    if (d && d.queued && d.insights) {
+      const tags = Array.isArray(d.steps) ? d.steps : ['deepdive', 'excel'];
+      const c = companyById(id);
+      if (c) {
+        // Keep pending only for the passes this run will actually produce; clear the other so a deal
+        // with no Excel (or no IM) doesn't spin forever on a tab the run won't fill.
+        if (tags.includes('deepdive')) { c._deepDivePending = true; c._deepDiveFailed = false; c._ddPendingSince = Date.now(); }
+        else { delete c._deepDivePending; delete c._ddPendingSince; }
+        if (tags.includes('excel')) { c._excelPending = true; c._excelFailed = false; c._xaPendingSince = Date.now(); }
+        else { delete c._excelPending; delete c._xaPendingSince; }
+        ensureJobPolling();
+        const tab = ui.companyId === id && parseHash().tab;
+        if (tab === 'deepdive' || tab === 'excel') renderTabPanel(c, tab);
+      }
+      return;
+    }
+    fallback();   // { fallback:true } (worker mode / not configured) or anything unexpected → old path
+  } catch (_) { fallback(); }
+}
+
+// Poller / cross-device entry point for the two visual passes. In GitHub-Actions mode a deal builds
+// server-side and this tab only ever SEES it via polling — the inline post-memo path never runs — so
+// THIS is where the combined run has to fire for the one-spin-up saving to actually happen. Both
+// passes missing → one combined /api/insights run; only one missing (e.g. a half-finished retry) →
+// just that pass on its own, so a pass that already landed is never needlessly rebuilt.
+function maybeAutoInsights(c) {
+  if (!c || isSample(c)) return;
+  const needDD = !c.deepDive && !c._deepDivePending && !c._deepDiveFailed;
+  const needXA = !c.excelAnalysis && !c._excelPending && !c._excelFailed && !c._xaAutoTried;
+  if (needDD && needXA) {
+    c._deepDivePending = true; c._deepDiveFailed = false; c._ddPendingSince = Date.now();
+    c._excelPending = true; c._excelFailed = false; c._xaPendingSince = Date.now(); c._xaAutoTried = true;
+    startInsights(c.id, { ddInputs: c._ddInputs || {}, xaInputs: c._xaInputs || {} });
+  } else {
+    maybeAutoDeepDive(c);        // guards inside skip whichever pass isn't needed
+    maybeAutoExcelAnalysis(c);
+  }
+}
+
+/* ---- Self-audit pass — ON DEMAND (a "Run audit" button), never automatic. Reads the deal's stored
+ * memo AND its source docs server-side, compares them, and returns a findings report. Same GA-aware,
+ * poller-merged plumbing as the deep dive / excel analysis; flags _auditPending / _auditFailed /
+ * _auPendingSince, stored field c.audit. A re-run stamps _auPrevAt with the current audit's timestamp
+ * so the poller waits for a genuinely NEW report rather than merging the one already on the deal. */
+const hasAudit = c => !!(c && c.audit && Array.isArray(c.audit.findings));
+
+function retryAudit(id) {
+  const c = companyById(id);
+  if (!c || isSample(c)) return;
+  c._auPrevAt = (c.audit && c.audit.generatedAt) || '';   // remember the current report so we only accept a newer one
+  c._auditPending = true; c._auditFailed = false; c._auPendingSince = Date.now();
+  if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit');
+  startAudit(id, c._ddInputs || {});   // reuse this session's cached source text if we have it; else the worker rebuilds from what it stored
+}
+
+async function startAudit(id, payload) {
+  try {
+    const res = await fetch(apiUrl('audit'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, ...(payload || {}) }) });
+    let buf = '';
+    if (res.body && res.body.getReader) { const rd = res.body.getReader(), dec = new TextDecoder(); for (;;) { const { done, value } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); } buf += dec.decode(); }
+    else buf = await res.text();
+    let d = {}; try { d = JSON.parse((buf.split('\n').pop() || '').trim()); } catch { /* leave as {} */ }
+    const c = companyById(id);
+    if (!c) return;
+    if (d && d.queued && d.audit) {
+      // GA mode: the audit builds in GitHub Actions. Keep it pending; the poller merges the new report
+      // in (guarded on its timestamp) when the worker stores it on the deal.
+      c._auditPending = true; c._auditFailed = false; c._auPendingSince = Date.now();
+      ensureJobPolling();
+      if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit');
+      return;
+    }
+    delete c._auditPending; delete c._auPendingSince;
+    if (d && d.audit) { c.audit = d.audit; c._auditFailed = false; }
+    else c._auditFailed = (d && d.error) || true;
+    if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit');
+  } catch (_) {
+    const c = companyById(id);
+    if (c) { delete c._auditPending; delete c._auPendingSince; c._auditFailed = true; if (ui.companyId === id && parseHash().tab === 'audit') renderTabPanel(c, 'audit'); }
+  }
+}
+
 // Cancel a build in progress: abort this tab's request, drop the card, and clear the server record.
 // (The server may still finish a build already in flight — if a deal lands anyway, it's removable.)
 function cancelJob(id) {
@@ -847,7 +972,7 @@ function hydrateServerJobs(list) {
  * pass/fail come from the server's record. Close the tab mid-build, come back, and
  * the card is still there and completes on its own. ------------------------------- */
 let _jobPollTO = null;
-const anyJobRunning = () => state.jobs.some(j => j.status === 'running') || state.companies.some(c => c && (c._deepDivePending || c._excelPending));
+const anyJobRunning = () => state.jobs.some(j => j.status === 'running') || state.companies.some(c => c && (c._deepDivePending || c._excelPending || c._auditPending));
 function ensureJobPolling() { if (!_jobPollTO && anyJobRunning()) _jobPollTO = setTimeout(pollJobsOnce, 4000); }
 async function pollJobsOnce() {
   _jobPollTO = null;
@@ -885,6 +1010,8 @@ async function refreshCompaniesFromServer(force) {
       Object.assign(fresh, flags);
       if (sc.deepDive)       { delete fresh._deepDivePending; delete fresh._ddPendingSince; fresh._deepDiveFailed = false; }
       if (sc.excelAnalysis)  { delete fresh._excelPending;    delete fresh._xaPendingSince; fresh._excelFailed    = false; }
+      // Audit is re-runnable, so only stop waiting once a NEW audit (different timestamp) has landed.
+      if (sc.audit && sc.audit.generatedAt !== (flags._auPrevAt || '')) { delete fresh._auditPending; delete fresh._auPendingSince; fresh._auditFailed = false; }
     }
   });
   if (Array.isArray(d.jobs)) reconcileJobsFromServer(d);
@@ -919,6 +1046,12 @@ function reconcileJobsFromServer(d) {
       local.excelAnalysis = sc.excelAnalysis; delete local._excelPending; delete local._xaPendingSince; local._excelFailed = false; changed = true;
       if (ui.companyId === sc.id && parseHash().tab === 'excel') renderTabPanel(local, 'excel');
     }
+    // Same for a GA self-audit — but only when a NEW report (different timestamp) has landed, so a
+    // re-run doesn't stop on the PREVIOUS audit that's still stored on the deal.
+    if (local._auditPending && sc.audit && sc.audit.generatedAt !== (local._auPrevAt || '')) {
+      local.audit = sc.audit; delete local._auditPending; delete local._auPendingSince; local._auditFailed = false; changed = true;
+      if (ui.companyId === sc.id && parseHash().tab === 'audit') renderTabPanel(local, 'audit');
+    }
   });
   // A deep dive / Excel analysis that never lands (e.g. Bedrock down for a long time) shouldn't spin forever.
   state.companies.forEach(c => {
@@ -929,6 +1062,10 @@ function reconcileJobsFromServer(d) {
     if (c && c._excelPending && c._xaPendingSince && Date.now() - c._xaPendingSince > 16 * 60 * 1000) {
       delete c._excelPending; delete c._xaPendingSince; c._excelFailed = true; changed = true;
       if (ui.companyId === c.id && parseHash().tab === 'excel') renderTabPanel(c, 'excel');
+    }
+    if (c && c._auditPending && c._auPendingSince && Date.now() - c._auPendingSince > 16 * 60 * 1000) {
+      delete c._auditPending; delete c._auPendingSince; c._auditFailed = true; changed = true;
+      if (ui.companyId === c.id && parseHash().tab === 'audit') renderTabPanel(c, 'audit');
     }
   });
   const byId = {}; (Array.isArray(d.jobs) ? d.jobs : []).forEach(j => { if (j && j.id) byId[j.id] = j; });
@@ -945,7 +1082,7 @@ function reconcileJobsFromServer(d) {
       // server's fresh version in and re-render it if the partner is looking at it.
       const fresh = scById[sj.companyId];
       if (j._regen && fresh) { addCompany(fresh); if (ui.companyId === fresh.id) renderView(); }
-      j.company = companyById(sj.companyId) || j.company; maybeAutoDeepDive(j.company); maybeAutoExcelAnalysis(j.company); changed = true; return;
+      j.company = companyById(sj.companyId) || j.company; maybeAutoInsights(j.company); changed = true; return;
     }
     // No decisive record yet. If the finished deal itself has shown up (matched by the name the
     // partner typed), treat it as done — otherwise keep waiting (do NOT fail on a missing record).
@@ -953,7 +1090,7 @@ function reconcileJobsFromServer(d) {
     // complete it against the stale copy — a regen only finishes on a decisive done/error record.
     if (!j._regen && j.name && j.name !== 'New deal') {
       const m = state.companies.find(c => !isSample(c) && !claimed.has(c.id) && (norm(c.name) === norm(j.name) || norm(c.shortName) === norm(j.name)));
-      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoDeepDive(m); maybeAutoExcelAnalysis(m); changed = true; return; }
+      if (m) { j.status = 'done'; j.error = null; j.finishedAt = now; j.company = m; claimed.add(m.id); maybeAutoInsights(m); changed = true; return; }
     }
     // Only a build well past the worker's own limits (record never resolved) is treated as stuck.
     if (now - (j.startedAt || now) > 16 * 60 * 1000) { j.status = 'error'; j.error = 'This build ran too long — please try again.'; j.finishedAt = now; changed = true; }
@@ -999,10 +1136,11 @@ const TABS = [
   { key: 'thesis',     label: 'Thesis',     icon: 'lightbulb'  },
   { key: 'comps',      label: 'Comps',      icon: 'scale'      },
   { key: 'returns',    label: 'Returns',    icon: 'trendingUp' },
+  { key: 'audit',      label: 'Audit',      icon: 'search'     },
 ];
 // All tabs are built; none carry a "coming soon" dot.
 // (renderComingSoon remains as a harmless fallback for any unknown tab key.)
-const LIVE_TABS = ['snapshot', 'deepdive', 'financials', 'excel', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns'];
+const LIVE_TABS = ['snapshot', 'deepdive', 'financials', 'excel', 'fit', 'integrity', 'questions', 'thesis', 'comps', 'returns', 'audit'];
 const TAB_KEYS = TABS.map(t => t.key);
 const TAB_META = Object.fromEntries(TABS.map(t => [t.key, t]));
 
@@ -2257,6 +2395,7 @@ function renderTabPanel(c, tab) {
   else if (tab === 'thesis')     node = renderThesis(c);
   else if (tab === 'comps')      node = renderComps(c);
   else if (tab === 'returns')    node = renderReturns(c);
+  else if (tab === 'audit')      node = renderAudit(c);
   else                           node = renderComingSoon(tab);
   panel.appendChild(node);
   requestAnimationFrame(() => initPanelCharts(c));
@@ -3487,6 +3626,105 @@ function frExcelAnalysis(c) {
     return `<div class="fr-dd-sec"><h3>${esc(s.title || ('Part ' + (i + 1)))}</h3>${s.summary ? `<p class="fr-cap">${esc(s.summary)}</p>` : ''}<div class="dd-blocks">${blocks}</div></div>`;
   }).filter(Boolean).join('');
   return secs ? (c.excelAnalysis.summary ? `<p class="fr-note" style="margin-bottom:10px">${esc(c.excelAnalysis.summary)}</p>` : '') + secs : '';
+}
+
+/* ---- 7g-bis. Audit tab — on-demand self-audit of the memo against its source documents. Reports
+ * findings (wrong / missing / unsupported / assumption / verified) with a suggested fix; it never
+ * edits the deal. The build runs through the same GA-patient, poller-merged plumbing as the passes. */
+const AUDIT_SEV = {
+  high:   { label: 'High',   color: '#F43F5E', tint: 'rgba(244,63,94,.10)' },
+  medium: { label: 'Medium', color: '#B4924C', tint: 'rgba(180,146,76,.14)' },
+  low:    { label: 'Low',    color: '#6B7280', tint: 'rgba(107,114,128,.10)' },
+};
+const AUDIT_STATUS = { wrong: 'Wrong', missing: 'Missing', unsupported: 'Unsupported', assumption: 'Assumption', verified: 'Verified' };
+const _auChip = (bg, fg) => `display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;line-height:1.5;background:${bg};color:${fg}`;
+
+function auditFindingCard(f) {
+  const sev = AUDIT_SEV[f.severity] || AUDIT_SEV.medium;
+  const statusLabel = AUDIT_STATUS[f.status] || 'Note';
+  const scopeChip = f.scope === 'app'
+    ? `<span style="${_auChip('rgba(46,111,214,.12)', '#2E6FD6')}">Fix the app</span>`
+    : `<span style="${_auChip('rgba(12,48,120,.08)', BRAND.navy)}">Fix this deal</span>`;
+  const cmp = (f.source_says || f.memo)
+    ? `<div style="margin-top:9px;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;font-size:12.5px">
+        ${f.source_says ? `<div style="padding:6px 10px;background:rgba(16,185,129,.06)"><span style="font-weight:600;color:#0f9d6e">Document</span> <span class="text-ink-muted">${esc(f.source_says)}</span></div>` : ''}
+        ${f.memo ? `<div style="padding:6px 10px;border-top:${f.source_says ? '1px solid ' + BRAND.border : '0'}"><span style="font-weight:600;color:${BRAND.navy}">Dashboard</span> <span class="text-ink-muted">${esc(f.memo)}</span></div>` : ''}
+      </div>` : '';
+  const fix = f.fix ? `<div style="margin-top:9px;font-size:12.5px"><span style="font-weight:600;color:${BRAND.gold}">${icon('sparkles', 'w-3.5 h-3.5')} Fix</span> <span class="text-ink">${esc(f.fix)}</span></div>` : '';
+  return h(`<div class="surface-card" style="padding:0;overflow:hidden;display:flex">
+    <div style="width:4px;flex:none;background:${sev.color}"></div>
+    <div style="padding:13px 15px;flex:1;min-width:0">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+        <span style="${_auChip(sev.tint, sev.color)}">${sev.label}</span>
+        <span style="${_auChip('#F1F3F8', '#374151')}">${esc(statusLabel)}</span>
+        ${f.area ? `<span style="${_auChip('#F1F3F8', '#374151')}">${esc(f.area)}</span>` : ''}
+        ${scopeChip}
+      </div>
+      <div class="text-[14px] font-semibold text-ink">${esc(f.title || '')}</div>
+      ${f.finding ? `<p class="text-[13px] text-ink-muted mt-1">${esc(f.finding)}</p>` : ''}
+      ${cmp}${fix}
+    </div></div>`);
+}
+
+function renderAudit(c) {
+  const wrap = h('<div class="space-y-5"></div>');
+  if (c._auditPending) {
+    wrap.appendChild(h(`<div class="coming"><div class="cs-ico dd-prep-ic">${icon('loader', 'w-6 h-6')}</div>
+      <div class="text-[15px] font-semibold text-ink">Auditing the memo against its documents…</div>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">We're reading this deal's dashboard and the original IM / Excel / notes and checking them line by line. This usually takes a minute or two; the findings appear here on their own and are saved.</p></div>`));
+    return wrap;
+  }
+  if (!hasAudit(c)) {
+    const failedMsg = typeof c._auditFailed === 'string' ? c._auditFailed : '';
+    const failed = !!c._auditFailed;
+    const needsReupload = /re-add|re-upload|no stored|no source/i.test(failedMsg);
+    const canRun = !isSample(c) && !needsReupload;
+    const body = failed
+      ? (needsReupload
+          ? 'This deal has no source documents saved to audit against, so please <b>re-add it once with the IM / Excel attached</b>. New deals won’t need this.'
+          : (failedMsg ? esc(failedMsg) : 'The audit couldn’t be built this time.') + (canRun ? ' Try again below.' : ''))
+      : 'Run a self-audit: we read this deal’s dashboard and the original documents you uploaded, compare them line by line, and list every difference — wrong numbers, missing data, unsupported claims and assumptions — each with a suggested fix. It <b>reports only</b>; it never changes your deal.';
+    const card = h(`<div class="coming"><div class="cs-ico">${icon('search', 'w-6 h-6')}</div>
+      <div class="text-[15px] font-semibold text-ink">${failed ? 'The audit didn’t finish' : 'Audit this deal'}</div>
+      <p class="text-[13px] text-ink-muted mt-1 max-w-md">${body}</p>
+      ${isSample(c) ? '<p class="text-[12px] text-ink-hint mt-2">(The built-in sample can’t be audited — add your own deal.)</p>' : ''}
+      ${canRun ? `<button class="hdr-btn au-run-btn" type="button" style="margin-top:14px;color:#fff;background:${BRAND.navy};border-color:${BRAND.navy}">${icon(failed ? 'refreshCw' : 'search', 'w-4 h-4')} ${failed ? 'Try the audit again' : 'Run audit'}</button>` : ''}</div>`);
+    const btn = card.querySelector('.au-run-btn'); if (btn) btn.addEventListener('click', () => retryAudit(c.id));
+    wrap.appendChild(card);
+    return wrap;
+  }
+  const a = c.audit;
+  const findings = Array.isArray(a.findings) ? a.findings : [];
+  const when = (a.generatedAt || '').slice(0, 10);
+  const V = { clean: { t: 'Looks clean', color: '#10B981' }, minor: { t: 'Minor items', color: BRAND.gold }, issues: { t: 'Needs attention', color: '#F43F5E' } }[a.verdict] || { t: 'Reviewed', color: BRAND.navy };
+  const hero = h(`<div class="dd-hero">
+      <div class="dd-hero-ico">${icon('search', 'w-5 h-5')}</div>
+      <div style="min-width:0"><div class="dd-hero-t">Self-audit — the memo vs its documents</div>
+        <div class="dd-hero-s">${esc(a.source || 'Memo vs. source documents')}${when ? ' · ' + esc(when) : ''} · <b style="color:${V.color}">${V.t}</b></div></div>
+      ${isSample(c) ? '' : `<button class="hdr-btn au-run-btn" type="button" style="margin-left:auto;align-self:center;flex:none">${icon('refreshCw', 'w-4 h-4')} Re-run</button>`}</div>`);
+  const hb = hero.querySelector('.au-run-btn'); if (hb) hb.addEventListener('click', () => retryAudit(c.id));
+  wrap.appendChild(hero);
+  // A re-run that failed while a previous report is still on screen: say so, don't pass the old
+  // report off as fresh. (On a first-ever audit there's no retained report, so this can't fire.)
+  if (c._auditFailed) {
+    wrap.appendChild(h(`<div class="surface-card" style="padding:11px 14px;border-left:3px solid ${BRAND.gold};display:flex;gap:8px;align-items:flex-start">
+      <span style="color:${BRAND.gold};flex:none">${icon('refreshCw', 'w-4 h-4')}</span>
+      <div class="text-[13px] text-ink-muted"><b class="text-ink">The latest re-run didn’t finish.</b> Showing your previous audit${when ? ' from ' + esc(when) : ''} — its findings may be out of date. Use <b>Re-run</b> above to try again.</div></div>`));
+  }
+  if (a.summary) wrap.appendChild(h(`<div class="dd-execsum"><div class="dd-execsum-h">${icon('sparkles', 'w-3.5 h-3.5')} In a nutshell</div><p>${esc(a.summary)}</p></div>`));
+  if (!findings.length) {
+    wrap.appendChild(h(`<div class="surface-card p-5"><p class="text-[13px] text-ink-muted">No differences found — the memo matches its documents on the points we checked.</p></div>`));
+  } else {
+    const list = h('<div class="space-y-3"></div>');
+    findings.forEach(f => list.appendChild(auditFindingCard(f)));
+    wrap.appendChild(sectionCard(`Findings (${findings.length})`, 'search', list));
+  }
+  if (Array.isArray(a.strengths) && a.strengths.length) {
+    const ul = h('<ul class="space-y-1.5"></ul>');
+    a.strengths.forEach(sTxt => ul.appendChild(h(`<li class="flex gap-2 text-[13px] text-ink"><span style="color:#10B981;flex:none">${icon('check', 'w-4 h-4')}</span><span>${esc(sTxt)}</span></li>`)));
+    wrap.appendChild(sectionCard('Checked and correct', 'check', ul));
+  }
+  return wrap;
 }
 
 /* ---- 7h. Returns tab — the real PE returns model (JRG/Bloom methodology) ------

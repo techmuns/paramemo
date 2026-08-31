@@ -27,17 +27,48 @@ async function main() {
   // exit cleanly so we don't report an error over a deal that already built.
   if (pr.status === 404) { console.log('payload already consumed — job handled by a sibling run; exiting cleanly.'); return; }
   if (!pr.ok) throw new Error(`payload fetch failed: HTTP ${pr.status} ${(await pr.text()).slice(0, 200)}`);
-  const { system, user, images = [] } = await pr.json();
-  if (!system || !user) throw new Error('payload missing system/user prompt');
+  const payload = await pr.json();
 
-  // 2) Call Bedrock — patiently. This is the whole point of moving to Actions.
-  const { text, model } = await callBedrock(system, user, images);
+  // A single job (core memo, or one deep-dive / excel pass) carries one system/user/images. A combined
+  // "insights" job carries steps[] — each its own tagged prompt (deepdive, excel). Normalise both to a
+  // list so the rest of the runner is identical either way; a single job stays a one-element list with
+  // a null tag, which posts back in the exact legacy shape below.
+  const steps = (Array.isArray(payload.steps) && payload.steps.length)
+    ? payload.steps
+    : [{ tag: null, system: payload.system, user: payload.user, images: payload.images || [] }];
+  for (const st of steps) if (!st || !st.system || !st.user) throw new Error('payload step missing system/user prompt');
 
-  // 3) Hand the raw output back to the Worker to validate + store (same path as an inline run).
+  // 2) Call Bedrock — patiently. This is the whole point of moving to Actions. Steps run CONCURRENTLY
+  // (a single job is just one step, so this is unchanged for it): sequential steps could take up to
+  // ~15 min EACH when Bedrock is overloaded, and nothing posts until the last finishes — long enough
+  // to blow the client's ~16-min pending timeout and make it give up while the run is still going.
+  // Running them together keeps total time at ~one step. One step failing (Bedrock down for its whole
+  // patient window) must NOT lose a sibling that succeeded, so a failure is recorded, not thrown.
+  // Promise.all preserves order, so results[i] still matches steps[i].
+  const results = await Promise.all(steps.map(async st => {
+    try {
+      const { text, model } = await callBedrock(st.system, st.user, st.images || []);
+      return { tag: st.tag || null, text, model };
+    } catch (e) {
+      console.error(`step ${st.tag || 'single'} failed:`, e.message);
+      return { tag: st.tag || null, error: String((e && e.message) || 'failed') };
+    }
+  }));
+
+  // 3) Hand the raw output back to the Worker to validate + store (same path as an inline run). A
+  // single, untagged job posts { text, model } EXACTLY as before — and rethrows a failure so the
+  // workflow's failure reporter records it. A multi-step job posts the steps[] array and the Worker
+  // merges whichever steps succeeded.
+  const single = results.length === 1 && !results[0].tag;
+  if (single && results[0].error) throw new Error(results[0].error);
+  const outBody = single
+    ? { jobId: JOB_ID, text: results[0].text, model: results[0].model }
+    : { jobId: JOB_ID, steps: results };
+
   const rr = await fetch(`${WORKER}/api/gha-result`, {
     method: 'POST',
     headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify({ jobId: JOB_ID, text, model }),
+    body: JSON.stringify(outBody),
   });
   const body = await rr.text();
   if (!rr.ok) throw new Error(`result post failed: HTTP ${rr.status} ${body.slice(0, 300)}`);

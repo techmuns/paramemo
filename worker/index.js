@@ -35,6 +35,8 @@ export default {
       if (request.method === 'POST'   && path.endsWith('/api/regenerate'))    return await handleRegenerate(request, env, ctx);
       if (request.method === 'POST'   && path.endsWith('/api/deepdive'))      return await handleDeepDive(request, env, ctx);
       if (request.method === 'POST'   && path.endsWith('/api/excel-analysis')) return await handleExcelAnalysis(request, env, ctx);
+      if (request.method === 'POST'   && path.endsWith('/api/insights'))      return await handleInsights(request, env, ctx);
+      if (request.method === 'POST'   && path.endsWith('/api/audit'))         return await handleAudit(request, env, ctx);
       if (request.method === 'GET'    && path.endsWith('/api/companies'))     return await handleCompanies(env);
       if (request.method === 'GET'    && path.endsWith('/api/peer-multiple')) return await handlePeerMultiple(request, env);
       if (request.method === 'DELETE' && path.includes('/api/companies/'))    return await handleDelete(request, env);
@@ -117,11 +119,16 @@ async function handleCompanies(env) {
   const peerLiveEnabled = true;
   if (!env.DEALS) return json({ companies: [], hiddenSeeds: [], peerLiveEnabled, peerLiveProxy, jobs: [] });   // KV not bound yet → no uploads
   const index = await readIndex(env);
-  const companies = [];
-  for (const id of index) {
-    const raw = await env.DEALS.get(`company:${id}`);
-    if (raw) { try { companies.push(JSON.parse(raw)); } catch { /* skip corrupt */ } }
-  }
+  // Read each deal AND its audit (kept under its own `audit:<id>` key so an audit write never
+  // read-modify-writes the whole company and can't race a Deep Dive / Excel / insights write) in
+  // parallel, then merge the audit back onto the deal — so the client sees c.audit exactly as before.
+  const companies = (await Promise.all(index.map(async id => {
+    const [craw, araw] = await Promise.all([env.DEALS.get(`company:${id}`), env.DEALS.get(`audit:${id}`)]);
+    if (!craw) return null;
+    let c; try { c = JSON.parse(craw); } catch { return null; }
+    if (araw) { try { c.audit = JSON.parse(araw); } catch { /* ignore a corrupt audit */ } }
+    return c;
+  }))).filter(Boolean);
   // Running / failed builds, so the UI can show their outcome. A build stuck "running" well past
   // the Worker's own limit was almost certainly killed mid-flight (no done/error was ever written)
   // — surface it as a failure instead of a forever-spinner, and persist that so it stays resolved.
@@ -298,6 +305,7 @@ async function handleDelete(request, env) {
   }
   await env.DEALS.delete(`company:${id}`);
   try { await env.DEALS.delete(`dealsrc:${id}`); } catch { /* best-effort */ }
+  try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ }
   const index = await readIndex(env);
   await env.DEALS.put('index', JSON.stringify(index.filter(x => x !== id)));
   return json({ ok: true, id });
@@ -350,6 +358,9 @@ async function handleGhaPayload(request, env) {
   const raw = env.DEALS ? await env.DEALS.get(`ghajob:${jobId}`) : null;
   if (!raw) throw new ApiError(404, 'no such job');
   const p = JSON.parse(raw);
+  // A multi-step job (combined insights) carries its prompts in steps[]; a single job carries one
+  // system/user/images at the top level. The runner handles both shapes.
+  if (Array.isArray(p.steps) && p.steps.length) return json({ steps: p.steps });
   return json({ system: p.system, user: p.user, images: p.images || [] });
 }
 // The Action posts the raw model output (or an error) back; validate + store exactly like an inline run.
@@ -398,6 +409,55 @@ async function handleGhaResult(request, env) {
     return json({ ok: true, kind: 'excel', merged });
   }
 
+  // Combined-insights job (dispatched by handleInsights): the runner ran BOTH passes and posts an
+  // array of { tag, text } steps. Merge each successful one into the company in a SINGLE write, so a
+  // deepdive step and an excel step can't race each other's put. Additive + best-effort like above —
+  // a step that errored (Bedrock exhausted for its whole window) is simply skipped, leaving the deal
+  // without that one pass for the client to retry; it never flips the deal to "error".
+  if (p.kind === 'insights') {
+    const merged = { deepdive: false, excel: false };
+    try {
+      const steps = Array.isArray(b.steps) ? b.steps : [];
+      const built = {};
+      for (const st of steps) {
+        if (!st || st.error || !st.text) continue;
+        const obj = extractJson(String(st.text || ''));
+        if (st.tag === 'deepdive') { const dd = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.deepDive)); if (dd) built.deepDive = dd; }
+        else if (st.tag === 'excel') { const xa = coerceDeepDive(obj && (Array.isArray(obj.sections) ? obj : obj.excelAnalysis)); if (xa) built.excelAnalysis = xa; }
+      }
+      if ((built.deepDive || built.excelAnalysis) && p.companyId) {
+        const r2 = await env.DEALS.get(`company:${p.companyId}`);
+        if (r2) {
+          const cur = JSON.parse(r2);
+          if (built.deepDive)      { cur.deepDive = built.deepDive;         merged.deepdive = true; }
+          if (built.excelAnalysis) { cur.excelAnalysis = built.excelAnalysis; merged.excel = true; }
+          await env.DEALS.put(`company:${p.companyId}`, JSON.stringify(cur));
+        }
+      }
+    } catch (e) { console.error('insights merge failed:', e && e.message); }
+    try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
+    return json({ ok: true, kind: 'insights', merged });
+  }
+
+  // Self-audit job (dispatched by handleAudit): merge the findings report onto the company. Additive
+  // + best-effort like the passes above — a failure just leaves the deal without an audit to retry.
+  if (p.kind === 'audit') {
+    let merged = false;
+    try {
+      if (!b.error) {
+        const obj = extractJson(String(b.text || ''));
+        const au = coerceAudit(obj && (Array.isArray(obj.findings) || obj.summary ? obj : obj.audit));
+        if (au && p.companyId) {
+          // Own key — never a whole-company read-modify-write, so this can't race a Deep Dive /
+          // Excel / insights write completing at the same time. handleCompanies merges it back.
+          await env.DEALS.put(`audit:${p.companyId}`, JSON.stringify(au)); merged = true;
+        }
+      }
+    } catch (e) { console.error('audit merge failed:', e && e.message); }
+    try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
+    return json({ ok: true, kind: 'audit', merged });
+  }
+
   const jobMeta = { id: jobId, name: ((p.basics && p.basics.name) || '').trim() || 'New deal', sector: ((p.basics && p.basics.sector) || '').trim() };
   if (b.error) {
     // A duplicate/late runner can report failure AFTER a sibling run already built this job (it lost the
@@ -427,6 +487,7 @@ async function handleGhaResult(request, env) {
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
+  if (p.reuseId) { try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ } }   // a regenerated memo makes any prior audit stale
   try { await env.DEALS.put(`dealsrc:${id}`, JSON.stringify({ imText: p.imText || '', excelText: p.excelText || '', notesText: p.notesText || '' })); } catch { /* best-effort */ }
   await setJob(env, { ...jobMeta, status: 'done', companyId: id, finishedAt: Date.now(), error: null });
   try { await env.DEALS.delete(`ghajob:${jobId}`); } catch { /* best-effort */ }
@@ -775,6 +836,7 @@ async function generateCompany({ system, user, imPages, basics, env, reuseId }) 
   const index = await readIndex(env);
   await env.DEALS.put(`company:${id}`, JSON.stringify(company));
   await env.DEALS.put('index', JSON.stringify([id, ...index.filter(x => x !== id)]));
+  if (reuseId) { try { await env.DEALS.delete(`audit:${id}`); } catch { /* best-effort */ } }   // a regenerated memo makes any prior audit stale
   return company;
 }
 
@@ -964,6 +1026,28 @@ function compactFinancials(c) {
   try { return JSON.stringify(o); } catch { return '{}'; }
 }
 
+// Prompt pair for the visual IM Deep Dive — extracted so the combined-insights job builds an
+// IDENTICAL deep-dive prompt without duplicating (or drifting from) the wording. Pure, no I/O.
+function deepDivePrompts(company, { imText, excelText, notesText }, example) {
+  const notes = String(notesText || '');
+  const system =
+    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY its visual IM DEEP-DIVE. ' +
+    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
+    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
+    'ACCURACY: every number, name, quote and label must come from the IM / banker notes / model provided — NEVER invent one to fill a chart. If a topic is only qualitative, use bullets / flow / keyvalue / timeline. Read the PAGE IMAGES for content not in the text (charts, market maps, logo walls).\n' +
+    'SOURCE PRECEDENCE: the company\'s OWN IM / deck is primary for facts about itself (team credentials, metrics, history); a banker call note is secondary and must NOT overwrite a specific IM fact. Do not repeat a note\'s sweeping claim (e.g. "founders are IIT 2016") over the IM team slide\'s per-person detail (e.g. a founder shown as "B.E. Chemical, BITS Pilani"); on a genuine conflict follow the IM.\n\n' +
+    DEEP_DIVE_SPEC;
+  const user =
+    'Build the deepDive object. Copy this SHAPE exactly (a real example):\n```json\n' + example + '\n```\n' +
+    'The core memo already computed these financials — any figures you show MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
+    '=== INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none)') + '\n' +
+    '=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n' +
+    (notes.trim() ? '=== BANKER NOTES ===\n' + notes + '\n' : '') +
+    'SCOPE: produce 6–9 well-chosen sections covering the most important parts of the IM, each with a few focused blocks — thorough but tight. Be sure to ALSO capture, whenever the IM contains them (these are high-value and easily missed): the FOUNDING TEAM and their pedigree / track record; any COMPARABLE or PRECEDENT company the IM benchmarks itself against and what it implies; named CUSTOMER / ISSUER TESTIMONIALS or quotes; named DISTRIBUTION / CHANNEL PARTNERS; flagship CASE STUDIES; and the PRODUCT / EXPANSION ROADMAP. ' +
+    'Return ONLY the deepDive JSON object { source, summary, sections }.';
+  return { system, user };
+}
+
 async function handleDeepDive(request, env, ctx) {
   if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
   let payload;
@@ -985,21 +1069,7 @@ async function handleDeepDive(request, env, ctx) {
   if (!imText && !imPages.length) throw new ApiError(400, 'This deal has no stored IM to rebuild the deep dive from — please re-upload it.');
 
   const example = await loadDeepDiveExample(request, env);
-  const system =
-    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY its visual IM DEEP-DIVE. ' +
-    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
-    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
-    'ACCURACY: every number, name, quote and label must come from the IM / banker notes / model provided — NEVER invent one to fill a chart. If a topic is only qualitative, use bullets / flow / keyvalue / timeline. Read the PAGE IMAGES for content not in the text (charts, market maps, logo walls).\n' +
-    'SOURCE PRECEDENCE: the company\'s OWN IM / deck is primary for facts about itself (team credentials, metrics, history); a banker call note is secondary and must NOT overwrite a specific IM fact. Do not repeat a note\'s sweeping claim (e.g. "founders are IIT 2016") over the IM team slide\'s per-person detail (e.g. a founder shown as "B.E. Chemical, BITS Pilani"); on a genuine conflict follow the IM.\n\n' +
-    DEEP_DIVE_SPEC;
-  const user =
-    'Build the deepDive object. Copy this SHAPE exactly (a real example):\n```json\n' + example + '\n```\n' +
-    'The core memo already computed these financials — any figures you show MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
-    '=== INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none)') + '\n' +
-    '=== EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none)') + '\n' +
-    (notesText.trim() ? '=== BANKER NOTES ===\n' + notesText + '\n' : '') +
-    'SCOPE: produce 6–9 well-chosen sections covering the most important parts of the IM, each with a few focused blocks — thorough but tight. Be sure to ALSO capture, whenever the IM contains them (these are high-value and easily missed): the FOUNDING TEAM and their pedigree / track record; any COMPARABLE or PRECEDENT company the IM benchmarks itself against and what it implies; named CUSTOMER / ISSUER TESTIMONIALS or quotes; named DISTRIBUTION / CHANNEL PARTNERS; flagship CASE STUDIES; and the PRODUCT / EXPANSION ROADMAP. ' +
-    'Return ONLY the deepDive JSON object { source, summary, sections }.';
+  const { system, user } = deepDivePrompts(company, { imText, excelText, notesText }, example);
 
   // GITHUB-ACTIONS mode: hand the deep-dive to the Action too, so it PATIENTLY waits out Bedrock
   // overload exactly like the core memo. The inline path below can't outlast a sustained rate-limit
@@ -1061,6 +1131,25 @@ const EXCEL_ANALYSIS_SPEC =
   '• MONEY in ₹ crore (convert from each sheet\'s own reporting unit: ₹ crore→as-is, ₹ million→÷10, ₹ lakh→÷100, ₹ thousand→÷10,000); percentages as plain numbers (18 = 18%). Align every trend/table to the SAME year labels the memo uses.\n' +
   '• PREFER VISUALS over prose; keep each section to a few focused blocks so it tells ONE clear story. Aim for genuine coverage — often 5-9 sections for a rich model. NEVER invent a number to fill a chart; if the model does not contain something, leave it out.';
 
+// Prompt pair for the visual Excel-model analysis — extracted for the same reason as deepDivePrompts:
+// the combined-insights job builds an IDENTICAL analysis prompt with no duplication. Pure, no I/O.
+function excelAnalysisPrompts(company, { excelText, sheetNames }, example) {
+  const sheets = (Array.isArray(sheetNames) ? sheetNames : []).filter(s => typeof s === 'string' && s);
+  const system =
+    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY a visual EXCEL-MODEL ANALYSIS. ' +
+    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
+    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
+    'ACCURACY: every number and label must come from the EXCEL MODEL provided — NEVER invent one to fill a chart. Read each sheet\'s own reporting unit and convert money to ₹ crore. Keep any headline figures CONSISTENT with the memo\'s financials shown below (same years, same ₹ crore).\n\n' +
+    EXCEL_ANALYSIS_SPEC;
+  const user =
+    'Build the Excel-analysis object. Copy this SHAPE exactly — it is a real example of the block STRUCTURE only; your CONTENT must come from the Excel below, not from this example:\n```json\n' + example + '\n```\n' +
+    'The core memo already computed these headline financials — any figures you show for the same lines MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
+    (sheets.length ? '=== EXCEL SHEETS ===\n' + sheets.join(', ') + '\n' : '') +
+    '=== EXCEL MODEL (CSV of the sheets) ===\n' + excelText + '\n' +
+    'Return ONLY the analysis JSON object { source, summary, sections }.';
+  return { system, user };
+}
+
 async function handleExcelAnalysis(request, env, ctx) {
   if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
   let payload;
@@ -1081,18 +1170,7 @@ async function handleExcelAnalysis(request, env, ctx) {
   if (!excelText.trim()) throw new ApiError(400, 'This deal has no stored Excel model to analyse — please re-add it with the Excel attached so we can build the analysis.');
 
   const example = await loadDeepDiveExample(request, env);
-  const system =
-    'You are a disciplined private-equity analyst. The core screening memo for this deal ALREADY EXISTS; you now produce ONLY a visual EXCEL-MODEL ANALYSIS. ' +
-    'Return STRICT JSON: a single object { "source", "summary", "sections":[ … ] } and NOTHING else — no other keys, no markdown, no commentary.\n\n' +
-    'WRITING: plain, non-technical English a busy partner can skim; all money in ₹ crore.\n' +
-    'ACCURACY: every number and label must come from the EXCEL MODEL provided — NEVER invent one to fill a chart. Read each sheet\'s own reporting unit and convert money to ₹ crore. Keep any headline figures CONSISTENT with the memo\'s financials shown below (same years, same ₹ crore).\n\n' +
-    EXCEL_ANALYSIS_SPEC;
-  const user =
-    'Build the Excel-analysis object. Copy this SHAPE exactly — it is a real example of the block STRUCTURE only; your CONTENT must come from the Excel below, not from this example:\n```json\n' + example + '\n```\n' +
-    'The core memo already computed these headline financials — any figures you show for the same lines MUST match them (same years, same ₹ crore):\n' + compactFinancials(company) + '\n' +
-    (sheetNames.length ? '=== EXCEL SHEETS ===\n' + sheetNames.join(', ') + '\n' : '') +
-    '=== EXCEL MODEL (CSV of the sheets) ===\n' + excelText + '\n' +
-    'Return ONLY the analysis JSON object { source, summary, sections }.';
+  const { system, user } = excelAnalysisPrompts(company, { excelText, sheetNames }, example);
 
   // GITHUB-ACTIONS mode: hand this to the Action too, so it PATIENTLY waits out Bedrock overload —
   // exactly like the core memo and the deep dive. Text-only (no page images): the Excel is CSV text.
@@ -1123,6 +1201,212 @@ async function handleExcelAnalysis(request, env, ctx) {
       out = { excelAnalysis: xa };
     } catch (e) {
       out = { error: (e && e.message) || 'The Excel analysis could not be built.', status: e instanceof ApiError ? e.status : 500 };
+    }
+    finished = true; clearInterval(ka);
+    try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
+    try { await writer.close(); } catch (_) {}
+  })();
+  if (ctx && ctx.waitUntil) ctx.waitUntil(run);
+  return new Response(readable, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' } });
+}
+
+/* ------------------------------------------------------------------ *
+ * COMBINED INSIGHTS — POST /api/insights builds BOTH the Deep Dive and the Excel Analysis in ONE
+ * GitHub-Actions run instead of two, saving a whole runner spin-up. It stores a single multi-STEP
+ * job (each step is its OWN focused Bedrock call, so the two outputs are identical to running the
+ * passes apart — no combined mega-prompt, no truncation risk) and dispatches once; handleGhaResult
+ * merges both back. In worker mode, or if GA isn't configured / there's nothing to build, it returns
+ * { fallback:true } and the client fires the two passes separately exactly as before.
+ * ------------------------------------------------------------------ */
+async function handleInsights(request, env, ctx) {
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
+  let payload;
+  try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
+  const id = String(payload.id || '').trim();
+  if (!id) throw new ApiError(400, 'Missing deal id.');
+  const raw = await env.DEALS.get(`company:${id}`);
+  if (!raw) throw new ApiError(404, 'That deal is no longer available.');
+  let company; try { company = JSON.parse(raw); } catch { throw new ApiError(500, 'The stored deal is unreadable.'); }
+
+  // Only the combined RUN is special to GA mode; without it nothing about the two passes changes —
+  // tell the client to fire them the old way.
+  if (!((await getGenMode(env)) === 'gha' && ghaConfigured(env))) return json({ fallback: true });
+
+  // Gather every source both passes might need, falling back to what we stashed when the memo built
+  // (so this works on a reload / another device / a server-built deal, like the single passes do).
+  let imText = String(payload.imText || '').trim().slice(0, 100000);
+  let excelText = String(payload.excelText || '').slice(0, 120000);
+  let notesText = String(payload.notesText || '');
+  const sheetNames = (Array.isArray(payload.sheetNames) ? payload.sheetNames : []).filter(s => typeof s === 'string' && s).slice(0, 40);
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(s => typeof s === 'string' && s).slice(0, 6);
+  if (!imText || !excelText.trim()) {
+    try { const s = JSON.parse((await env.DEALS.get(`dealsrc:${id}`)) || 'null'); if (s) { if (!imText) imText = String(s.imText || '').slice(0, 220000); if (!excelText.trim()) excelText = String(s.excelText || '').slice(0, 120000); if (!notesText) notesText = String(s.notesText || ''); } } catch { /* none stored */ }
+  }
+
+  const example = await loadDeepDiveExample(request, env);
+  const steps = [];
+  if (imText || imPages.length) {
+    const p = deepDivePrompts(company, { imText, excelText, notesText }, example);
+    steps.push({ tag: 'deepdive', system: p.system, user: p.user, images: imPages });
+  }
+  if (excelText.trim()) {
+    const p = excelAnalysisPrompts(company, { excelText, sheetNames }, example);
+    steps.push({ tag: 'excel', system: p.system, user: p.user, images: [] });
+  }
+  if (!steps.length) return json({ fallback: true });   // no source for either → let the client decide
+
+  const jobId = 'ins_' + id + '_' + Date.now().toString(36);
+  try {
+    await env.DEALS.put(`ghajob:${jobId}`, JSON.stringify({ kind: 'insights', companyId: id, steps }), { expirationTtl: 3600 });
+    await dispatchGhaJob(env, jobId);
+    return json({ queued: true, jobId, mode: 'gha', insights: true, steps: steps.map(s => s.tag) });
+  } catch (e) {
+    console.error('gha insights dispatch failed, telling client to fall back:', e && e.message);
+    return json({ fallback: true });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * SELF-AUDIT — POST /api/audit. Reads the memo the dashboard is showing AND the original documents
+ * it was built from, compares them line by line, and returns a FINDINGS report (what's wrong / missing
+ * / unsupported / assumed, plus what's verified). It REPORTS — it never edits the deal — so a partner
+ * clicks "Run audit", reads the checklist, and decides. Same GA-patient plumbing as the other passes.
+ * ------------------------------------------------------------------ */
+const AUDIT_SPEC =
+  'HOW TO AUDIT:\n' +
+  '• Compare the memo field by field against the documents. Flag anything that is: WRONG (the memo contradicts a document), MISSING (a document clearly gives it but the memo omits it or leaves it blank), UNSUPPORTED (the memo states something no document backs), or an ASSUMPTION (a modelling choice the documents do not fix — e.g. an entry/exit multiple when no valuation is given). Also list the important things you checked that ARE correct (VERIFIED), under strengths.\n' +
+  '• Ground EVERY finding in the documents: say what the document shows and what the memo shows. NEVER invent a problem — if something matches, it is NOT a finding.\n' +
+  '• Look hardest at: the financial history & forecast (years, revenue / EBITDA / PAT, margins, cash, debt, net worth — do the numbers and the year labels match the model and the IM?); any BLANK row whose inputs are present (a ratio the tool should have computed); founder & management names and credentials; the transaction terms (raise size, valuation, stake); the returns assumptions (entry/exit multiple, years) and whether a document states them or they are assumed; the trading / transaction COMPARABLES and whether they are real and clearly labelled; and market-size & traction claims.\n' +
+  '• FINDING SHAPE — each finding is an object: { "severity":"high|medium|low", "status":"wrong|missing|unsupported|assumption|verified", "scope":"deal|app", "area":"<short, e.g. Financials / Team / Returns / Market>", "title":"<short label>", "finding":"<one plain-English sentence>", "memo":"<what the dashboard shows>", "source_says":"<what the document says, or why it is an assumption>", "fix":"<the concrete fix, in plain English>" }.\n' +
+  '  – severity: HIGH = a wrong or missing figure/fact that changes the investment picture; MEDIUM = a material omission or an unsupported claim; LOW = minor or cosmetic.\n' +
+  '  – scope: "app" when it looks like a TOOL issue that would recur across deals (a whole computed row blank though its inputs exist, a units / formatting problem, a metric the tool should derive); "deal" when it is specific to THIS memo\'s content. When unsure, use "deal".\n' +
+  '• Order findings MOST-SEVERE FIRST. Be thorough but do not pad — report the genuine differences (often 3–15), never filler.\n' +
+  '• verdict: "clean" (nothing material), "minor" (only small / low items), or "issues" (at least one high or medium).\n' +
+  '• summary: 2–3 plain sentences on the overall state of the memo versus its documents.';
+
+// The memo as the dashboard shows it, minus the heavy derived views (deep dive / excel analysis /
+// a previous audit) — those are downstream renders, not facts to audit against the source.
+function auditMemoView(c) {
+  const { deepDive, excelAnalysis, audit, ...core } = (c && typeof c === 'object') ? c : {};
+  try { return JSON.stringify(core, null, 1); } catch { return '{}'; }
+}
+
+// Normalise the model's audit output to a safe, ordered findings report. Additive + defensive so a
+// slightly-off shape never white-screens the tab.
+function coerceAudit(a) {
+  if (!isObj(a)) return null;
+  const SEV = new Set(['high', 'medium', 'low']);
+  const STATUS = new Set(['wrong', 'missing', 'unsupported', 'assumption', 'verified']);
+  const s = v => String(v == null ? '' : v).trim();
+  const findings = [];
+  for (const f of (Array.isArray(a.findings) ? a.findings : [])) {
+    if (!isObj(f)) continue;
+    const title = s(f.title), finding = s(f.finding || f.detail);
+    if (!title && !finding) continue;
+    let sev = s(f.severity).toLowerCase(); if (sev === 'med') sev = 'medium'; if (!SEV.has(sev)) sev = 'medium';
+    let status = s(f.status).toLowerCase(); if (!STATUS.has(status)) status = 'wrong';
+    findings.push({
+      severity: sev, status, scope: (s(f.scope).toLowerCase() === 'app' ? 'app' : 'deal'),
+      area: s(f.area), title: title || finding.slice(0, 60), finding,
+      memo: s(f.memo || f.dashboard), source_says: s(f.source_says || f.sourceSays || f.source), fix: s(f.fix || f.suggestion),
+    });
+  }
+  const rank = { high: 0, medium: 1, low: 2 };
+  findings.sort((x, y) => rank[x.severity] - rank[y.severity]);
+  const strengths = (Array.isArray(a.strengths) ? a.strengths : []).map(s).filter(Boolean).slice(0, 24);
+  if (!findings.length && !s(a.summary) && !strengths.length) return null;
+  // Always DERIVE the verdict from the findings — never trust the model's own verdict, which can
+  // contradict them (e.g. "clean" alongside a high-severity error). A "verified" item is not a
+  // problem, so it doesn't move the verdict.
+  const problems = findings.filter(f => f.status !== 'verified');
+  const verdict = problems.some(f => f.severity === 'high' || f.severity === 'medium') ? 'issues' : (problems.length ? 'minor' : 'clean');
+  return {
+    source: s(a.source) || 'Memo vs. source documents',
+    // Full timestamp (not just the date): the client tells a fresh re-run apart from the previous
+    // audit by this value, so it must change every run, even two on the same day.
+    summary: s(a.summary), verdict, generatedAt: new Date().toISOString(),
+    findings, strengths,
+  };
+}
+
+async function handleAudit(request, env, ctx) {
+  if (!env.DEALS) throw new ApiError(503, "The memo builder's storage isn't set up yet.");
+  let payload;
+  try { payload = await request.json(); } catch { throw new ApiError(400, 'Invalid request body.'); }
+  const id = String(payload.id || '').trim();
+  if (!id) throw new ApiError(400, 'Missing deal id.');
+  const raw = await env.DEALS.get(`company:${id}`);
+  if (!raw) throw new ApiError(404, 'That deal is no longer available.');
+  let company; try { company = JSON.parse(raw); } catch { throw new ApiError(500, 'The stored deal is unreadable.'); }
+
+  // The source documents to audit against: from the request if this session has them, else from what
+  // we stashed when the memo was built (so it works on a reload / another device / a server-built deal).
+  let imText = String(payload.imText || '').trim().slice(0, 120000);
+  let excelText = String(payload.excelText || '').slice(0, 120000);
+  let notesText = String(payload.notesText || '');
+  const imPages = (Array.isArray(payload.imPages) ? payload.imPages : []).filter(x => typeof x === 'string' && x).slice(0, 6);
+  if (!imText || !excelText.trim() || !notesText) {
+    try { const st = JSON.parse((await env.DEALS.get(`dealsrc:${id}`)) || 'null'); if (st) { if (!imText) imText = String(st.imText || '').slice(0, 220000); if (!excelText.trim()) excelText = String(st.excelText || '').slice(0, 120000); if (!notesText) notesText = String(st.notesText || ''); } } catch { /* none stored */ }
+  }
+  if (!imText && !excelText.trim() && !notesText.trim() && !imPages.length) {
+    throw new ApiError(400, 'This deal has no stored source documents to audit against — please re-add it with the IM / Excel attached so we can compare the memo to them.');
+  }
+
+  // Audit the SAME numbers the dashboard shows: fill any exactly-derivable ratio (e.g. RoE) the model
+  // left blank, so the audit doesn't flag a "blank RoE" that the dashboard actually renders. Mutates
+  // the in-memory copy only (we don't re-store the deal here) — purely for the memo view below.
+  ensureDerivedFinancials(company.financials);
+
+  // Tell the model EXACTLY which sources it was handed, so it can't report a comparison against a
+  // document it never saw (e.g. a scanned IM whose text came through empty).
+  const provided = [
+    imText && 'the Information Memorandum (text)',
+    imPages.length && 'IM page images',
+    excelText.trim() && 'the Excel model',
+    notesText.trim() && 'the banker notes',
+  ].filter(Boolean);
+
+  const system =
+    'You are a meticulous private-equity quality-control reviewer. You are given (1) a screening MEMO a dashboard is currently showing, and (2) the ORIGINAL source documents it was built from. AUDIT the memo against the documents and report every difference. ' +
+    'Return STRICT JSON: a single object { "source", "summary", "verdict", "findings":[ … ], "strengths":[ … ] } and NOTHING else — no markdown, no commentary.\n\n' +
+    'WRITING: plain, simple English a busy partner can skim; all money in ₹ crore. Read any PAGE IMAGES for content not in the text (charts, team slides, logo walls).\n' +
+    'SOURCE COVERAGE: you were given ONLY these sources — ' + (provided.join('; ') || 'none') + '. Judge the memo ONLY against what you were actually given; NEVER claim to have checked it against a document not in that list. If a source below reads "(none provided)", do not raise findings that assume you saw it — instead note the limited coverage in the summary.\n\n' +
+    AUDIT_SPEC;
+  const user =
+    'Audit this memo against its source documents.\n\n' +
+    '=== MEMO THE DASHBOARD IS SHOWING (JSON) ===\n' + auditMemoView(company) + '\n\n' +
+    '=== SOURCE: INFORMATION MEMORANDUM (text) ===\n' + (imText || '(none provided)') + '\n\n' +
+    '=== SOURCE: EXCEL MODEL (CSV of the key sheets) ===\n' + (excelText || '(none provided)') + '\n\n' +
+    (notesText.trim() ? '=== SOURCE: BANKER NOTES ===\n' + notesText + '\n\n' : '') +
+    'Return ONLY the audit JSON object { source, summary, verdict, findings, strengths }.';
+
+  // GITHUB-ACTIONS mode: hand it to the Action so it PATIENTLY waits out Bedrock overload, like the
+  // other passes. jobId prefix au_; kind:'audit' so handleGhaResult merges cur.audit.
+  if ((await getGenMode(env)) === 'gha' && ghaConfigured(env)) {
+    const auJobId = 'au_' + id + '_' + Date.now().toString(36);
+    try {
+      await env.DEALS.put(`ghajob:${auJobId}`, JSON.stringify({ kind: 'audit', companyId: id, system, user, images: imPages }), { expirationTtl: 3600 });
+      await dispatchGhaJob(env, auJobId);
+      return json({ queued: true, jobId: auJobId, mode: 'gha', audit: true });
+    } catch (e) { console.error('gha audit dispatch failed, falling back to inline:', e && e.message); /* fall through */ }
+  }
+
+  // Inline fallback: stream keepalives so a multi-second build never trips the edge timeout.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter(); const enc = new TextEncoder();
+  let finished = false;
+  const ka = setInterval(() => { if (!finished) writer.write(enc.encode(' ')).catch(() => {}); }, 5000);
+  const run = (async () => {
+    let out;
+    try {
+      const ans = await callClaude({ system, user, images: imPages, maxTokens: 8000 }, env);
+      const obj = extractJson(ans.text);
+      const au = coerceAudit(obj && (Array.isArray(obj.findings) || obj.summary ? obj : obj.audit));
+      if (!au) throw new ApiError(502, "We couldn't build the audit from these documents.");
+      await env.DEALS.put(`audit:${id}`, JSON.stringify(au));   // own key (see handleCompanies) — no whole-company write
+      out = { audit: au };
+    } catch (e) {
+      out = { error: (e && e.message) || 'The audit could not be built.', status: e instanceof ApiError ? e.status : 500 };
     }
     finished = true; clearInterval(ka);
     try { await writer.write(enc.encode('\n' + JSON.stringify(out))); } catch (_) {}
@@ -1283,6 +1567,24 @@ function ensureDerivedFinancials(fin) {
     };
     marginFrom('ebitda', 'ebitdaPct');
     marginFrom('pat', 'patPct');
+
+    // Return on equity = PAT ÷ net worth, filled per-cell for any year the model left blank where
+    // both inputs are present — supplied values are kept, and a missing PAT (null) is never read as
+    // a real 0 (Number(null) is 0, which would fabricate a 0% RoE). Only ROE: RoCE needs operating
+    // profit + capital employed, which we don't reliably carry, so approximating it would risk a
+    // wrong number; leave that to the model.
+    if (arr('pat') && arr('netWorth')) {
+      const pat = arr('pat'), nw = arr('netWorth');
+      const fnum = v => (typeof v === 'number' && isFinite(v)) ? v : (v != null && v !== '' && isFinite(+v) ? +v : null);
+      const roe = Array.isArray(rows.roePct) ? rows.roePct.slice() : new Array(years.length).fill(null);
+      let changed = false;
+      for (let i = 0; i < years.length; i++) {
+        if (roe[i] != null && roe[i] !== '') continue;         // keep any value the model gave
+        const p = fnum(pat[i]), w = fnum(nw[i]);
+        if (p != null && w != null && w > 0) { roe[i] = Math.round(p / w * 100); changed = true; }
+      }
+      if (changed) rows.roePct = roe;
+    }
 
     // CAGR — ensure a period label exists, then compute per metric over that span when missing.
     let cols = Array.isArray(fin.cagrCols) ? fin.cagrCols.filter(Boolean) : [];
