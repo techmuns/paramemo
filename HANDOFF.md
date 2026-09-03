@@ -457,6 +457,14 @@ Deep Dive / Excel passes.
 
 - **Bedrock overload is normal.** If inline generation 502s, that's why GA mode is the default. Don't
   "fix" it by removing GA.
+- **Memo (`renderMemoExact`) table classes — don't cross them up.** Three distinct table styles in the
+  `.mx` memo: `mx-tbl` = dense NUMERIC tables (financials, comps) — right-aligned, `nowrap`, 9px;
+  `mx-chk` = the CHECKLISTS (Governance, Strategy) — narrow centred 2nd column (Yes/No · Outcome) at 12%,
+  first column 28%; `mx-txt` = FREE-TEXT tables (Issues, Thesis, Returns) — left-aligned headers, wrapping
+  prose columns sized by a per-table `<colgroup>`. The Issues/Thesis/Returns tables were once on `mx-chk`,
+  which squeezed the Description column to 12% (one word per line) and right-aligned the headers — fixed by
+  moving them to `mx-txt`. Put a new prose table on `mx-txt` (+ a colgroup), a new checklist on `mx-chk`,
+  a new numeric grid on `mx-tbl`.
 - **Yahoo 401 "Invalid Crumb"** self-heals (cache is deleted and re-handshaked). If comps go blank,
   check `/api/peer-multiple?ticker=APOLLOHOSP` directly.
 - **scrape.do** has a monthly request cap (has hit "limit exceeded") — it's the last-resort comps source,

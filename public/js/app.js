@@ -1642,12 +1642,12 @@ function memoStrategy(c) {
 function memoThesis(c) {
   const rows = (c.thesis && c.thesis.length ? c.thesis : [{}, {}, {}]).map(x =>
     `<tr><td class="lft">${x.point ? esc(x.point) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th>Thesis</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:32%"><col style="width:68%"></colgroup><thead><tr><th>Thesis</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function memoIssues(c) {
   const rows = (c.concerns && c.concerns.length ? c.concerns : [{}, {}, {}]).map(x =>
     `<tr><td class="lft">${x.issue ? esc(x.issue) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td><td class="lft">${x.mitigant ? '- ' + esc(x.mitigant) : ''}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:20%"><col style="width:40%"><col style="width:40%"></colgroup><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Comps + returns for the Paragon MEMO replica (mx-tbl style).
 function memoReturns(c) {
@@ -1666,7 +1666,7 @@ function memoReturns(c) {
     ['Money multiple (MoIC)', out.moneyBack.toFixed(1) + '×'],
     ['Annual return (IRR)', Math.round(out.yearlyReturn) + '%'],
   ].map(([k, val]) => `<tr><td class="lft">${esc(k)}</td><td class="lft">${esc(val)}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th class="lft">Returns — base case (management projections)</th><th class="lft">Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:48%"><col style="width:52%"></colgroup><thead><tr><th>Returns — base case (management projections)</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function memoComps(c) {
   if (!hasComps(c)) return '';
