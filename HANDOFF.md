@@ -465,6 +465,18 @@ Deep Dive / Excel passes.
   which squeezed the Description column to 12% (one word per line) and right-aligned the headers — fixed by
   moving them to `mx-txt`. Put a new prose table on `mx-txt` (+ a colgroup), a new checklist on `mx-chk`,
   a new numeric grid on `mx-tbl`.
+- **Audit is a BUTTON, not a tab.** The `audit` entry in `TABS` is `hidden: true` (filtered out of the
+  tab bar by `renderTabBar`) but stays a valid route, so the **Audit** button in the deal header
+  (`renderCompanyShell`) navigates to `#<id>/audit` and everything renders as before. Audit is
+  deliberately never part of the exported report (`REPORT_SECTIONS` has no audit key) — it's a
+  correction-check utility.
+- **Live comps auto-fill (`ensurePeerLive`).** Listed-peer market cap / P/E / EV multiples come from a
+  live fetch (`/api/peer-multiple`), not the AI. It now runs automatically: the Comps tab
+  (`attachCompsLive`) and Returns peers panel (`maybeAddPeerLive`) auto-fetch on first open, and
+  `exportPdf` `await`s `ensurePeerLive(c)` before rendering so the memo/report aren't blank. All
+  best-effort — a failed fetch leaves the model's estimates and never blocks a render/export. Only
+  active when `state.peerLiveEnabled` (the Worker's market-data path is configured); a no-op on a
+  static preview.
 - **Yahoo 401 "Invalid Crumb"** self-heals (cache is deleted and re-handshaked). If comps go blank,
   check `/api/peer-multiple?ticker=APOLLOHOSP` directly.
 - **scrape.do** has a monthly request cap (has hit "limit exceeded") — it's the last-resort comps source,
