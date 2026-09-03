@@ -1152,7 +1152,7 @@ const TABS = [
   { key: 'thesis',     label: 'Thesis',     icon: 'lightbulb'  },
   { key: 'comps',      label: 'Comps',      icon: 'scale'      },
   { key: 'returns',    label: 'Returns',    icon: 'trendingUp' },
-  { key: 'audit',      label: 'Audit',      icon: 'search'     },
+  { key: 'audit',      label: 'Audit',      icon: 'search', hidden: true },   // reached via the header "Audit" button, not the tab bar (it's a correction-check utility, not a memo section)
 ];
 // All tabs are built; none carry a "coming soon" dot.
 // (renderComingSoon remains as a harmless fallback for any unknown tab key.)
@@ -1515,10 +1515,11 @@ function openExportModal(c) {
   requestAnimationFrame(() => { overlay.classList.add('show'); refresh(); if (dlBtn) dlBtn.focus(); });
 }
 
-function exportPdf(kind, include) {
+async function exportPdf(kind, include) {
   const c = companyById(ui.companyId);
   if (!c) { toast('Open a company first, then export it'); return; }
   const doc = kind === 'report' ? 'report' : 'memo';
+  await ensurePeerLive(c);   // pull live market cap / P/E for listed peers first, so the export isn't blank
   const body = doc === 'report' ? renderFullReport(c, include) : renderMemoExact(c);
 
   // Keep #print-root loaded either way: it's what a plain Ctrl+P prints.
@@ -1636,18 +1637,18 @@ function memoStrategy(c) {
     body += rows.map(x => `<tr><td class="lft">${esc(x.label)}</td><td class="ctr">${yn(x.status)}</td><td class="lft">- ${esc(x.note || '')}</td></tr>`).join('');
   });
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
-  body += `<tr class="cat"><td class="lft">Overall Fitment to the Strategy</td><td class="ctr">${esc(fit.label)}</td><td class="lft">- ${esc(c.fit ? c.fit.reason : '')}</td></tr>`;
+  body += `<tr class="ovr"><td class="lft">Overall Fitment to the Strategy</td><td class="ctr">${esc(fit.label)}</td><td class="lft">- ${esc(c.fit ? c.fit.reason : '')}</td></tr>`;
   return `<table class="mx-tbl mx-chk"><thead><tr><th>Area</th><th>Yes/No</th><th>Comments</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 function memoThesis(c) {
   const rows = (c.thesis && c.thesis.length ? c.thesis : [{}, {}, {}]).map(x =>
     `<tr><td class="lft">${x.point ? esc(x.point) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th>Thesis</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:32%"><col style="width:68%"></colgroup><thead><tr><th>Thesis</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function memoIssues(c) {
   const rows = (c.concerns && c.concerns.length ? c.concerns : [{}, {}, {}]).map(x =>
     `<tr><td class="lft">${x.issue ? esc(x.issue) : ''}</td><td class="lft">${x.detail ? '- ' + esc(x.detail) : ''}</td><td class="lft">${x.mitigant ? '- ' + esc(x.mitigant) : ''}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:20%"><col style="width:40%"><col style="width:40%"></colgroup><thead><tr><th>Issue</th><th>Description</th><th>Possible Mitigants</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 // Comps + returns for the Paragon MEMO replica (mx-tbl style).
 function memoReturns(c) {
@@ -1666,7 +1667,7 @@ function memoReturns(c) {
     ['Money multiple (MoIC)', out.moneyBack.toFixed(1) + '×'],
     ['Annual return (IRR)', Math.round(out.yearlyReturn) + '%'],
   ].map(([k, val]) => `<tr><td class="lft">${esc(k)}</td><td class="lft">${esc(val)}</td></tr>`).join('');
-  return `<table class="mx-tbl mx-chk"><thead><tr><th class="lft">Returns — base case (management projections)</th><th class="lft">Value</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="mx-tbl mx-txt"><colgroup><col style="width:48%"><col style="width:52%"></colgroup><thead><tr><th>Returns — base case (management projections)</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 function memoComps(c) {
   if (!hasComps(c)) return '';
@@ -2344,10 +2345,17 @@ function renderCompanyShell(c) {
   const back = h(`<button class="back-btn" type="button">${icon('arrowLeft', 'w-4 h-4', 2.4)}<span>Pipeline</span></button>`);
   back.addEventListener('click', goHome);
   topRow.appendChild(back);
+  const actions = h('<div class="flex items-center gap-2"></div>');
+  // Audit is a correction-check utility, not a memo section — so it lives as a button here, not a tab
+  // (and it is deliberately never part of the exported report).
+  const auditBtn = h(`<button class="au-open-btn" type="button" style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:999px;font-size:12.5px;font-weight:600;color:#fff;background:${BRAND.navy};border:1px solid ${BRAND.navy};cursor:pointer">${icon('search', 'w-4 h-4')}<span>Audit</span></button>`);
+  auditBtn.addEventListener('click', () => navigate(`#${c.id}/audit`));
+  actions.appendChild(auditBtn);
   // Every deal can be removed — uploads are deleted; samples are hidden.
   const rm = h(`<button class="rm-btn" type="button">${icon('trash', 'w-4 h-4')}<span>${isSample(c) ? 'Remove sample' : 'Remove deal'}</span></button>`);
   rm.addEventListener('click', () => removeCompany(c));
-  topRow.appendChild(rm);
+  actions.appendChild(rm);
+  topRow.appendChild(actions);
   shell.appendChild(topRow);
 
   shell.appendChild(renderIdentityStrip(c));
@@ -2472,7 +2480,7 @@ function renderIdentityStrip(c) {
 
 function renderTabBar(c) {
   const bar = h('<div class="tabbar" role="tablist" aria-label="Sections"></div>');
-  TABS.forEach(t => {
+  TABS.filter(t => !t.hidden).forEach(t => {   // hidden tabs (Audit) are reachable via their own button, not the bar
     const soon = !LIVE_TABS.includes(t.key);
     const el = h(`<button class="tab ${soon ? 'is-soon' : ''}" role="tab" data-tab="${t.key}" aria-selected="false">
         ${icon(t.icon, 'tab-ico w-4 h-4')}<span>${esc(t.label)}</span>${soon ? '<span class="soon-dot" title="Coming soon"></span>' : ''}
@@ -4347,6 +4355,38 @@ function nowLabel() {
   try { return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }); }
   catch (_) { return ''; }
 }
+// Fetch live market data (market cap / P/E / EV multiples) for the deal's LISTED trading peers and fill
+// the trading-comps rows, so the dashboard AND the exported memo/report show real figures with no manual
+// click. Cached on c._peerLive. Fully best-effort: any failure leaves the model's estimates untouched
+// and never blocks a render or an export.
+async function ensurePeerLive(c) {
+  try {
+    if (!state.peerLiveEnabled || !c || !c.comps || !c.comps.trading) return;
+    const rows = Array.isArray(c.comps.trading.rows) ? c.comps.trading.rows : [];
+    const listed = rows.filter(r => r && r.listed && r.ticker);
+    if (!listed.length) return;
+    const byTicker = (c._peerLive && c._peerLive.byTicker) || {};
+    await Promise.all(listed.map(async r => {
+      try {
+        const res = await fetch(apiUrl('peer-multiple') + '?ticker=' + encodeURIComponent(r.ticker));
+        const d = await res.json().catch(() => ({}));
+        byTicker[r.ticker] = { pe: _num(d.pe), marketCapCr: _num(d.marketCapCr), evCr: _num(d.evCr), evEbitda: _num(d.evEbitda), evRevenue: _num(d.evRevenue), revenueCr: _num(d.revenueCr), ebitdaPct: _num(d.ebitdaPct), roe: _num(d.roe), via: d.via };
+      } catch (_) { byTicker[r.ticker] = byTicker[r.ticker] || {}; }
+    }));
+    c._peerLive = { ts: nowLabel(), byTicker };
+    listed.forEach(r => {
+      const d = byTicker[r.ticker]; if (!d) return; let f = false;
+      if (d.marketCapCr != null) { r.marketCapCr = Math.round(d.marketCapCr); f = true; }
+      if (d.evCr != null)        { r.evCr = Math.round(d.evCr); f = true; }
+      if (d.revenueCr != null)   { r.revenueCr = Math.round(d.revenueCr); f = true; }
+      if (d.ebitdaPct != null)   { r.ebitdaPct = Math.round(d.ebitdaPct); f = true; }
+      if (d.evEbitda != null)    { r.evEbitda = d.evEbitda; f = true; }
+      if (d.evRevenue != null)   { r.evRevenue = d.evRevenue; f = true; }
+      if (d.pe != null)          { r.pe = Math.round(d.pe * 10) / 10; f = true; }
+      if (f) r._live = true;
+    });
+  } catch (_) { /* never block a render/export on a live-fetch problem */ }
+}
 function maybeAddPeerLive(card, c) {
   const p = c.peers;
   if (!state.peerLiveEnabled || !p || !Array.isArray(p.rows)) return;
@@ -4394,9 +4434,8 @@ function maybeAddPeerLive(card, c) {
   };
 
   const fetchLive = async e => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    const span = btn.querySelector('span'); span.textContent = 'Fetching…';
+    const btn = e && e.currentTarget;
+    if (btn) { btn.disabled = true; const span = btn.querySelector('span'); if (span) span.textContent = 'Fetching…'; }
     const byTicker = (c._peerLive && c._peerLive.byTicker) || {};
     await Promise.all(listed.map(async r => {
       try {
@@ -4416,6 +4455,8 @@ function maybeAddPeerLive(card, c) {
   };
 
   renderPanel();
+  // Auto-fetch once so live P/E · market cap load without a manual click (mirrors the Comps tab).
+  if (!c._peerLive && !c._peerLiveAutoR) { c._peerLiveAutoR = true; fetchLive(null); }
 }
 
 // Keep the entry/exit year dropdown labels showing the CURRENT basis's metric (EBITDA/Revenue/PAT).

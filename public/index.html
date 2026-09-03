@@ -1107,7 +1107,7 @@
     .mx-logo { height: 48px; width: auto; }
     .mx-title { flex: 1 1 auto; text-align: center; font-family: Cambria, Georgia, 'Times New Roman', serif; font-size: 19px; font-weight: 700; }
     .mx-title span { font-weight: 400; }
-    .mx-grp { break-before: page; }                       /* financials / questions / section II each start a fresh page */
+    .mx-grp { margin-top: 16px; }                         /* sections FLOW and fill the page — no forced page break (kills the big empty gaps) */
     .mx-row { display: grid; grid-template-columns: 150px 1fr; border: 1px solid #9AA3B5; margin-bottom: 7px; break-inside: avoid; }
     .mx-row-l { padding: 7px 10px; font-weight: 700; border-right: 1px solid #9AA3B5; }
     .mx-row-b { padding: 7px 11px; }
@@ -1132,11 +1132,18 @@
     table.mx-tbl tr.it td { font-style: italic; color: #333; }
     table.mx-tbl tr.tot td { font-weight: 700; }
     table.mx-tbl tr.cat td { font-weight: 700; background: #EEF0F5; text-align: left; }
-    table.mx-chk { font-size: 10.5px; break-inside: avoid; } table.mx-chk td, table.mx-chk th { padding: 5px 7px; }
-    table.mx-chk td { white-space: normal; vertical-align: top; overflow-wrap: anywhere; }  /* checklist comments wrap; numeric mx-tbl stays nowrap */
-    table.mx-chk th:nth-child(2), table.mx-chk td.ctr { text-align: center; }
+    table.mx-tbl tr.ovr td { font-weight: 700; background: #EEF0F5; }   /* overall-fitment row: highlighted, but keeps per-cell alignment so the verdict stays centred */
+    table.mx-chk { font-size: 10px; break-inside: avoid; } table.mx-chk td, table.mx-chk th { padding: 5px 7px; }
+    table.mx-chk td { white-space: normal; vertical-align: top; overflow-wrap: break-word; }  /* checklist comments wrap; numeric mx-tbl stays nowrap */
+    table.mx-chk th { text-align: left; }                                      /* headers align with their left-aligned content */
+    table.mx-chk th:nth-child(2), table.mx-chk td.ctr { text-align: center; }  /* the Yes/No · Outcome column stays centred */
     table.mx-chk th:first-child, table.mx-chk td:first-child { width: 28%; }
     table.mx-chk th:nth-child(2) { width: 12%; }
+    /* Free-text tables (Issues / Thesis / Returns): full-width prose columns sized by a <colgroup>,
+       wrapping normally with left-aligned headers — NOT the checklist's narrow, centred second column. */
+    table.mx-txt { table-layout: fixed; font-size: 10px; break-inside: auto; }
+    table.mx-txt th, table.mx-txt td { text-align: left; vertical-align: top; white-space: normal; overflow-wrap: break-word; padding: 5px 8px; }
+    table.mx-txt tr { break-inside: avoid; }   /* keep each row whole, but let a long table flow across pages */
     .mx-foot { margin-top: 16px; padding-top: 6px; border-top: 1px solid #ccc; font-size: 9.5px; color: #888; text-align: center; }
 
     /* ============ FULL REPORT — comprehensive branded document ============ */
