@@ -1636,7 +1636,7 @@ function memoStrategy(c) {
     body += rows.map(x => `<tr><td class="lft">${esc(x.label)}</td><td class="ctr">${yn(x.status)}</td><td class="lft">- ${esc(x.note || '')}</td></tr>`).join('');
   });
   const fit = FIT[c.fit && c.fit.verdict] || FIT.watch;
-  body += `<tr class="cat"><td class="lft">Overall Fitment to the Strategy</td><td class="ctr">${esc(fit.label)}</td><td class="lft">- ${esc(c.fit ? c.fit.reason : '')}</td></tr>`;
+  body += `<tr class="ovr"><td class="lft">Overall Fitment to the Strategy</td><td class="ctr">${esc(fit.label)}</td><td class="lft">- ${esc(c.fit ? c.fit.reason : '')}</td></tr>`;
   return `<table class="mx-tbl mx-chk"><thead><tr><th>Area</th><th>Yes/No</th><th>Comments</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 function memoThesis(c) {

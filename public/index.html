@@ -1107,7 +1107,7 @@
     .mx-logo { height: 48px; width: auto; }
     .mx-title { flex: 1 1 auto; text-align: center; font-family: Cambria, Georgia, 'Times New Roman', serif; font-size: 19px; font-weight: 700; }
     .mx-title span { font-weight: 400; }
-    .mx-grp { break-before: page; }                       /* financials / questions / section II each start a fresh page */
+    .mx-grp { margin-top: 16px; }                         /* sections FLOW and fill the page — no forced page break (kills the big empty gaps) */
     .mx-row { display: grid; grid-template-columns: 150px 1fr; border: 1px solid #9AA3B5; margin-bottom: 7px; break-inside: avoid; }
     .mx-row-l { padding: 7px 10px; font-weight: 700; border-right: 1px solid #9AA3B5; }
     .mx-row-b { padding: 7px 11px; }
@@ -1132,6 +1132,7 @@
     table.mx-tbl tr.it td { font-style: italic; color: #333; }
     table.mx-tbl tr.tot td { font-weight: 700; }
     table.mx-tbl tr.cat td { font-weight: 700; background: #EEF0F5; text-align: left; }
+    table.mx-tbl tr.ovr td { font-weight: 700; background: #EEF0F5; }   /* overall-fitment row: highlighted, but keeps per-cell alignment so the verdict stays centred */
     table.mx-chk { font-size: 10px; break-inside: avoid; } table.mx-chk td, table.mx-chk th { padding: 5px 7px; }
     table.mx-chk td { white-space: normal; vertical-align: top; overflow-wrap: break-word; }  /* checklist comments wrap; numeric mx-tbl stays nowrap */
     table.mx-chk th { text-align: left; }                                      /* headers align with their left-aligned content */
