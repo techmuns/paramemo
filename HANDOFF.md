@@ -346,11 +346,14 @@ Faraz's screening-flow feedback, being worked through (PR #12):
   — an earlier Faraz ask, see `recomputeReturns`). Added: the core-memo **prompt now DEFAULTS to a mixed
   basis** — enter on revenue, exit on EBITDA (or PAT) — when a revenue-entered company is solidly
   profitable by the exit year, so the partner no longer has to flip it by hand. Fresh upload / regenerate.
-- **Export: choose which sections to download (SHIPPED).** The Export button now opens a **section
-  picker** (`openExportModal`) — a checkbox per report section (all ticked by default) — so the partner
-  drops sections he doesn't need (his example: skip **Key questions** once the mgmt meeting has happened).
-  `renderFullReport(c, include)` emits only the chosen keys; `REPORT_SECTIONS` is the offered list.
-  (This subsumes his earlier "toggle Excel on/off on export" ask into a per-section toggle.)
+- **Export: two-choice dropdown + section picker (SHIPPED).** The Export button opens a dropdown with
+  two formats: **Full report** → a **section picker** (`openExportModal`, a checkbox per report section,
+  all ticked by default) so the partner drops sections he doesn't need (his example: skip **Key
+  questions** once the mgmt meeting has happened); and **2-page memo · Paragon format** → `renderMemoExact`,
+  a faithful replica of Paragon's own Word screening-memo template (the `.mx` styles). `renderFullReport(c,
+  include)` emits only the chosen keys; `REPORT_SECTIONS` is the offered list. (Subsumes the earlier
+  "toggle Excel on/off on export" ask, and **restores the memo option** that had been hidden when Export
+  was briefly collapsed to a single one-click Full report.)
 - **NOTE — more feedback likely incoming.** The user was sharing Faraz's WhatsApp notes in batches, so
   check for further items before assuming this list is complete.
 
@@ -389,7 +392,9 @@ Faraz's screening-flow feedback, being worked through (PR #12):
     (app-scope behind `IS_DEV` = `?dev=1`); `applyAuditFix` / `auditFixDirective` drive the one-click
     "Apply this fix" (a correction-only `startRegeneration(company, [], {correction})`).
   - `renderFullReport(c, include)` + `REPORT_SECTIONS` / `reportSections(c)` / `openExportModal` — the
-    PDF/report export and its **section picker** (Faraz, §9.5). Export button → picker modal → `exportPdf`.
+    PDF/report export and its **section picker** (Faraz, §9.5). Export button → **dropdown**: *Full report*
+    → picker modal → `exportPdf('report', include)`, or *2-page memo · Paragon format* → `renderMemoExact`
+    (the `.mx` Word-template replica) → `exportPdf('memo')`. Both formats are wired in `initHeader`.
 - **`scripts/gha-generate.mjs`** — the GitHub Actions runner (patient Bedrock retries, 404-exit-clean,
   loops a `steps[]` payload for the combined insights run).
 - **`.github/workflows/generate.yml`** — the `generate-deal` workflow (concurrency `generate-${jobId}`).

@@ -1309,18 +1309,36 @@ function initHeader() {
   brand.addEventListener('click', goHome);
   brand.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 
-  // Export → the Full report. Clicking it opens a section picker (openExportModal) so the partner
-  // chooses which sections go into the download (Faraz). The Memo replica (renderMemoExact) is kept in
-  // the code but no longer offered in the UI — to bring it back, restore the dropdown menu here.
+  // Export → a two-choice dropdown: the Full report (opens the section picker) OR the 2-page memo in
+  // Paragon's own Word-template format (renderMemoExact). Mirrors the company dropdown's open/close.
   const exportBtn = $('#export-btn');
   exportBtn.classList.remove('is-disabled');
   exportBtn.removeAttribute('data-tip');
   exportBtn.removeAttribute('aria-disabled');
-  exportBtn.removeAttribute('aria-haspopup');
+  exportBtn.setAttribute('aria-haspopup', 'true');
   const exMenu = $('#export-menu');
-  if (exMenu) { exMenu.innerHTML = ''; exMenu.classList.add('hidden'); }   // no dropdown any more
-  const exChev = $('#export-chev'); if (exChev) exChev.style.display = 'none';   // single action → drop the caret
-  exportBtn.addEventListener('click', e => { e.stopPropagation(); const c = companyById(ui.companyId); if (!c) { toast('Open a company first, then export it'); return; } openExportModal(c); });
+  const exChev = $('#export-chev'); if (exChev) exChev.style.display = '';
+  exMenu.innerHTML = `
+    <div class="dd-head">Export</div>
+    <button class="dd-item ex-item" data-ex="report" type="button">
+      <span class="ex-ic">${icon('fileText', 'w-4 h-4')}</span>
+      <span><span class="ex-t">Full report</span><span class="ex-s">Every section — pick what to include, with charts &amp; comps</span></span>
+    </button>
+    <button class="dd-item ex-item" data-ex="memo" type="button">
+      <span class="ex-ic">${icon('clipboard', 'w-4 h-4')}</span>
+      <span><span class="ex-t">2-page memo · Paragon format</span><span class="ex-s">The screening memo in your Word template</span></span>
+    </button>`;
+  const openEx  = () => { exMenu.classList.remove('hidden'); exportBtn.setAttribute('aria-expanded', 'true');  if (exChev) exChev.style.transform = 'rotate(180deg)'; };
+  const closeEx = () => { exMenu.classList.add('hidden');    exportBtn.setAttribute('aria-expanded', 'false'); if (exChev) exChev.style.transform = ''; };
+  exportBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (!companyById(ui.companyId)) { toast('Open a company first, then export it'); return; }
+    exMenu.classList.contains('hidden') ? openEx() : closeEx();
+  });
+  exMenu.querySelector('[data-ex="report"]').addEventListener('click', () => { closeEx(); const c = companyById(ui.companyId); if (c) openExportModal(c); });
+  exMenu.querySelector('[data-ex="memo"]').addEventListener('click',   () => { closeEx(); const c = companyById(ui.companyId); if (c) exportPdf('memo'); });
+  document.addEventListener('click', e => { if (!e.target.closest('#export-dd')) closeEx(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEx(); });
 }
 
 /* ---- Export ---------------------------------------------------------------
